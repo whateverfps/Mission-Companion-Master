@@ -204,6 +204,79 @@ export function extractObjectBasedSpecifications({
 }
 
 /**
+ * Standalone specification search for Specification Explorer
+ * Searches the specification index directly using sheet metadata
+ * Does NOT use drawingSpecificationLinks, drawingRequirementsResolver, or relationship stores
+ */
+export function searchSpecificationsForSheet({ specificationIndex, sheet = {}, projectId = '' } = {}) {
+  if (!specificationIndex) {
+    return { ok: false, sections: [], reason: 'Specification index not available' };
+  }
+
+  const sheetNumber = text(sheet.sheetNumber);
+  const sheetTitle = text(sheet.sheetTitle);
+  const discipline = text(sheet.discipline);
+  const sheetType = text(sheet.primarySheetType || sheet.drawingType);
+  
+  // Build search query from sheet metadata
+  const searchTerms = [
+    sheetNumber,
+    sheetTitle,
+    discipline,
+    sheetType
+  ].filter(Boolean).join(' ');
+  
+  if (!searchTerms) {
+    return { ok: false, sections: [], reason: 'No sheet metadata available for search' };
+  }
+  
+  // Search specification index
+  const results = specificationIndex.find(searchTerms, { projectId });
+  
+  // Add confidence scores based on match quality
+  const scoredResults = results.map(section => {
+    let confidence = 0.5; // base confidence
+    const sectionText = `${section.sectionNumber} ${section.sectionTitle}`.toLowerCase();
+    const searchLower = searchTerms.toLowerCase();
+    
+    // Higher confidence for discipline matches
+    if (discipline && sectionText.includes(discipline.toLowerCase())) {
+      confidence += 0.2;
+    }
+    
+    // Higher confidence for sheet type matches
+    if (sheetType && sectionText.includes(sheetType.toLowerCase())) {
+      confidence += 0.15;
+    }
+    
+    // Higher confidence for section number matches
+    if (sheetNumber && sectionText.includes(sheetNumber.toLowerCase())) {
+      confidence += 0.1;
+    }
+    
+    return {
+      ...section,
+      confidence: Math.min(confidence, 1.0),
+      matchReason: discipline && sectionText.includes(discipline.toLowerCase()) 
+        ? 'Discipline match' 
+        : sheetType && sectionText.includes(sheetType.toLowerCase())
+        ? 'Sheet type match'
+        : 'General specification'
+    };
+  });
+  
+  // Sort by confidence descending
+  scoredResults.sort((a, b) => b.confidence - a.confidence);
+  
+  return {
+    ok: true,
+    sections: scoredResults,
+    query: searchTerms,
+    totalSections: scoredResults.length
+  };
+}
+
+/**
  * Create specification explorer
  */
 export function createSpecificationExplorer({ specificationIndex, relationshipGraph } = {}) {
