@@ -18,3 +18,4 @@ project-data/bedford/*/*
 !project-data/bedford/relationships/*.json
 !project-data/bedford/specifications/
 !project-data/bedford/specifications/authoritative-spec-index.json
+node_modules/
