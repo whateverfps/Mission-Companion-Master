@@ -7520,6 +7520,10 @@ function renderSpecificationWorkspace() {
 
       <main class="mc-specification-center-panel">
         <div class="mc-specification-viewer-container">
+          <div id="specificationHighlight" class="mc-specification-highlight">
+            <span class="highlight-section-number">${esc(currentSpec?.sectionNumber || '')}</span>
+            <span class="highlight-section-title">${esc(currentSpec?.sectionTitle || '')}</span>
+          </div>
           <iframe id="specificationViewer" class="mc-specification-viewer"></iframe>
         </div>
       </main>
@@ -7568,6 +7572,9 @@ function renderSpecificationWorkspace() {
   // Load PDF in viewer
   loadSpecificationPdf(currentSpec);
 
+  // Flash highlight for section heading
+  flashSectionHighlight();
+
   // Bind events
   bindSpecificationWorkspaceEvents();
 }
@@ -7590,6 +7597,24 @@ function loadSpecificationPdf(currentSpec) {
   
   // Cleanup blob URL when workspace is closed
   iframe.dataset.blobUrl = blobUrl;
+}
+
+function flashSectionHighlight() {
+  const highlight = $('#specificationHighlight');
+  if (!highlight) return;
+
+  // Initial flash
+  highlight.classList.add('flash-yellow');
+  
+  // Remove flash after animation
+  setTimeout(() => {
+    highlight.classList.remove('flash-yellow');
+    highlight.classList.add('flash-blue');
+    
+    setTimeout(() => {
+      highlight.classList.remove('flash-blue');
+    }, 500);
+  }, 800);
 }
 
 function bindSpecificationWorkspaceEvents() {
