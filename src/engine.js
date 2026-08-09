@@ -568,6 +568,7 @@ async function delByIndex(store, index, key) {
 }
 
 export const engine = {
+  putMany,
   async initialize() {
     const retained = await one('stateRecords', 'application-large-state').catch(error => {
       persistenceStatus.lastFailure = { reason: 'indexeddb-large-state-read-failed', message: error?.message || String(error), at: new Date().toISOString() };

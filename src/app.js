@@ -90,6 +90,14 @@ import {
   validateDemonstrationProject
 } from './demo-project.js';
 import {
+  BEDFORD_PROJECT,
+  BEDFORD_PROJECT_ID,
+  BEDFORD_PROJECT_NAME,
+  BEDFORD_DRAWING_DOCUMENT_ID,
+  BEDFORD_SPEC_DOCUMENT_ID,
+  validateBedfordProject
+} from './bedford-project.js';
+import {
   buildMissionControlModel,
   missionControlResponseModeLabel,
   normalizeStartupExperience,
@@ -109,6 +117,7 @@ import {
 } from './data-model.js';
 import { openPdfBlob, readPdfPageGraphics, renderPdfPage } from './pdf-source.js';
 import { createSpecificationSourceViewer } from './specification-source-viewer.js';
+import { openSpecificationDocument, openSpecificationSection } from './authoritative-spec-resolver.js';
 import { extractLegendCandidates, matchLegendOccurrences } from './drawing-legends.js';
 import { applyObservationVerification, drawingAnalysisRequiresUpgrade, drawingWarningPresentation, DRAWING_ANALYSIS_VERSION, groupDrawingObservations, observationKindLabel, reanalyzeDrawingAnalysis, upgradeDrawingAnalysis } from './drawing-intelligence.js';
 import { assertDrawingPageConsistency, calculateDrawingFit, createDrawingRenderIdentity, createDrawingTarget, createPdfPageViewerAnalysis, defaultDrawingViewport, drawingAnnouncementText, drawingFocusTarget, drawingMatchingSetTarget, drawingRenderDecision, drawingResultKeyTarget, drawingReturnAction, drawingWheelZoom, drawingWorkspaceLayout, reconcileDrawingMatchingSheetIds, reconcileDrawingSelection, resolveDrawingTarget } from './drawing-navigation.js';
@@ -7368,43 +7377,103 @@ async function openSpecificationExplorer(sheet = {}) {
 
   // Handle section click
   modal.querySelectorAll('[data-spec-open]').forEach(button => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const li = button.closest('li[data-spec-section]');
       const sectionNumber = li.dataset.specSection;
-      const documentId = li.dataset.specDocument;
 
-      // Normalize section number for comparison (remove spaces/dashes)
-      const normalizedSectionNumber = String(sectionNumber || '').replace(/\D/g, '');
+      // Use the authoritative specification resolver
+      const docResult = await openSpecificationDocument(sectionNumber, engine);
       
-      // Find the actual indexed section by normalized section number
-      // The mapping's documentId may be canonical, so search across all documents
-      const allSections = specificationIndex.sections({ projectId: state().activeProject });
-      const matchedSection = allSections.find(section => 
-        section.normalizedSectionNumber === normalizedSectionNumber
-      );
-
-      if (!matchedSection) {
-        alert(`Specification section ${sectionNumber} not found in index`);
-        return; // Leave modal open on error
+      if (!docResult) {
+        return; // Error already shown by openSpecificationDocument
       }
 
-      // Use the existing navigation code from open-specification-source-page action
-      specificationDrawingReturnTarget = captureDrawingSupportReturnState();
-      specificationSourceTarget = {
-        documentId: matchedSection.documentId,
-        projectId: matchedSection.projectId || state().activeProject,
-        pageNumber: matchedSection.startPdfPage,
-        sectionNumber: matchedSection.sectionNumber,
-        sectionTitle: matchedSection.sectionTitle,
-        articleReference: '',
-        returnTarget: 'drawings'
-      };
+      const { source, section } = docResult;
       
-      // Close modal BEFORE calling show() to prevent dialog blocking view switch
+      // Close modal
       modal.close();
       modal.remove();
       
-      show('specification-source');
+      // Create full-screen viewer FIRST - must always be visible
+      const viewer = document.createElement('div');
+      viewer.className = 'mc-native-spec-viewer';
+      viewer.style.cssText = `
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 2147483647;
+        background: #111;
+        display: flex;
+        flex-direction: column;
+      `;
+
+      const header = document.createElement('div');
+      header.style.cssText = `
+        height: 48px;
+        flex: 0 0 48px;
+        background: #222;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+      `;
+
+      const title = document.createElement('div');
+      title.textContent = `Bedford Specifications — ${section.sectionNumber || sectionNumber}`;
+
+      const closeButton = document.createElement('button');
+      closeButton.textContent = 'Close';
+      closeButton.style.cssText = 'padding: 6px 16px; cursor: pointer; background: #444; color: white; border: 1px solid #555; border-radius: 4px; font-size: 13px;';
+
+      header.appendChild(title);
+      header.appendChild(closeButton);
+
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = `
+        flex: 1;
+        width: 100%;
+        min-height: 0;
+        border: 0;
+        background: white;
+      `;
+
+      viewer.appendChild(header);
+      viewer.appendChild(iframe);
+
+      // Append viewer to document.body NOW - this ensures it's always visible
+      document.body.appendChild(viewer);
+
+      // Handle close button
+      let blobUrl = null;
+      closeButton.addEventListener('click', () => {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        viewer.remove();
+      });
+
+      // Also close on Escape key
+      const escapeHandler = (event) => {
+        if (event.key === 'Escape') {
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
+          viewer.remove();
+          document.removeEventListener('keydown', escapeHandler);
+        }
+      };
+      document.addEventListener('keydown', escapeHandler);
+
+      // Now load the PDF - if this fails, show error in iframe
+      if (!source?.sourceBlob) {
+        iframe.srcdoc = '<h2 style="font-family:sans-serif;padding:30px">Specification PDF source is unavailable.</h2>';
+        return;
+      }
+
+      try {
+        blobUrl = URL.createObjectURL(source.sourceBlob);
+        iframe.src = `${blobUrl}#page=${Number(section.startPdfPage) || 1}`;
+      } catch (error) {
+        iframe.srcdoc = `<pre style="padding:30px">Failed to load specification PDF: ${String(error.message || error)}</pre>`;
+      }
     });
   });
 
@@ -12210,7 +12279,69 @@ function verifyStartup() {
 }
 
 engine.initialize()
-  .then(() => {
+  .then(async () => {
+    // Ensure built-in Bedford project exists
+    const existingBedford = state().projects.find(p => p.id === BEDFORD_PROJECT_ID);
+    if (!existingBedford) {
+      const validation = validateBedfordProject();
+      if (!validation.valid) {
+        console.error('Bedford project validation failed:', validation.errors);
+      } else {
+        await engine.importProject(BEDFORD_PROJECT, { preserveIdentifiers: true });
+        console.log('Built-in Bedford project registered');
+      }
+    }
+    
+    // Ensure built-in Bedford documents have source files registered
+    const bedfordDocs = await engine.documents();
+    const drawingDoc = bedfordDocs.find(d => d.id === BEDFORD_DRAWING_DOCUMENT_ID);
+    const specDoc = bedfordDocs.find(d => d.id === BEDFORD_SPEC_DOCUMENT_ID);
+    
+    // Register source files for built-in documents if they don't exist
+    if (drawingDoc && drawingDoc.builtIn && drawingDoc.staticPath) {
+      const existingSource = await engine.sourceFile(drawingDoc.id);
+      if (!existingSource) {
+        try {
+          const response = await fetch(drawingDoc.staticPath);
+          if (response.ok) {
+            const blob = await response.blob();
+            await engine.putMany('sourceFiles', [{
+              documentId: drawingDoc.id,
+              projectId: drawingDoc.projectId,
+              sourceBlob: blob,
+              sourcePath: drawingDoc.staticPath,
+              contentHash: ''
+            }]);
+            console.log('Bedford drawing source file registered');
+          }
+        } catch (error) {
+          console.error('Failed to register Bedford drawing source:', error);
+        }
+      }
+    }
+    
+    if (specDoc && specDoc.builtIn && specDoc.staticPath) {
+      const existingSource = await engine.sourceFile(specDoc.id);
+      if (!existingSource) {
+        try {
+          const response = await fetch(specDoc.staticPath);
+          if (response.ok) {
+            const blob = await response.blob();
+            await engine.putMany('sourceFiles', [{
+              documentId: specDoc.id,
+              projectId: specDoc.projectId,
+              sourceBlob: blob,
+              sourcePath: specDoc.staticPath,
+              contentHash: ''
+            }]);
+            console.log('Bedford specification source file registered');
+          }
+        } catch (error) {
+          console.error('Failed to register Bedford specification source:', error);
+        }
+      }
+    }
+    
     loadSettings();
     if (normalizeStartupExperience(state().settings.startupExperience) === 'mission-control') {
       if (!engine.activeConversation()) engine.createConversation();

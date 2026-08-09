@@ -7649,7 +7649,7 @@ function inspectionPrefill() {
 }
 
 async function openSpecificationExplorer() {
-  alert("ACTIVE HANDLER - openSpecificationExplorer");
+  console.log("=== SPEC EXPLORER ENTRY ===");
   
   // Always rebuild from the currently selected drawing
   const currentSheetNumber = drawingTarget?.sheetNumber || activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId)?.sheetNumber;
@@ -7751,23 +7751,34 @@ async function openSpecificationExplorer() {
   // Handle section click
   modal.querySelectorAll('[data-spec-open]').forEach(button => {
     button.addEventListener('click', async () => {
+      console.log("=== VIEW SOURCE CLICK ===");
+      
       const li = button.closest('li[data-spec-section]');
       const sectionNumber = li.dataset.specSection;
+      console.log("sectionNumber:", sectionNumber);
 
       // Use the authoritative specification resolver
+      console.log("Calling openSpecificationDocument...");
       const docResult = await openSpecificationDocument(sectionNumber, engine);
+      console.log("docResult:", docResult);
       
       if (!docResult) {
+        console.log("docResult is null - returning");
         return; // Error already shown by openSpecificationDocument
       }
 
       const { source, section } = docResult;
+      console.log("source:", Boolean(source));
+      console.log("section:", section);
       
       // Close modal
+      console.log("Closing modal...");
       modal.close();
       modal.remove();
+      console.log("Modal removed");
       
       // Create full-screen viewer FIRST - must always be visible
+      console.log("Creating viewer...");
       const viewer = document.createElement('div');
       viewer.className = 'mc-native-spec-viewer';
       viewer.style.cssText = `
@@ -7815,12 +7826,14 @@ async function openSpecificationExplorer() {
       viewer.appendChild(header);
       viewer.appendChild(iframe);
 
-      // Append viewer to document.body NOW - this ensures it's always visible
+      console.log("Appending viewer to document.body...");
       document.body.appendChild(viewer);
+      console.log("Viewer appended. viewer in DOM:", document.body.contains(viewer));
 
       // Handle close button
       let blobUrl = null;
       closeButton.addEventListener('click', () => {
+        console.log("Close button clicked");
         if (blobUrl) URL.revokeObjectURL(blobUrl);
         viewer.remove();
       });
@@ -7836,17 +7849,26 @@ async function openSpecificationExplorer() {
       document.addEventListener('keydown', escapeHandler);
 
       // Now load the PDF - if this fails, show error in iframe
+      console.log("Loading PDF...");
       if (!source?.sourceBlob) {
+        console.log("source.sourceBlob is missing");
         iframe.srcdoc = '<h2 style="font-family:sans-serif;padding:30px">Specification PDF source is unavailable.</h2>';
         return;
       }
 
       try {
         blobUrl = URL.createObjectURL(source.sourceBlob);
-        iframe.src = `${blobUrl}#page=${Number(section.startPdfPage) || 1}`;
+        console.log("blobUrl created:", blobUrl);
+        const pdfUrl = `${blobUrl}#page=${Number(section.startPdfPage) || 1}`;
+        console.log("Setting iframe.src to:", pdfUrl);
+        iframe.src = pdfUrl;
+        console.log("iframe.src set");
       } catch (error) {
+        console.error("Failed to create blob URL:", error);
         iframe.srcdoc = `<pre style="padding:30px">Failed to load specification PDF: ${String(error.message || error)}</pre>`;
       }
+      
+      console.log("=== VIEW SOURCE HANDLER COMPLETE ===");
     });
   });
 
