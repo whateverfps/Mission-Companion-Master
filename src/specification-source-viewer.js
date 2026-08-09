@@ -74,7 +74,9 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
     const exactPage = pageNumber(requestedPage);
     if (!isSpecificationDocument(document)) return { ok: false, status: 'invalid-document-role', diagnostics: diagnostics() };
     if (!exactPage || !sourceBlob || !targetCanvas?.getContext) return { ok: false, status: 'exact-source-page-required', diagnostics: diagnostics() };
+    
     await replaceCurrentRequest();
+    
     const requestGeneration = generation;
     const fingerprint = text(document.contentHash || document.version || document.revision || sourceBlob?.lastModified || sourceBlob?.size || '');
     const pdfKey = cacheKey({ documentId: document.id, fingerprint });
@@ -93,7 +95,9 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
     if (cachedRender?.snapshot) {
       canvas.width = cachedRender.width;
       canvas.height = cachedRender.height;
-      canvas.getContext('2d')?.drawImage?.(cachedRender.snapshot, 0, 0);
+      if (cachedRender.snapshot instanceof HTMLCanvasElement) {
+        canvas.getContext('2d')?.drawImage?.(cachedRender.snapshot, 0, 0);
+      }
       const state = diagnostics();
       onDiagnostic({ ...state, operation: 'render-cache-hit', durationMs: 0, cacheKey: activeRequestKey });
       return { ok: true, status: 'rendered', target: structuredClone(target), diagnostics: state, cacheHit: true };
