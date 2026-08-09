@@ -114,7 +114,7 @@ import {
 } from './data-model.js';
 import { openPdfBlob, readPdfPageGraphics, renderPdfPage } from './pdf-source.js';
 import { createSpecificationSourceViewer } from './specification-source-viewer.js';
-import { openSpecificationDocument } from './authoritative-spec-resolver.js';
+import { openSpecificationDocument, openSpecificationSection } from './authoritative-spec-resolver.js';
 import { extractLegendCandidates, matchLegendOccurrences } from './drawing-legends.js';
 import { applyObservationVerification, drawingAnalysisRequiresUpgrade, drawingWarningPresentation, DRAWING_ANALYSIS_VERSION, groupDrawingObservations, observationKindLabel, reanalyzeDrawingAnalysis, upgradeDrawingAnalysis } from './drawing-intelligence.js';
 import { assertDrawingPageConsistency, calculateDrawingFit, createDrawingRenderIdentity, createDrawingTarget, createPdfPageViewerAnalysis, defaultDrawingViewport, drawingAnnouncementText, drawingFocusTarget, drawingMatchingSetTarget, drawingRenderDecision, drawingResultKeyTarget, drawingReturnAction, drawingWheelZoom, drawingWorkspaceLayout, reconcileDrawingMatchingSheetIds, reconcileDrawingSelection, resolveDrawingTarget } from './drawing-navigation.js';
@@ -7686,10 +7686,13 @@ async function openSpecificationExplorer() {
   }
 
   // Filter to only include sections that exist in the authoritative index
-  const validLinks = sheetSpecs.links.filter(link => {
-    const section = specificationIndex.get(link.sectionNumber);
-    return section && section.ok;
-  });
+  const validLinks = [];
+  for (const link of sheetSpecs.links) {
+    const resolveResult = await openSpecificationSection(link.sectionNumber);
+    if (resolveResult && resolveResult.ok) {
+      validLinks.push(link);
+    }
+  }
 
   if (validLinks.length === 0) {
     alert(`No valid specification sections found for sheet ${currentSheet.sheetNumber}. All mapped sections are not in the Bedford specification manual.`);
@@ -7750,13 +7753,13 @@ async function openSpecificationExplorer() {
       const sectionNumber = li.dataset.specSection;
 
       // Use the authoritative specification resolver
-      const result = await openSpecificationDocument(sectionNumber, engine);
+      const docResult = await openSpecificationDocument(sectionNumber, engine);
       
-      if (!result) {
+      if (!docResult) {
         return; // Error already shown by openSpecificationDocument
       }
 
-      const { source, section } = result;
+      const { source, section } = docResult;
       
       // Close modal BEFORE calling show() to prevent dialog blocking view switch
       modal.close();
@@ -7793,17 +7796,15 @@ async function openSpecificationExplorer() {
         });
         
         // Open the specification PDF using the existing PDF viewer
-        // The PDF viewer doesn't care whether it's a drawing or specification
-        // It just opens (document, page)
-        const result = await specificationSourceViewer.open({
+        const viewerResult = await specificationSourceViewer.open({
           document: { id: section.documentId, name: 'Bedford Specifications' },
           sourceBlob: source.sourceBlob,
           pageNumber: section.startPdfPage,
           canvas: specCanvas
         });
         
-        if (!result.ok) {
-          alert('Failed to open specification PDF: ' + result.status);
+        if (!viewerResult.ok) {
+          alert('Failed to open specification PDF: ' + viewerResult.status);
           specContainer.remove();
         }
       } catch (error) {

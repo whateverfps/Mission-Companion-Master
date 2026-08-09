@@ -86,7 +86,7 @@ export async function openSpecificationDocument(sectionNumber, engine) {
   const source = await engine.sourceFile(section.documentId);
   
   if (!source) {
-    alert(`Specification document ${section.documentId} not found in project.`);
+    alert(`Specification document ${section.documentId} not found in project. Please attach the Bedford Specification Manual PDF to the project.`);
     return;
   }
   
