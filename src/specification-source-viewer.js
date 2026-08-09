@@ -75,7 +75,11 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
     if (!isSpecificationDocument(document)) return { ok: false, status: 'invalid-document-role', diagnostics: diagnostics() };
     if (!exactPage || !sourceBlob || !targetCanvas?.getContext) return { ok: false, status: 'exact-source-page-required', diagnostics: diagnostics() };
     
+    // Store the target canvas before clearing previous request
+    const activeCanvas = targetCanvas;
     await replaceCurrentRequest();
+    // Re-assign after replaceCurrentRequest (which sets canvas = null)
+    canvas = activeCanvas;
     
     const requestGeneration = generation;
     const fingerprint = text(document.contentHash || document.version || document.revision || sourceBlob?.lastModified || sourceBlob?.size || '');
@@ -88,16 +92,14 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
     if (generation !== requestGeneration) { return { ok: false, status: 'superseded', diagnostics: diagnostics() }; }
     proxy = cachedProxy;
     if (exactPage > Number(proxy?.numPages || 0)) { await close('page-unavailable'); return { ok: false, status: 'page-unavailable', diagnostics: diagnostics() }; }
-    canvas = targetCanvas;
+    // canvas is already assigned to activeCanvas above
     target = { documentId: text(document.id), pageNumber: exactPage, sectionNumber: text(sectionNumber), sectionTitle: text(sectionTitle), articleReference: text(articleReference), returnTarget: returnTarget ? structuredClone(returnTarget) : null };
     activeRequestKey = renderKey({ documentId: document.id, fingerprint, pageNumber: exactPage, scale: 1.25, rotation: 0 });
     const cachedRender = renderCache.get(activeRequestKey) || null;
     if (cachedRender?.snapshot) {
       canvas.width = cachedRender.width;
       canvas.height = cachedRender.height;
-      if (cachedRender.snapshot instanceof HTMLCanvasElement) {
-        canvas.getContext('2d')?.drawImage?.(cachedRender.snapshot, 0, 0);
-      }
+      canvas.getContext('2d')?.drawImage?.(cachedRender.snapshot, 0, 0);
       const state = diagnostics();
       onDiagnostic({ ...state, operation: 'render-cache-hit', durationMs: 0, cacheKey: activeRequestKey });
       return { ok: true, status: 'rendered', target: structuredClone(target), diagnostics: state, cacheHit: true };
