@@ -7649,6 +7649,8 @@ function inspectionPrefill() {
 }
 
 async function openSpecificationExplorer() {
+  alert("ACTIVE HANDLER - openSpecificationExplorer");
+  
   // Always rebuild from the currently selected drawing
   const currentSheetNumber = drawingTarget?.sheetNumber || activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId)?.sheetNumber;
   
@@ -7749,8 +7751,6 @@ async function openSpecificationExplorer() {
   // Handle section click
   modal.querySelectorAll('[data-spec-open]').forEach(button => {
     button.addEventListener('click', async () => {
-      alert("VIEW SOURCE HANDLER A53210C");
-      
       const li = button.closest('li[data-spec-section]');
       const sectionNumber = li.dataset.specSection;
 
