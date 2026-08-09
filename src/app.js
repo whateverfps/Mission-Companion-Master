@@ -7716,14 +7716,24 @@ function closeSpecificationWorkspace() {
 function restoreDrawingContext(context) {
   if (!context) return;
 
-  // Restore sheet
-  if (context.sheet) {
-    // Re-select the sheet
-    // This will trigger the drawing viewer to reload with the saved context
+  // Restore sheet by reactivating the engineering context
+  if (context.sheet && context.target) {
+    // Navigate back to the drawing
+    // This will restore the sheet selection
+    activateEngineeringContext({
+      projectId: context.target.projectId,
+      libraryId: context.target.libraryId,
+      documentId: context.target.documentId,
+      pageId: context.target.pageId,
+      selection: context.target.selection
+    }).catch(error => {
+      console.error('Failed to restore drawing context:', error);
+    });
   }
 
-  // Restore zoom, rotation, etc.
-  // This will be handled by the drawing viewer's state restoration
+  // Note: Zoom, rotation, filter, discipline, and overlay state restoration
+  // would require deeper integration with the drawing viewer's state management.
+  // For now, sheet restoration is the most critical part of the experience.
 }
 
 async function openInspectionForm(record = null, requestedPrefill = null) {
