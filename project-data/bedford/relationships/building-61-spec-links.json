@@ -758,11 +758,11 @@
       "drawingType": "Plan",
       "populated": 1,
       "source": "drawing-type-inference",
-      "links": [
-        {
-          "linkId": "link-25-4",
-          "createdAt": "2026-08-08T14:05:22.233Z",
-          "projectId": "bedford",
+    "links": [
+      {
+        "linkId": "link-25-4",
+        "createdAt": "2026-08-08T14:05:22.233Z",
+        "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:25",
           "specificationDocumentId": "bedford-specification-manual",
@@ -771,12 +771,29 @@
           "origin": "drawing-type-inference",
           "status": "inferred",
           "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61M-100 is a Plan in Mechanical discipline",
-          "reason": "Specification section 23 40 00 is typically referenced by Plan sheets in Mechanical discipline"
-        }
-      ]
-    },
+        "evidenceSource": "Drawing type and discipline analysis",
+        "evidenceText": "Sheet 61M-100 is a Plan in Mechanical discipline",
+        "reason": "Specification section 23 40 00 is typically referenced by Plan sheets in Mechanical discipline"
+      },
+      {
+        "linkId": "link-25-5",
+        "createdAt": "2026-08-09T00:00:00.000Z",
+        "projectId": "bedford",
+        "drawingDocumentId": "bedford-specification-manual",
+        "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:25",
+        "specificationDocumentId": "bedford-specification-manual",
+        "sectionNumber": "23 05 93",
+        "sectionTitle": "TESTING, ADJUSTING, AND BALANCING FOR HVAC",
+        "origin": "drawing-text-reference",
+        "status": "governing",
+        "relationshipType": "GOVERNING",
+        "confidence": 0.95,
+        "evidenceSource": "Drawing note",
+        "evidenceText": "General notes on 61M-100 explicitly state: 'REFER TO SPECIFICATION SECTION 23 05 93 FOR MORE INFORMATION.'",
+        "reason": "Explicit drawing note references Bedford Section 23 05 93 for HVAC testing and balancing requirements."
+      }
+    ]
+  },
     "61M-101": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:26",
@@ -784,11 +801,11 @@
       "drawingType": "Plan",
       "populated": 1,
       "source": "drawing-type-inference",
-      "links": [
-        {
-          "linkId": "link-26-4",
-          "createdAt": "2026-08-08T14:05:22.233Z",
-          "projectId": "bedford",
+    "links": [
+      {
+        "linkId": "link-26-4",
+        "createdAt": "2026-08-08T14:05:22.233Z",
+        "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:26",
           "specificationDocumentId": "bedford-specification-manual",
@@ -797,12 +814,29 @@
           "origin": "drawing-type-inference",
           "status": "inferred",
           "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61M-101 is a Plan in Mechanical discipline",
-          "reason": "Specification section 23 40 00 is typically referenced by Plan sheets in Mechanical discipline"
-        }
-      ]
-    },
+        "evidenceSource": "Drawing type and discipline analysis",
+        "evidenceText": "Sheet 61M-101 is a Plan in Mechanical discipline",
+        "reason": "Specification section 23 40 00 is typically referenced by Plan sheets in Mechanical discipline"
+      },
+      {
+        "linkId": "link-26-5",
+        "createdAt": "2026-08-09T00:00:00.000Z",
+        "projectId": "bedford",
+        "drawingDocumentId": "bedford-specification-manual",
+        "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:26",
+        "specificationDocumentId": "bedford-specification-manual",
+        "sectionNumber": "23 05 93",
+        "sectionTitle": "TESTING, ADJUSTING, AND BALANCING FOR HVAC",
+        "origin": "drawing-text-reference",
+        "status": "governing",
+        "relationshipType": "GOVERNING",
+        "confidence": 0.95,
+        "evidenceSource": "Drawing note",
+        "evidenceText": "General notes on 61M-101 explicitly state: 'REFER TO SPECIFICATION SECTION 23 05 93 FOR MORE INFORMATION.'",
+        "reason": "Explicit drawing note references Bedford Section 23 05 93 for HVAC testing and balancing requirements."
+      }
+    ]
+  },
     "61M-102": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:27",
