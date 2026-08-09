@@ -7803,6 +7803,19 @@ async function openSpecificationExplorer() {
         document.body.appendChild(specContainer);
         
         console.log('5. Canvas container appended to body');
+        console.log('   specContainer:', Boolean(specContainer));
+        console.log('   specContainer.id:', specContainer.id);
+        console.log('   specContainer.className:', specContainer.className);
+        console.log('   specContainer.parentElement:', specContainer.parentElement?.tagName);
+        console.log('   specContainer.parentElement === document.body:', specContainer.parentElement === document.body);
+        
+        const containerRect = specContainer.getBoundingClientRect();
+        console.log('   specContainer.getBoundingClientRect():', {
+          x: containerRect.x,
+          y: containerRect.y,
+          width: containerRect.width,
+          height: containerRect.height
+        });
         
         // Handle close button
         specHeader.querySelector('button').addEventListener('click', () => {

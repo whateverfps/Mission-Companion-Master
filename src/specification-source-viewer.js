@@ -168,6 +168,69 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
       console.log('CHAIN COMPLETES: Rendered successfully');
       console.log('  canvas.width:', canvas.width);
       console.log('  canvas.height:', canvas.height);
+      
+      // UI Presentation Debugging
+      console.log('=== UI PRESENTATION DEBUG ===');
+      console.log('canvas.parentElement:', canvas.parentElement?.tagName);
+      console.log('canvas.parentElement.id:', canvas.parentElement?.id);
+      console.log('canvas.parentElement.className:', canvas.parentElement?.className);
+      
+      if (canvas.parentElement) {
+        const container = canvas.parentElement.closest('.mc-specification-viewer-container');
+        console.log('Found .mc-specification-viewer-container:', Boolean(container));
+        
+        if (container) {
+          console.log('specContainer.parentElement:', container.parentElement?.tagName);
+          console.log('specContainer.parentElement === document.body:', container.parentElement === document.body);
+          
+          const rect = container.getBoundingClientRect();
+          console.log('specContainer.getBoundingClientRect():', {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            top: rect.top,
+            left: rect.left,
+            bottom: rect.bottom,
+            right: rect.right
+          });
+          
+          const computed = window.getComputedStyle(container);
+          console.log('specContainer computed styles:', {
+            display: computed.display,
+            visibility: computed.visibility,
+            opacity: computed.opacity,
+            zIndex: computed.zIndex,
+            position: computed.position,
+            top: computed.top,
+            left: computed.left,
+            width: computed.width,
+            height: computed.height
+          });
+          
+          console.log('Is specContainer visible?', computed.display !== 'none' && computed.visibility !== 'hidden' && computed.opacity !== '0');
+          
+          const canvasRect = canvas.getBoundingClientRect();
+          console.log('canvas.getBoundingClientRect():', {
+            x: canvasRect.x,
+            y: canvasRect.y,
+            width: canvasRect.width,
+            height: canvasRect.height
+          });
+          
+          console.log('Is canvas within viewport?', 
+            canvasRect.top >= 0 && 
+            canvasRect.left >= 0 && 
+            canvasRect.bottom <= window.innerHeight && 
+            canvasRect.right <= window.innerWidth
+          );
+        } else {
+          console.log('ERROR: .mc-specification-viewer-container not found in DOM ancestors');
+        }
+      } else {
+        console.log('ERROR: canvas has no parentElement');
+      }
+      
       return { ok: true, status: 'rendered', target: structuredClone(target), diagnostics: state };
     } catch (error) {
       console.log('CHAIN STOPS: Render failed');
