@@ -1,21 +1,8 @@
 evaluation/
 .DS_Store
-
-# Local Bedford project sources and generated intake data.
-project-documents/bedford/**
-!project-documents/bedford/
-!project-documents/bedford/drawings/
-!project-documents/bedford/drawings/README.md
-!project-documents/bedford/drawing-overrides.json.example
-project-data/bedford/*
-!project-data/bedford/README.md
-!project-data/bedford/*/
-project-data/bedford/*/*
-!project-data/bedford/*/.gitkeep
-!project-data/bedford/drawing-catalogs/
-!project-data/bedford/drawing-catalogs/*.json
-!project-data/bedford/relationships/
-!project-data/bedford/relationships/*.json
-!project-data/bedford/specifications/
-!project-data/bedford/specifications/authoritative-spec-index.json
 node_modules/
+
+# Local secrets - never commit
+.env
+.env.*
+!.env.example
