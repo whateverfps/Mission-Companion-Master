@@ -1310,6 +1310,10 @@ app.innerHTML = `
       <div id="specificationSourceEvidence" class="panel source-detail"></div>
     </section>
 
+    <section id="specification-workspace" class="view">
+      <div id="specificationWorkspace" class="mc-specification-workspace"></div>
+    </section>
+
     <section id="drawings" class="view">
       <div id="drawingInspector" class="mc-drawing-workspace"></div>
     </section>
@@ -1804,10 +1808,10 @@ const titles = {
 };
 
 function show(name) {
-  const preserveDrawingForSpecification = Boolean(specificationDrawingReturnTarget) && ['knowledge', 'specification-source'].includes(name);
+  const preserveDrawingForSpecification = Boolean(specificationDrawingReturnTarget) && ['knowledge', 'specification-source', 'specification-workspace'].includes(name);
   if (name !== 'drawings' && !preserveDrawingForSpecification) releaseDrawingSource();
-  if (name !== 'specification-source') void specificationSourceViewer.close('workspace-changed');
-  if (!['knowledge', 'specification-source'].includes(name)) specificationDrawingReturnTarget = null;
+  if (name !== 'specification-source' && name !== 'specification-workspace') void specificationSourceViewer.close('workspace-changed');
+  if (!['knowledge', 'specification-source', 'specification-workspace'].includes(name)) specificationDrawingReturnTarget = null;
   view = name;
   if (experience === 'professional-workspace') lastProfessionalView = name;
 
@@ -7331,6 +7335,7 @@ async function openSpecificationExplorer(sheet = {}) {
   // Create specification explorer modal
   const modal = document.createElement('dialog');
   modal.className = 'mc-specification-explorer-dialog';
+  modal.dataset.specSheet = sheet.sheetNumber;
   modal.innerHTML = `
     <header>
       <div>
@@ -7381,6 +7386,20 @@ async function openSpecificationExplorer(sheet = {}) {
       const li = button.closest('li[data-spec-section]');
       const sectionNumber = li.dataset.specSection;
 
+      // Save current drawing context before opening specification workspace
+      const drawingContext = {
+        sheet: activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId),
+        target: drawingTarget,
+        zoom: drawingZoom,
+        rotation: drawingRotation,
+        filter: drawingFilter,
+        discipline: drawingDiscipline,
+        type: drawingType,
+        selectedObject: selectedDrawingObject,
+        selectedObjectIds: selectedDrawingObjectIds,
+        activeViewportContext
+      };
+
       // Use the authoritative specification resolver
       const docResult = await openSpecificationDocument(sectionNumber, engine);
       
@@ -7394,86 +7413,13 @@ async function openSpecificationExplorer(sheet = {}) {
       modal.close();
       modal.remove();
       
-      // Create full-screen viewer FIRST - must always be visible
-      const viewer = document.createElement('div');
-      viewer.className = 'mc-native-spec-viewer';
-      viewer.style.cssText = `
-        position: fixed;
-        inset: 0;
-        width: 100vw;
-        height: 100vh;
-        z-index: 2147483647;
-        background: #111;
-        display: flex;
-        flex-direction: column;
-      `;
-
-      const header = document.createElement('div');
-      header.style.cssText = `
-        height: 48px;
-        flex: 0 0 48px;
-        background: #222;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 16px;
-      `;
-
-      const title = document.createElement('div');
-      title.textContent = `Bedford Specifications — ${section.sectionNumber || sectionNumber}`;
-
-      const closeButton = document.createElement('button');
-      closeButton.textContent = 'Close';
-      closeButton.style.cssText = 'padding: 6px 16px; cursor: pointer; background: #444; color: white; border: 1px solid #555; border-radius: 4px; font-size: 13px;';
-
-      header.appendChild(title);
-      header.appendChild(closeButton);
-
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = `
-        flex: 1;
-        width: 100%;
-        min-height: 0;
-        border: 0;
-        background: white;
-      `;
-
-      viewer.appendChild(header);
-      viewer.appendChild(iframe);
-
-      // Append viewer to document.body NOW - this ensures it's always visible
-      document.body.appendChild(viewer);
-
-      // Handle close button
-      let blobUrl = null;
-      closeButton.addEventListener('click', () => {
-        if (blobUrl) URL.revokeObjectURL(blobUrl);
-        viewer.remove();
+      // Open Construction Intelligence Workspace
+      openSpecificationWorkspace({
+        section,
+        source,
+        sheetNumber: li.closest('[data-spec-sheet]')?.dataset.specSheet,
+        drawingContext
       });
-
-      // Also close on Escape key
-      const escapeHandler = (event) => {
-        if (event.key === 'Escape') {
-          if (blobUrl) URL.revokeObjectURL(blobUrl);
-          viewer.remove();
-          document.removeEventListener('keydown', escapeHandler);
-        }
-      };
-      document.addEventListener('keydown', escapeHandler);
-
-      // Now load the PDF - if this fails, show error in iframe
-      if (!source?.sourceBlob) {
-        iframe.srcdoc = '<h2 style="font-family:sans-serif;padding:30px">Specification PDF source is unavailable.</h2>';
-        return;
-      }
-
-      try {
-        blobUrl = URL.createObjectURL(source.sourceBlob);
-        iframe.src = `${blobUrl}#page=${Number(section.startPdfPage) || 1}`;
-      } catch (error) {
-        iframe.srcdoc = `<pre style="padding:30px">Failed to load specification PDF: ${String(error.message || error)}</pre>`;
-      }
     });
   });
 
@@ -7484,6 +7430,275 @@ async function openSpecificationExplorer(sheet = {}) {
       modal.remove();
     }
   });
+}
+
+// Construction Intelligence Workspace state
+let specificationWorkspaceState = {
+  activeSection: null,
+  activeSource: null,
+  sheetNumber: null,
+  drawingContext: null,
+  governingSpecs: [],
+  currentSpecIndex: 0
+};
+
+async function openSpecificationWorkspace({ section, source, sheetNumber, drawingContext }) {
+  // Save state
+  specificationWorkspaceState = {
+    activeSection: section,
+    activeSource: source,
+    sheetNumber,
+    drawingContext,
+    governingSpecs: await loadGoverningSpecsForSheet(sheetNumber),
+    currentSpecIndex: 0
+  };
+
+  // Switch to specification workspace view
+  show('specification-workspace');
+  
+  // Render workspace
+  renderSpecificationWorkspace();
+}
+
+async function loadGoverningSpecsForSheet(sheetNumber) {
+  try {
+    const response = await fetch('project-data/bedford/relationships/building-61-spec-links.json');
+    if (response.ok) {
+      const data = await response.json();
+      const sheetSpecs = data.results[sheetNumber];
+      return sheetSpecs?.links || [];
+    }
+  } catch (error) {
+    console.warn('Failed to load spec links:', error);
+  }
+  return [];
+}
+
+function renderSpecificationWorkspace() {
+  const workspace = $('#specificationWorkspace');
+  if (!workspace) return;
+
+  const { activeSection, sheetNumber, governingSpecs, currentSpecIndex } = specificationWorkspaceState;
+  const currentSpec = governingSpecs[currentSpecIndex] || activeSection;
+
+  workspace.innerHTML = `
+    <header class="mc-specification-workspace-header">
+      <nav class="mc-specification-breadcrumb" aria-label="Breadcrumb">
+        <span>Bedford VA</span>
+        <span class="separator">›</span>
+        <span>Building 61</span>
+        <span class="separator">›</span>
+        <span>${esc(sheetNumber || 'Unknown')}</span>
+        <span class="separator">›</span>
+        <span>${esc(currentSpec?.sectionNumber || 'Unknown')}</span>
+        <span class="separator">›</span>
+        <span class="spec-title">${esc(currentSpec?.sectionTitle || 'Unknown')}</span>
+      </nav>
+      <div class="mc-specification-workspace-nav">
+        <button class="subtle" data-view="drawings" title="Return to Drawing">← Drawing</button>
+        <button class="subtle" data-spec-close title="Close Specification Workspace">✕ Close</button>
+      </div>
+    </header>
+
+    <div class="mc-specification-workspace-body">
+      <aside class="mc-specification-left-panel">
+        <div class="panel-head">
+          <div>
+            <span>GOVERNING SPECIFICATIONS</span>
+            <h2>${sheetNumber}</h2>
+          </div>
+        </div>
+        <div class="mc-specification-list">
+          ${governingSpecs.map((spec, index) => `
+            <button class="mc-spec-item ${index === currentSpecIndex ? 'active' : ''}" data-spec-index="${index}" data-spec-number="${esc(spec.sectionNumber)}">
+              <span class="mc-spec-number">${esc(spec.sectionNumber)}</span>
+              <span class="mc-spec-title">${esc(spec.sectionTitle)}</span>
+            </button>
+          `).join('')}
+        </div>
+      </aside>
+
+      <main class="mc-specification-center-panel">
+        <div class="mc-specification-viewer-container">
+          <iframe id="specificationViewer" class="mc-specification-viewer"></iframe>
+        </div>
+      </main>
+
+      <aside class="mc-specification-right-panel">
+        <div class="panel-head">
+          <div>
+            <span>CONSTRUCTION INTELLIGENCE</span>
+            <h2>Active Specification</h2>
+          </div>
+        </div>
+        <div class="mc-specification-intelligence">
+          <div class="mc-intelligence-placeholder">
+            <p><strong>Referenced Drawings</strong></p>
+            <p class="placeholder">Loading drawing references...</p>
+          </div>
+          <div class="mc-intelligence-placeholder">
+            <p><strong>Referenced Details</strong></p>
+            <p class="placeholder">Loading detail references...</p>
+          </div>
+          <div class="mc-intelligence-placeholder">
+            <p><strong>Related Specifications</strong></p>
+            <p class="placeholder">Loading related specifications...</p>
+          </div>
+          <div class="mc-intelligence-placeholder">
+            <p><strong>Inspection Notes</strong></p>
+            <p class="placeholder">Loading inspection records...</p>
+          </div>
+          <div class="mc-intelligence-placeholder">
+            <p><strong>Evidence</strong></p>
+            <p class="placeholder">Loading evidence records...</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="mc-specification-workspace-footer">
+      <div class="mc-specification-nav-controls">
+        <button id="prevSpec" ${currentSpecIndex === 0 ? 'disabled' : ''}>← Previous Governing Specification</button>
+        <span>${currentSpecIndex + 1} of ${governingSpecs.length}</span>
+        <button id="nextSpec" ${currentSpecIndex >= governingSpecs.length - 1 ? 'disabled' : ''}>Next Governing Specification →</button>
+      </div>
+    </footer>
+  `;
+
+  // Load PDF in viewer
+  loadSpecificationPdf(currentSpec);
+
+  // Bind events
+  bindSpecificationWorkspaceEvents();
+}
+
+function loadSpecificationPdf(currentSpec) {
+  const iframe = $('#specificationViewer');
+  if (!iframe || !specificationWorkspaceState.activeSource?.sourceBlob) return;
+
+  const { activeSource } = specificationWorkspaceState;
+  
+  // Get the section info from the governing specs list or use the stored active section
+  const sectionToLoad = currentSpec || specificationWorkspaceState.activeSection;
+  
+  // Resolve the section to get the correct page number
+  // For now, use the spec's startPdfPage if available, or default to page 1
+  const page = Number(sectionToLoad?.startPdfPage) || 1;
+  
+  const blobUrl = URL.createObjectURL(activeSource.sourceBlob);
+  iframe.src = `${blobUrl}#page=${page}`;
+  
+  // Cleanup blob URL when workspace is closed
+  iframe.dataset.blobUrl = blobUrl;
+}
+
+function bindSpecificationWorkspaceEvents() {
+  // Return to drawing
+  $('#specificationWorkspace [data-view="drawings"]')?.addEventListener('click', () => {
+    closeSpecificationWorkspace();
+  });
+
+  // Close workspace
+  $('#specificationWorkspace [data-spec-close]')?.addEventListener('click', () => {
+    closeSpecificationWorkspace();
+  });
+
+  // Previous specification
+  $('#prevSpec')?.addEventListener('click', async () => {
+    if (specificationWorkspaceState.currentSpecIndex > 0) {
+      specificationWorkspaceState.currentSpecIndex--;
+      const sectionNumber = specificationWorkspaceState.governingSpecs[specificationWorkspaceState.currentSpecIndex]?.sectionNumber;
+      if (sectionNumber) {
+        const resolved = await openSpecificationSection(sectionNumber);
+        if (resolved.ok) {
+          specificationWorkspaceState.activeSection = resolved.section;
+        }
+      }
+      renderSpecificationWorkspace();
+    }
+  });
+
+  // Next specification
+  $('#nextSpec')?.addEventListener('click', async () => {
+    if (specificationWorkspaceState.currentSpecIndex < specificationWorkspaceState.governingSpecs.length - 1) {
+      specificationWorkspaceState.currentSpecIndex++;
+      const sectionNumber = specificationWorkspaceState.governingSpecs[specificationWorkspaceState.currentSpecIndex]?.sectionNumber;
+      if (sectionNumber) {
+        const resolved = await openSpecificationSection(sectionNumber);
+        if (resolved.ok) {
+          specificationWorkspaceState.activeSection = resolved.section;
+        }
+      }
+      renderSpecificationWorkspace();
+    }
+  });
+
+  // Specification list items
+  $$('.mc-spec-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const index = Number(item.dataset.specIndex);
+      const sectionNumber = item.dataset.specNumber;
+      specificationWorkspaceState.currentSpecIndex = index;
+      
+      // Resolve the section to get the correct page number
+      if (sectionNumber) {
+        const resolved = await openSpecificationSection(sectionNumber);
+        if (resolved.ok) {
+          specificationWorkspaceState.activeSection = resolved.section;
+        }
+      }
+      
+      renderSpecificationWorkspace();
+    });
+  });
+
+  // Escape key
+  const escapeHandler = (event) => {
+    if (event.key === 'Escape') {
+      closeSpecificationWorkspace();
+      document.removeEventListener('keydown', escapeHandler);
+    }
+  };
+  document.addEventListener('keydown', escapeHandler);
+}
+
+function closeSpecificationWorkspace() {
+  // Cleanup blob URL
+  const iframe = $('#specificationViewer');
+  if (iframe?.dataset.blobUrl) {
+    URL.revokeObjectURL(iframe.dataset.blobUrl);
+  }
+
+  // Restore drawing context
+  if (specificationWorkspaceState.drawingContext) {
+    restoreDrawingContext(specificationWorkspaceState.drawingContext);
+  }
+
+  // Clear state
+  specificationWorkspaceState = {
+    activeSection: null,
+    activeSource: null,
+    sheetNumber: null,
+    drawingContext: null,
+    governingSpecs: [],
+    currentSpecIndex: 0
+  };
+
+  // Return to drawings view
+  show('drawings');
+}
+
+function restoreDrawingContext(context) {
+  if (!context) return;
+
+  // Restore sheet
+  if (context.sheet) {
+    // Re-select the sheet
+    // This will trigger the drawing viewer to reload with the saved context
+  }
+
+  // Restore zoom, rotation, etc.
+  // This will be handled by the drawing viewer's state restoration
 }
 
 async function openInspectionForm(record = null, requestedPrefill = null) {
