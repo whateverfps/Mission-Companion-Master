@@ -7765,60 +7765,85 @@ async function openSpecificationExplorer() {
       modal.close();
       modal.remove();
       
-      try {
-        // Create blob URL for the PDF
-        const blobUrl = URL.createObjectURL(source.sourceBlob);
-        
-        // Create full-screen native PDF viewer
-        const viewer = document.createElement('div');
-        viewer.className = 'mc-native-spec-viewer';
-        viewer.style.cssText = 'position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2147483647; background: #111; display: flex; flex-direction: column;';
-        
-        // Create header
-        const header = document.createElement('div');
-        header.style.cssText = 'padding: 12px 16px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; background: #222; color: white;';
-        header.innerHTML = `
-          <div style="display: flex; align-items: center; gap: 16px;">
-            <strong style="font-size: 14px;">Bedford Specifications</strong>
-            <span style="color: #888; font-size: 13px;">Section ${esc(section.sectionNumber)} · Page ${esc(section.startPdfPage)}</span>
-            ${section.sectionTitle ? `<span style="color: #666; font-size: 13px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(section.sectionTitle)}</span>` : ''}
-          </div>
-          <button style="padding: 6px 16px; cursor: pointer; background: #444; color: white; border: 1px solid #555; border-radius: 4px; font-size: 13px;">Close</button>
-        `;
-        
-        // Create iframe container
-        const iframeContainer = document.createElement('div');
-        iframeContainer.style.cssText = 'flex: 1; overflow: hidden; background: white;';
-        
-        // Create iframe
-        const iframe = document.createElement('iframe');
-        iframe.style.cssText = 'width: 100%; height: 100%; border: 0; background: white;';
-        iframe.src = `${blobUrl}#page=${section.startPdfPage}`;
-        
-        // Handle close button
-        header.querySelector('button').addEventListener('click', () => {
-          URL.revokeObjectURL(blobUrl);
+      // Create full-screen viewer FIRST - must always be visible
+      const viewer = document.createElement('div');
+      viewer.className = 'mc-native-spec-viewer';
+      viewer.style.cssText = `
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 2147483647;
+        background: #111;
+        display: flex;
+        flex-direction: column;
+      `;
+
+      const header = document.createElement('div');
+      header.style.cssText = `
+        height: 48px;
+        flex: 0 0 48px;
+        background: #222;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+      `;
+
+      const title = document.createElement('div');
+      title.textContent = `Bedford Specifications — ${section.sectionNumber || sectionNumber}`;
+
+      const closeButton = document.createElement('button');
+      closeButton.textContent = 'Close';
+      closeButton.style.cssText = 'padding: 6px 16px; cursor: pointer; background: #444; color: white; border: 1px solid #555; border-radius: 4px; font-size: 13px;';
+
+      header.appendChild(title);
+      header.appendChild(closeButton);
+
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = `
+        flex: 1;
+        width: 100%;
+        min-height: 0;
+        border: 0;
+        background: white;
+      `;
+
+      viewer.appendChild(header);
+      viewer.appendChild(iframe);
+
+      // Append viewer to document.body NOW - this ensures it's always visible
+      document.body.appendChild(viewer);
+
+      // Handle close button
+      let blobUrl = null;
+      closeButton.addEventListener('click', () => {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        viewer.remove();
+      });
+
+      // Also close on Escape key
+      const escapeHandler = (event) => {
+        if (event.key === 'Escape') {
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
           viewer.remove();
-        });
-        
-        // Assemble viewer
-        iframeContainer.appendChild(iframe);
-        viewer.appendChild(header);
-        viewer.appendChild(iframeContainer);
-        document.body.appendChild(viewer);
-        
-        // Also close on Escape key
-        const escapeHandler = (event) => {
-          if (event.key === 'Escape') {
-            URL.revokeObjectURL(blobUrl);
-            viewer.remove();
-            document.removeEventListener('keydown', escapeHandler);
-          }
-        };
-        document.addEventListener('keydown', escapeHandler);
-        
+          document.removeEventListener('keydown', escapeHandler);
+        }
+      };
+      document.addEventListener('keydown', escapeHandler);
+
+      // Now load the PDF - if this fails, show error in iframe
+      if (!source?.sourceBlob) {
+        iframe.srcdoc = '<h2 style="font-family:sans-serif;padding:30px">Specification PDF source is unavailable.</h2>';
+        return;
+      }
+
+      try {
+        blobUrl = URL.createObjectURL(source.sourceBlob);
+        iframe.src = `${blobUrl}#page=${Number(section.startPdfPage) || 1}`;
       } catch (error) {
-        alert('Failed to open specification PDF: ' + error.message);
+        iframe.srcdoc = `<pre style="padding:30px">Failed to load specification PDF: ${String(error.message || error)}</pre>`;
       }
     });
   });
