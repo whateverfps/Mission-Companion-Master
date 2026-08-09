@@ -404,7 +404,7 @@ const drawingActionRouter=createDrawingActionRouter({handlers:{
   'fit-page':()=>document.querySelector('[data-drawing-fit="page"]')?.click(),'fit-width':()=>document.querySelector('[data-drawing-fit="width"]')?.click(),'rotate-clockwise':()=>document.querySelector('[data-drawing-rotate]')?.click(),'reset-view':()=>document.querySelector('[data-drawing-reset-view]')?.click(),
   'open-drawing-page':target=>{drawingTarget=createDrawingTarget({...drawingTarget,documentId:target.documentId,pageNumber:target.pageNumber,sheetNumber:target.sheetNumber});return renderDrawingWorkspace(experience==='mission-control'?'mission-control':'professional');},
   'open-specification-section':target=>{specificationDrawingReturnTarget=captureDrawingSupportReturnState();return openProfessionalDestination({view:'knowledge',documentId:target.documentId,sectionNumber:target.sectionNumber});},
-  'open-specification-explorer':target=>{const currentSheetNumber=drawingTarget?.sheetNumber||activeDrawingViewerAnalysis?.sheets?.find(item=>item.pageId===drawingTarget?.pageId)?.sheetNumber;if(!currentSheetNumber){alert('No active sheet');return true;}const currentSheet=activeDrawingViewerAnalysis?.sheets?.find(item=>item.sheetNumber===currentSheetNumber)||{sheetNumber:currentSheetNumber,sheetTitle:'Unknown',discipline:'Unknown'};openSpecificationExplorer(currentSheet);return true;},
+  'open-specification-explorer':target=>{const currentSheetNumber=drawingTarget?.sheetNumber||activeDrawingViewerAnalysis?.sheets?.find(item=>item.pageId===drawingTarget?.pageId)?.sheetNumber;if(!currentSheetNumber){alert('No active sheet');return true;}const currentSheet=activeDrawingViewerAnalysis?.sheets?.find(item=>item.sheetNumber===currentSheetNumber)||{sheetNumber:currentSheetNumber,sheetTitle:'Unknown',discipline:'Unknown'};openSpecificationExplorer();return true;},
   'return-to-drawing':()=>restoreDrawingSupportReturnState(),
   'open-coverage-review':()=>{drawingCoverageReviewMode=true;return renderDrawingWorkspace(experience==='mission-control'?'mission-control':'professional');},
   'close-coverage-review':()=>{drawingCoverageReviewMode=false;return renderDrawingWorkspace(experience==='mission-control'?'mission-control':'professional');}
@@ -7648,9 +7648,20 @@ function inspectionPrefill() {
   };
 }
 
-async function openSpecificationExplorer(sheet = {}) {
-  if (!sheet || !sheet.sheetNumber) {
+async function openSpecificationExplorer() {
+  // Always rebuild from the currently selected drawing
+  const currentSheetNumber = drawingTarget?.sheetNumber || activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId)?.sheetNumber;
+  
+  if (!currentSheetNumber) {
     alert('Specification Explorer not available - no active sheet');
+    return;
+  }
+  
+  // Get the current sheet from the active drawing analysis
+  const currentSheet = activeDrawingViewerAnalysis?.sheets?.find(item => item.sheetNumber === currentSheetNumber);
+  
+  if (!currentSheet) {
+    alert(`Sheet ${currentSheetNumber} not found in current drawing`);
     return;
   }
 
@@ -7667,10 +7678,21 @@ async function openSpecificationExplorer(sheet = {}) {
   }
 
   // Look up specs for the current sheet
-  const sheetSpecs = specLinks[sheet.sheetNumber];
+  const sheetSpecs = specLinks[currentSheet.sheetNumber];
   
   if (!sheetSpecs || !sheetSpecs.links || sheetSpecs.links.length === 0) {
-    alert(`No specification mappings found for sheet ${sheet.sheetNumber}`);
+    alert(`No specification mappings found for sheet ${currentSheet.sheetNumber}`);
+    return;
+  }
+
+  // Filter to only include sections that exist in the authoritative index
+  const validLinks = sheetSpecs.links.filter(link => {
+    const section = specificationIndex.get(link.sectionNumber);
+    return section && section.ok;
+  });
+
+  if (validLinks.length === 0) {
+    alert(`No valid specification sections found for sheet ${currentSheet.sheetNumber}. All mapped sections are not in the Bedford specification manual.`);
     return;
   }
 
@@ -7681,21 +7703,21 @@ async function openSpecificationExplorer(sheet = {}) {
     <header>
       <div>
         <span>SPECIFICATION EXPLORER</span>
-        <strong>${esc(sheet.sheetNumber)}</strong>
+        <strong>${esc(currentSheet.sheetNumber)}</strong>
       </div>
       <button class="subtle" data-spec-explorer-close aria-label="Close">×</button>
     </header>
     <div class="mc-specification-explorer-content">
       <div class="mc-specification-explorer-info">
-        <p><strong>Sheet:</strong> ${esc(sheet.sheetNumber)}</p>
-        <p><strong>Title:</strong> ${esc(sheet.sheetTitle || 'Unknown')}</p>
-        <p><strong>Discipline:</strong> ${esc(sheet.discipline || 'Unknown')}</p>
-        <p><strong>Found:</strong> ${sheetSpecs.links.length} specification sections</p>
+        <p><strong>Sheet:</strong> ${esc(currentSheet.sheetNumber)}</p>
+        <p><strong>Title:</strong> ${esc(currentSheet.sheetTitle || 'Unknown')}</p>
+        <p><strong>Discipline:</strong> ${esc(currentSheet.discipline || 'Unknown')}</p>
+        <p><strong>Found:</strong> ${validLinks.length} specification sections</p>
       </div>
       <div class="mc-specification-explorer-results">
         <h3>Governing Specifications</h3>
         <ol>
-          ${sheetSpecs.links.map(link => `
+          ${validLinks.map(link => `
             <li data-spec-section="${esc(link.sectionNumber)}" data-spec-document="${esc(link.specificationDocumentId)}">
               <article>
                 <span class="mc-spec-section-number">${esc(link.sectionNumber)}</span>
