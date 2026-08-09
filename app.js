@@ -7761,52 +7761,62 @@ async function openSpecificationExplorer() {
 
       const { source, section } = docResult;
       
-      // Close modal BEFORE calling show() to prevent dialog blocking view switch
+      // Close modal
       modal.close();
       modal.remove();
       
       try {
-        // Create a canvas for the specification viewer
-        const specContainer = document.createElement('div');
-        specContainer.className = 'mc-specification-viewer-container';
-        specContainer.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 10000; display: flex; flex-direction: column;';
+        // Create blob URL for the PDF
+        const blobUrl = URL.createObjectURL(source.sourceBlob);
         
-        const specHeader = document.createElement('div');
-        specHeader.style.cssText = 'padding: 16px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;';
-        specHeader.innerHTML = `
-          <h2 style="margin: 0;">${esc(section.sectionTitle)}</h2>
-          <span style="color: #666;">Section ${esc(section.sectionNumber)} · Page ${esc(section.startPdfPage)}</span>
-          <button style="padding: 8px 16px; cursor: pointer;">Close</button>
+        // Create full-screen native PDF viewer
+        const viewer = document.createElement('div');
+        viewer.className = 'mc-native-spec-viewer';
+        viewer.style.cssText = 'position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2147483647; background: #111; display: flex; flex-direction: column;';
+        
+        // Create header
+        const header = document.createElement('div');
+        header.style.cssText = 'padding: 12px 16px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; background: #222; color: white;';
+        header.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <strong style="font-size: 14px;">Bedford Specifications</strong>
+            <span style="color: #888; font-size: 13px;">Section ${esc(section.sectionNumber)} · Page ${esc(section.startPdfPage)}</span>
+            ${section.sectionTitle ? `<span style="color: #666; font-size: 13px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(section.sectionTitle)}</span>` : ''}
+          </div>
+          <button style="padding: 6px 16px; cursor: pointer; background: #444; color: white; border: 1px solid #555; border-radius: 4px; font-size: 13px;">Close</button>
         `;
         
-        const specCanvasContainer = document.createElement('div');
-        specCanvasContainer.style.cssText = 'flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 20px;';
+        // Create iframe container
+        const iframeContainer = document.createElement('div');
+        iframeContainer.style.cssText = 'flex: 1; overflow: hidden; background: white;';
         
-        const specCanvas = document.createElement('canvas');
-        specCanvas.style.cssText = 'max-width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: block;';
-        
-        specCanvasContainer.appendChild(specCanvas);
-        specContainer.appendChild(specHeader);
-        specContainer.appendChild(specCanvasContainer);
-        document.body.appendChild(specContainer);
+        // Create iframe
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'width: 100%; height: 100%; border: 0; background: white;';
+        iframe.src = `${blobUrl}#page=${section.startPdfPage}`;
         
         // Handle close button
-        specHeader.querySelector('button').addEventListener('click', () => {
-          specContainer.remove();
+        header.querySelector('button').addEventListener('click', () => {
+          URL.revokeObjectURL(blobUrl);
+          viewer.remove();
         });
         
-        // Open the specification PDF using the existing PDF viewer
-        const viewerResult = await specificationSourceViewer.open({
-          document: { id: section.documentId, name: 'Bedford Specifications' },
-          sourceBlob: source.sourceBlob,
-          pageNumber: section.startPdfPage,
-          canvas: specCanvas
-        });
+        // Assemble viewer
+        iframeContainer.appendChild(iframe);
+        viewer.appendChild(header);
+        viewer.appendChild(iframeContainer);
+        document.body.appendChild(viewer);
         
-        if (!viewerResult.ok) {
-          alert('Failed to open specification PDF: ' + viewerResult.status);
-          specContainer.remove();
-        }
+        // Also close on Escape key
+        const escapeHandler = (event) => {
+          if (event.key === 'Escape') {
+            URL.revokeObjectURL(blobUrl);
+            viewer.remove();
+            document.removeEventListener('keydown', escapeHandler);
+          }
+        };
+        document.addEventListener('keydown', escapeHandler);
+        
       } catch (error) {
         alert('Failed to open specification PDF: ' + error.message);
       }
