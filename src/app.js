@@ -389,6 +389,18 @@ const drawingInteractionSession = createDrawingInteractionSession({
   }
 });
 
+document.addEventListener('click', event => {
+  const target = event.target.closest?.('[data-drawing-spec-explorer]');
+  if (target) {
+    console.log('[governing-specs] CAPTURE CLICK', {
+      target,
+      tagName: target.tagName,
+      disabled: target.disabled,
+      dataset: { ...target.dataset }
+    });
+  }
+}, true);
+
 function applyDrawingInteractionViewport(stage, zoom, rotation = drawingRotation) {
   if (!stage) return;
   const canvas = stage.querySelector('#mcDrawingCanvas');
@@ -3704,6 +3716,12 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
   }
   const actionBindings=[['[data-drawing-previous]','previous-page',{}],['[data-drawing-next]','next-page',{}],['[data-drawing-fit="page"]','fit-page',{}],['[data-drawing-fit="width"]','fit-width',{}],['[data-drawing-rotate]','rotate-clockwise',{}],['[data-drawing-reset-view]','reset-view',{}],['[data-drawing-spec-explorer]','open-specification-explorer',{}],['[data-drawing-ask]','ask-chief',{}],['[data-coverage-review-open]','open-coverage-review',{}],['[data-coverage-review-close]','close-coverage-review',{}],['[data-drawing-clear-object]','clear-selection',{}],['[data-drawing-object-nav="previous"]','previous-object',{}],['[data-drawing-object-nav="next"]','next-object',{}],['[data-drawing-object-nav="room"]','next-room',{}],['[data-drawing-object-nav="equipment"]','next-equipment',{}],['[data-drawing-object-nav="finish"]','next-finish',{}],['[data-drawing-object-center]','center-object',{objectId:selectedDrawingObject?.objectId,region:selectedDrawingObject?.region}],['[data-drawing-object-location]','zoom-object',{objectId:selectedDrawingObject?.objectId,region:selectedDrawingObject?.region}]];
   for(const[selector,actionId,target]of actionBindings)for(const control of host.querySelectorAll(selector)){control.dataset.drawingAction=actionId;control.dataset.drawingActionTarget=JSON.stringify(target);}
+  const governingButton = host.querySelector('[data-drawing-spec-explorer]');
+  console.log('[governing-specs] RENDERED BUTTON', {
+    exists: Boolean(governingButton),
+    outerHTML: governingButton?.outerHTML || null,
+    disabled: governingButton?.disabled ?? null
+  });
   logger.debug('Drawing action audit',auditDrawingActions(controlsFromDrawingRoot(host),{pageId:currentSheet?.pageId}));
   const preserveCanvas = Boolean(preservedCanvas && placeholderCanvas && preservedCanvas.dataset.drawingDocument === selected.id);
   if (preserveCanvas) placeholderCanvas.replaceWith(preservedCanvas);
