@@ -3717,11 +3717,14 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
   const actionBindings=[['[data-drawing-previous]','previous-page',{}],['[data-drawing-next]','next-page',{}],['[data-drawing-fit="page"]','fit-page',{}],['[data-drawing-fit="width"]','fit-width',{}],['[data-drawing-rotate]','rotate-clockwise',{}],['[data-drawing-reset-view]','reset-view',{}],['[data-drawing-spec-explorer]','open-specification-explorer',{}],['[data-drawing-ask]','ask-chief',{}],['[data-coverage-review-open]','open-coverage-review',{}],['[data-coverage-review-close]','close-coverage-review',{}],['[data-drawing-clear-object]','clear-selection',{}],['[data-drawing-object-nav="previous"]','previous-object',{}],['[data-drawing-object-nav="next"]','next-object',{}],['[data-drawing-object-nav="room"]','next-room',{}],['[data-drawing-object-nav="equipment"]','next-equipment',{}],['[data-drawing-object-nav="finish"]','next-finish',{}],['[data-drawing-object-center]','center-object',{objectId:selectedDrawingObject?.objectId,region:selectedDrawingObject?.region}],['[data-drawing-object-location]','zoom-object',{objectId:selectedDrawingObject?.objectId,region:selectedDrawingObject?.region}]];
   for(const[selector,actionId,target]of actionBindings)for(const control of host.querySelectorAll(selector)){control.dataset.drawingAction=actionId;control.dataset.drawingActionTarget=JSON.stringify(target);}
   const governingButton = host.querySelector('[data-drawing-spec-explorer]');
-  console.log('[governing-specs] RENDERED BUTTON', {
-    exists: Boolean(governingButton),
-    outerHTML: governingButton?.outerHTML || null,
-    disabled: governingButton?.disabled ?? null
-  });
+  if (governingButton) {
+    governingButton.onclick = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId) || currentSheet;
+      openSpecificationExplorer(sheet);
+    };
+  }
   logger.debug('Drawing action audit',auditDrawingActions(controlsFromDrawingRoot(host),{pageId:currentSheet?.pageId}));
   const preserveCanvas = Boolean(preservedCanvas && placeholderCanvas && preservedCanvas.dataset.drawingDocument === selected.id);
   if (preserveCanvas) placeholderCanvas.replaceWith(preservedCanvas);
@@ -4418,7 +4421,6 @@ app.addEventListener('click', async event => {
     button.hasAttribute('data-coverage-review-open') ||
     button.hasAttribute('data-coverage-review-close') ||
     button.hasAttribute('data-drawing-ask') ||
-    button.hasAttribute('data-drawing-spec-explorer') ||
     button.hasAttribute('data-drawing-current-work') ||
     button.hasAttribute('data-drawing-inspection') ||
     button.hasAttribute('data-drawing-edit-metadata') ||
@@ -4791,24 +4793,6 @@ app.addEventListener('click', async event => {
   if (button.hasAttribute('data-drawing-current-work')) { const result = await activateSelectedWorkspaceDocument(CONTEXT_ACTIVATION_SOURCES.constructionWorkPackage, drawingTarget?.documentId); if (!result?.available) alert(result?.reasons?.join(' ') || 'This drawing cannot establish exact Current Work.'); else if (shell === 'professional') show('engineering'); else await showMissionControlView('home'); return; }
   if (button.hasAttribute('data-drawing-inspection')) { const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId); selectedDoc = drawingTarget?.documentId || selectedDoc; await openInspectionForm(null, { projectId: state().activeProject, discipline: sheet?.discipline || '', sourceDocumentIds: [drawingTarget?.documentId].filter(Boolean), relatedDrawingIds: [drawingTarget?.documentId].filter(Boolean), sourceSectionIds: [], evidenceReferences: [] }); return; }
   if (button.hasAttribute('data-drawing-ask')) { const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId); pendingDrawingContext = createDrawingTarget({ ...drawingTarget, projectId: state().activeProject, documentId: analysis?.documentId, drawingSetId: analysis?.drawingSetId, sheetNumber: sheet?.sheetNumber, origin: 'ask-about-sheet' });chiefDrawingDock.open();const dock=$('.mc-chief-drawing-dock');if(dock){dock.hidden=false;dock.classList.add('open');const prompt=$('#chiefDrawingDockPrompt');if(prompt){prompt.value=`What governs ${sheet?.sheetNumber||`page ${drawingTarget?.pageNumber}`}?`;prompt.focus();}}return; }
-  if (button.hasAttribute('data-drawing-spec-explorer')) {
-    const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId) || currentSheet;
-    console.log('[governing-specs] CLICK', {
-      sheet,
-      sheetNumber: sheet?.sheetNumber || '',
-      currentPage: drawingTarget?.pageNumber || currentSheet?.pageNumber || '',
-      activeProject: state().activeProject || '',
-      drawingDocumentId: drawingTarget?.documentId || analysis?.documentId || '',
-    });
-    console.log('[governing-specs] OPEN EXPLORER', {
-      sheetNumber: sheet?.sheetNumber || '',
-      currentPage: drawingTarget?.pageNumber || currentSheet?.pageNumber || '',
-      activeProject: state().activeProject || '',
-      drawingDocumentId: drawingTarget?.documentId || analysis?.documentId || '',
-    });
-    openSpecificationExplorer(sheet);
-    return;
-  }
 });
 
 const activationTimestamp = () => new Date().toISOString();
