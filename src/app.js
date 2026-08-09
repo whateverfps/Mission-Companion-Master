@@ -4773,7 +4773,24 @@ app.addEventListener('click', async event => {
   if (button.hasAttribute('data-drawing-current-work')) { const result = await activateSelectedWorkspaceDocument(CONTEXT_ACTIVATION_SOURCES.constructionWorkPackage, drawingTarget?.documentId); if (!result?.available) alert(result?.reasons?.join(' ') || 'This drawing cannot establish exact Current Work.'); else if (shell === 'professional') show('engineering'); else await showMissionControlView('home'); return; }
   if (button.hasAttribute('data-drawing-inspection')) { const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId); selectedDoc = drawingTarget?.documentId || selectedDoc; await openInspectionForm(null, { projectId: state().activeProject, discipline: sheet?.discipline || '', sourceDocumentIds: [drawingTarget?.documentId].filter(Boolean), relatedDrawingIds: [drawingTarget?.documentId].filter(Boolean), sourceSectionIds: [], evidenceReferences: [] }); return; }
   if (button.hasAttribute('data-drawing-ask')) { const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId); pendingDrawingContext = createDrawingTarget({ ...drawingTarget, projectId: state().activeProject, documentId: analysis?.documentId, drawingSetId: analysis?.drawingSetId, sheetNumber: sheet?.sheetNumber, origin: 'ask-about-sheet' });chiefDrawingDock.open();const dock=$('.mc-chief-drawing-dock');if(dock){dock.hidden=false;dock.classList.add('open');const prompt=$('#chiefDrawingDockPrompt');if(prompt){prompt.value=`What governs ${sheet?.sheetNumber||`page ${drawingTarget?.pageNumber}`}?`;prompt.focus();}}return; }
-  if (button.hasAttribute('data-drawing-spec-explorer')) { const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId) || currentSheet; openSpecificationExplorer(sheet); return; }
+  if (button.hasAttribute('data-drawing-spec-explorer')) {
+    const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId) || currentSheet;
+    console.log('[governing-specs] CLICK', {
+      sheet,
+      sheetNumber: sheet?.sheetNumber || '',
+      currentPage: drawingTarget?.pageNumber || currentSheet?.pageNumber || '',
+      activeProject: state().activeProject || '',
+      drawingDocumentId: drawingTarget?.documentId || analysis?.documentId || '',
+    });
+    console.log('[governing-specs] OPEN EXPLORER', {
+      sheetNumber: sheet?.sheetNumber || '',
+      currentPage: drawingTarget?.pageNumber || currentSheet?.pageNumber || '',
+      activeProject: state().activeProject || '',
+      drawingDocumentId: drawingTarget?.documentId || analysis?.documentId || '',
+    });
+    openSpecificationExplorer(sheet);
+    return;
+  }
 });
 
 const activationTimestamp = () => new Date().toISOString();
@@ -7303,7 +7320,17 @@ function inspectionPrefill() {
 }
 
 async function openSpecificationExplorer(sheet = {}) {
+  console.log('[governing-specs] EXPLORER ENTRY', {
+    sheet,
+    sheetNumber: sheet?.sheetNumber || '',
+    sheetTitle: sheet?.sheetTitle || '',
+    discipline: sheet?.discipline || '',
+    activeProject: state().activeProject || '',
+    drawingDocumentId: drawingTarget?.documentId || activeDrawingViewerAnalysis?.documentId || '',
+    currentPage: drawingTarget?.pageNumber || currentSheet?.pageNumber || '',
+  });
   if (!sheet || !sheet.sheetNumber) {
+    console.log('[governing-specs] EXPLORER EXIT', { reason: 'no-active-sheet', sheet });
     alert('Specification Explorer not available - no active sheet');
     return;
   }
@@ -7311,19 +7338,23 @@ async function openSpecificationExplorer(sheet = {}) {
   // Load the Building 61 spec links mapping
   let specLinks = {};
   try {
+    const url = 'project-data/bedford/relationships/building-61-spec-links.json';
+    console.log('[governing-specs] RELATIONSHIPS REQUEST', new URL(url, document.baseURI).toString());
     const response = await fetch('project-data/bedford/relationships/building-61-spec-links.json');
+    console.log('[governing-specs] RELATIONSHIPS RESULT', { ok: response.ok, status: response.status });
     if (response.ok) {
       const data = await response.json();
       specLinks = data.results || {};
     }
   } catch (error) {
-    console.warn('Failed to load spec links mapping:', error);
+    console.error('[governing-specs] ERROR', error);
   }
 
   // Look up specs for the current sheet
   const sheetSpecs = specLinks[sheet.sheetNumber];
   
   if (!sheetSpecs || !sheetSpecs.links || sheetSpecs.links.length === 0) {
+    console.log('[governing-specs] EXPLORER EXIT', { reason: 'no-spec-links', sheetNumber: sheet.sheetNumber, sheetSpecs });
     alert(`No specification mappings found for sheet ${sheet.sheetNumber}`);
     return;
   }
@@ -7380,8 +7411,6 @@ async function openSpecificationExplorer(sheet = {}) {
     button.addEventListener('click', async () => {
       const li = button.closest('li[data-spec-section]');
       const sectionNumber = li.dataset.specSection;
-
-      // Use the authoritative specification resolver
       const docResult = await openSpecificationDocument(sectionNumber, engine);
       
       if (!docResult) {
@@ -7389,7 +7418,7 @@ async function openSpecificationExplorer(sheet = {}) {
       }
 
       const { source, section } = docResult;
-      
+
       // Close modal
       modal.close();
       modal.remove();
