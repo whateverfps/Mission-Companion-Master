@@ -309,7 +309,7 @@ export async function loadBedfordDrawingSpecMappings({
   drawingDocumentId 
 } = {}) {
   try {
-    const response = await fetch('/project-data/bedford/relationships/building-61-spec-links.json');
+    const response = await fetch(new URL('project-data/bedford/relationships/building-61-spec-links.json', document.baseURI).toString());
     if (!response.ok) {
       return { loaded: 0, reason: 'Mapping file not found' };
     }

@@ -41,7 +41,7 @@ export function createPlansController({
   
   (async () => {
     try {
-      const catalogResponse = await fetch('/project-data/bedford/drawing-catalogs/building-61.json');
+      const catalogResponse = await fetch(new URL('project-data/bedford/drawing-catalogs/building-61.json', document.baseURI).toString());
       if (catalogResponse && catalogResponse.ok) {
         building61Catalog = await catalogResponse.json();
       } else {
@@ -52,7 +52,7 @@ export function createPlansController({
     }
     
     try {
-      const specLinksResponse = await fetch('/verification/building-61-spec-links.json');
+      const specLinksResponse = await fetch(new URL('verification/building-61-spec-links.json', document.baseURI).toString());
       if (specLinksResponse && specLinksResponse.ok) {
         building61SpecLinks = await specLinksResponse.json();
       } else {

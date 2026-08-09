@@ -7,7 +7,7 @@ let authoritativeIndex = null;
 async function loadAuthoritativeIndex() {
   if (!authoritativeIndex) {
     try {
-      const response = await fetch('project-data/bedford/specifications/authoritative-spec-index.json');
+      const response = await fetch(new URL('project-data/bedford/specifications/authoritative-spec-index.json', document.baseURI).toString());
       authoritativeIndex = await response.json();
     } catch (error) {
       console.error('Failed to load authoritative specification index:', error);
