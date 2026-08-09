@@ -389,18 +389,6 @@ const drawingInteractionSession = createDrawingInteractionSession({
   }
 });
 
-document.addEventListener('click', event => {
-  const target = event.target.closest?.('[data-drawing-spec-explorer]');
-  if (target) {
-    console.log('[governing-specs] CAPTURE CLICK', {
-      target,
-      tagName: target.tagName,
-      disabled: target.disabled,
-      dataset: { ...target.dataset }
-    });
-  }
-}, true);
-
 function applyDrawingInteractionViewport(stage, zoom, rotation = drawingRotation) {
   if (!stage) return;
   const canvas = stage.querySelector('#mcDrawingCanvas');
@@ -7322,17 +7310,7 @@ function inspectionPrefill() {
 }
 
 async function openSpecificationExplorer(sheet = {}) {
-  console.log('[governing-specs] EXPLORER ENTRY', {
-    sheet,
-    sheetNumber: sheet?.sheetNumber || '',
-    sheetTitle: sheet?.sheetTitle || '',
-    discipline: sheet?.discipline || '',
-    activeProject: state().activeProject || '',
-    drawingDocumentId: drawingTarget?.documentId || activeDrawingViewerAnalysis?.documentId || '',
-    currentPage: drawingTarget?.pageNumber || currentSheet?.pageNumber || '',
-  });
   if (!sheet || !sheet.sheetNumber) {
-    console.log('[governing-specs] EXPLORER EXIT', { reason: 'no-active-sheet', sheet });
     alert('Specification Explorer not available - no active sheet');
     return;
   }
@@ -7340,23 +7318,19 @@ async function openSpecificationExplorer(sheet = {}) {
   // Load the Building 61 spec links mapping
   let specLinks = {};
   try {
-    const url = 'project-data/bedford/relationships/building-61-spec-links.json';
-    console.log('[governing-specs] RELATIONSHIPS REQUEST', new URL(url, document.baseURI).toString());
     const response = await fetch('project-data/bedford/relationships/building-61-spec-links.json');
-    console.log('[governing-specs] RELATIONSHIPS RESULT', { ok: response.ok, status: response.status });
     if (response.ok) {
       const data = await response.json();
       specLinks = data.results || {};
     }
   } catch (error) {
-    console.error('[governing-specs] ERROR', error);
+    console.error(error);
   }
 
   // Look up specs for the current sheet
   const sheetSpecs = specLinks[sheet.sheetNumber];
   
   if (!sheetSpecs || !sheetSpecs.links || sheetSpecs.links.length === 0) {
-    console.log('[governing-specs] EXPLORER EXIT', { reason: 'no-spec-links', sheetNumber: sheet.sheetNumber, sheetSpecs });
     alert(`No specification mappings found for sheet ${sheet.sheetNumber}`);
     return;
   }
