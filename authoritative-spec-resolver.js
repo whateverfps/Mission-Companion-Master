@@ -82,19 +82,36 @@ export async function openSpecificationDocument(sectionNumber, engine) {
   
   const { section } = result;
   
-  // Get the source file for the specification document
-  const source = await engine.sourceFile(section.documentId);
+  // The authoritative index uses "bedford-specification-manual" as the documentId
+  // But the actual Bedford project may use a different document ID
+  // Try to find the Bedford specification document in the current project
+  const documents = await engine.documents();
+  const specDocument = documents.find(doc => 
+    doc.projectId === 'bedford' && 
+    (doc.role === 'specification' || doc.name?.toLowerCase().includes('specification') || doc.title?.toLowerCase().includes('specification'))
+  );
   
-  if (!source) {
-    alert(`Specification document ${section.documentId} not found in project. Please attach the Bedford Specification Manual PDF to the project.`);
+  if (!specDocument) {
+    alert(`Bedford Specification Manual not found in current project. Please attach the Bedford Specification Manual PDF (518-22-700.Bedford.MA.EHRM.Specifications.IFC.20260413.pdf) to the Bedford project.`);
     return;
   }
   
-  // The caller should now:
-  // 1. openPdfBlob(source.sourceBlob)
-  // 2. navigate to section.startPdfPage
+  // Get the source file for the specification document
+  const source = await engine.sourceFile(specDocument.id);
   
-  return { source, section };
+  if (!source) {
+    alert(`Specification document ${specDocument.id} not found in project. Please reattach the Bedford Specification Manual PDF.`);
+    return;
+  }
+  
+  // Return the actual document ID and source, not the canonical one
+  return { 
+    source, 
+    section: {
+      ...section,
+      documentId: specDocument.id // Use the actual document ID from the project
+    }
+  };
 }
 
 // For direct browser console testing
