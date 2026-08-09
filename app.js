@@ -7749,6 +7749,8 @@ async function openSpecificationExplorer() {
   // Handle section click
   modal.querySelectorAll('[data-spec-open]').forEach(button => {
     button.addEventListener('click', async () => {
+      alert("VIEW SOURCE HANDLER A53210C");
+      
       const li = button.closest('li[data-spec-section]');
       const sectionNumber = li.dataset.specSection;
 
