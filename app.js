@@ -7752,12 +7752,23 @@ async function openSpecificationExplorer() {
       const li = button.closest('li[data-spec-section]');
       const sectionNumber = li.dataset.specSection;
 
+      console.log('=== VIEW SOURCE DEBUG ===');
+      console.log('1. View Source clicked');
+      console.log('   section:', sectionNumber);
+      console.log('   sheet:', currentSheet?.sheetNumber);
+
       // Use the authoritative specification resolver
+      console.log('2. Calling openSpecificationDocument()');
       const docResult = await openSpecificationDocument(sectionNumber, engine);
       
       if (!docResult) {
+        console.log('   CHAIN STOPS: openSpecificationDocument returned null');
         return; // Error already shown by openSpecificationDocument
       }
+
+      console.log('3. openSpecificationDocument succeeded');
+      console.log('   source:', Boolean(docResult.source));
+      console.log('   section:', docResult.section);
 
       const { source, section } = docResult;
       
@@ -7766,6 +7777,7 @@ async function openSpecificationExplorer() {
       modal.remove();
       
       try {
+        console.log('4. Creating canvas container');
         // Create a canvas for the specification viewer
         const specContainer = document.createElement('div');
         specContainer.className = 'mc-specification-viewer-container';
@@ -7790,12 +7802,20 @@ async function openSpecificationExplorer() {
         specContainer.appendChild(specCanvasContainer);
         document.body.appendChild(specContainer);
         
+        console.log('5. Canvas container appended to body');
+        
         // Handle close button
         specHeader.querySelector('button').addEventListener('click', () => {
           specContainer.remove();
         });
         
         // Open the specification PDF using the existing PDF viewer
+        console.log('6. Calling specificationSourceViewer.open()');
+        console.log('   documentId:', section.documentId);
+        console.log('   pageNumber:', section.startPdfPage);
+        console.log('   sourceBlob:', Boolean(source?.sourceBlob));
+        console.log('   canvas:', Boolean(specCanvas));
+        
         const viewerResult = await specificationSourceViewer.open({
           document: { id: section.documentId, name: 'Bedford Specifications' },
           sourceBlob: source.sourceBlob,
@@ -7803,11 +7823,20 @@ async function openSpecificationExplorer() {
           canvas: specCanvas
         });
         
+        console.log('7. specificationSourceViewer.open() returned');
+        console.log('   ok:', viewerResult.ok);
+        console.log('   status:', viewerResult.status);
+        
         if (!viewerResult.ok) {
+          console.log('   CHAIN STOPS: viewer returned failure');
           alert('Failed to open specification PDF: ' + viewerResult.status);
           specContainer.remove();
+        } else {
+          console.log('8. CHAIN COMPLETES SUCCESSFULLY');
         }
       } catch (error) {
+        console.log('   CHAIN STOPS: Exception thrown');
+        console.log('   error:', error);
         alert('Failed to open specification PDF: ' + error.message);
       }
     });

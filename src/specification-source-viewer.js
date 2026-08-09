@@ -71,45 +71,107 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
   }
 
   async function open({ document, sourceBlob, pageNumber: requestedPage, sectionNumber = '', sectionTitle = '', articleReference = '', returnTarget = null, canvas: targetCanvas } = {}) {
+    console.log('=== SPECIFICATION VIEWER DEBUG ===');
+    console.log('viewer.open() called');
+    console.log('  document.id:', document?.id);
+    console.log('  requestedPage:', requestedPage);
+    console.log('  sourceBlob:', Boolean(sourceBlob));
+    if (sourceBlob) {
+      console.log('  sourceBlob.size:', sourceBlob.size);
+      console.log('  sourceBlob.type:', sourceBlob.type);
+    }
+    console.log('  targetCanvas:', Boolean(targetCanvas));
+    
     const exactPage = pageNumber(requestedPage);
-    if (!isSpecificationDocument(document)) return { ok: false, status: 'invalid-document-role', diagnostics: diagnostics() };
-    if (!exactPage || !sourceBlob || !targetCanvas?.getContext) return { ok: false, status: 'exact-source-page-required', diagnostics: diagnostics() };
+    if (!isSpecificationDocument(document)) {
+      console.log('CHAIN STOPS: Invalid document role');
+      return { ok: false, status: 'invalid-document-role', diagnostics: diagnostics() };
+    }
+    if (!exactPage || !sourceBlob || !targetCanvas?.getContext) {
+      console.log('CHAIN STOPS: Missing required parameters');
+      console.log('  exactPage:', exactPage);
+      console.log('  sourceBlob:', Boolean(sourceBlob));
+      console.log('  targetCanvas:', Boolean(targetCanvas));
+      console.log('  targetCanvas.getContext:', Boolean(targetCanvas?.getContext));
+      return { ok: false, status: 'exact-source-page-required', diagnostics: diagnostics() };
+    }
+    
+    console.log('Parameters validated, calling replaceCurrentRequest()');
     await replaceCurrentRequest();
     const requestGeneration = generation;
     const fingerprint = text(document.contentHash || document.version || document.revision || sourceBlob?.lastModified || sourceBlob?.size || '');
     const pdfKey = cacheKey({ documentId: document.id, fingerprint });
     let cachedProxy = pdfCache.get(pdfKey) || null;
     if (!cachedProxy) {
+      console.log('Loading PDF from blob...');
       cachedProxy = await openPdf(sourceBlob);
+      console.log('PDF loaded, numPages:', cachedProxy?.numPages);
       pdfCache.set(pdfKey, cachedProxy);
+    } else {
+      console.log('Using cached PDF, numPages:', cachedProxy?.numPages);
     }
-    if (generation !== requestGeneration) { return { ok: false, status: 'superseded', diagnostics: diagnostics() }; }
+    if (generation !== requestGeneration) { 
+      console.log('CHAIN STOPS: Superseded by another request');
+      return { ok: false, status: 'superseded', diagnostics: diagnostics() }; 
+    }
+    
     proxy = cachedProxy;
-    if (exactPage > Number(proxy?.numPages || 0)) { await close('page-unavailable'); return { ok: false, status: 'page-unavailable', diagnostics: diagnostics() }; }
+    if (exactPage > Number(proxy?.numPages || 0)) { 
+      console.log('CHAIN STOPS: Page exceeds total pages');
+      await close('page-unavailable'); 
+      return { ok: false, status: 'page-unavailable', diagnostics: diagnostics() }; 
+    }
+    
     canvas = targetCanvas;
     target = { documentId: text(document.id), pageNumber: exactPage, sectionNumber: text(sectionNumber), sectionTitle: text(sectionTitle), articleReference: text(articleReference), returnTarget: returnTarget ? structuredClone(returnTarget) : null };
+    
+    console.log('Rendering page', exactPage);
     activeRequestKey = renderKey({ documentId: document.id, fingerprint, pageNumber: exactPage, scale: 1.25, rotation: 0 });
     const cachedRender = renderCache.get(activeRequestKey) || null;
     if (cachedRender?.snapshot) {
+      console.log('Using cached render');
       canvas.width = cachedRender.width;
       canvas.height = cachedRender.height;
       canvas.getContext('2d')?.drawImage?.(cachedRender.snapshot, 0, 0);
       const state = diagnostics();
       onDiagnostic({ ...state, operation: 'render-cache-hit', durationMs: 0, cacheKey: activeRequestKey });
+      console.log('CHAIN COMPLETES: Rendered from cache');
       return { ok: true, status: 'rendered', target: structuredClone(target), diagnostics: state, cacheHit: true };
     }
+    
+    console.log('Calling renderPage()...');
     const pageRender = await renderPage(proxy, exactPage, canvas, { scale: 1.25 });
-    if (generation !== requestGeneration) { try { pageRender?.cancel?.(); pageRender?.release?.(); } catch {} return { ok: false, status: 'superseded', diagnostics: diagnostics() }; }
+    console.log('renderPage() returned');
+    
+    if (generation !== requestGeneration) { 
+      console.log('CHAIN STOPS: Superseded during render');
+      try { pageRender?.cancel?.(); pageRender?.release?.(); } catch {} 
+      return { ok: false, status: 'superseded', diagnostics: diagnostics() }; 
+    }
+    
     render = pageRender;
     try {
+      console.log('Waiting for render promise...');
       await render.promise;
-      if (generation !== requestGeneration) return { ok: false, status: 'superseded', diagnostics: diagnostics() };
+      console.log('Render promise resolved');
+      
+      if (generation !== requestGeneration) {
+        console.log('CHAIN STOPS: Superseded after render');
+        return { ok: false, status: 'superseded', diagnostics: diagnostics() };
+      }
+      
       render?.releasePage?.();
       renderCache.set(activeRequestKey, { width: canvas.width, height: canvas.height, snapshot: cloneCanvas(canvas), sourceDocumentId: target.documentId, pageNumber: exactPage });
       render = null;
-      const state = diagnostics(); onDiagnostic(state);
+      const state = diagnostics(); 
+      onDiagnostic(state);
+      console.log('CHAIN COMPLETES: Rendered successfully');
+      console.log('  canvas.width:', canvas.width);
+      console.log('  canvas.height:', canvas.height);
       return { ok: true, status: 'rendered', target: structuredClone(target), diagnostics: state };
     } catch (error) {
+      console.log('CHAIN STOPS: Render failed');
+      console.log('  error:', error);
       if (generation === requestGeneration) await close('render-failed');
       return { ok: false, status: 'render-failed', error: error?.message || String(error), diagnostics: diagnostics() };
     }
