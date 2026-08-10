@@ -1253,6 +1253,42 @@
           "evidenceSource": "Plumbing plan demolition note",
           "evidenceText": "The sheet directs demolition of the existing water closet and urinal, which are plumbing fixtures explicitly shown in the scope.",
           "reason": "Bedford Section 22 40 00 directly governs the plumbing fixtures identified for demolition on the plan."
+        },
+        {
+          "linkId": "link-23-10",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:23",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "22 05 11",
+          "sectionTitle": "COMMON WORK RESULTS FOR PLUMBING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.74,
+          "evidenceSource": "Referenced spec related work",
+          "evidenceText": "Bedford Section 22 13 00 identifies Section 22 05 11 in its Part 1 related work/common work references, covering pipe hangers, supports, materials identification, and other common plumbing requirements that accompany sanitary piping work shown on the sheet.",
+          "reason": "Section 22 05 11 materially applies to the sanitary piping demolition scope shown on 61P-100 and is explicitly cross-referenced by the governing plumbing spec."
+        },
+        {
+          "linkId": "link-23-11",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:23",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "22 08 00",
+          "sectionTitle": "COMMISSIONING OF PLUMBING SYSTEMS",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.7,
+          "evidenceSource": "Referenced spec related work",
+          "evidenceText": "The plumbing fixture specification Section 22 40 00 lists Section 22 08 00 in Part 1 related work for commissioning, systems readiness checklist, and training. The plumbing sheet includes fixture demolition and associated piping work that falls within plumbing system commissioning and turnover.",
+          "reason": "Section 22 08 00 materially applies to the plumbing fixture and sanitary piping work shown on 61P-100 and is explicitly cross-referenced by the governing plumbing spec."
         }
       ]
     },
