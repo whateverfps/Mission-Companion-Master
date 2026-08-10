@@ -11,15 +11,33 @@ class ChiefIntelligenceBridge {
     this.factEngine = null;
     this.relationshipEngine = null;
     this.constructionGraph = null;
+    this.specificationSME = null;
+    this.readyPromise = Promise.resolve();
     this.initialized = false;
   }
 
-  initialize(constructionGraph, factEngine, relationshipEngine, reasoningEngine, projectStateService) {
+  resolveQuestionSheet(question) {
+    const text = String(question || '').trim();
+    const match = text.match(/\b(\d{2}[A-Z]{0,3}-?\d{3})\b/i);
+    return match ? match[1].toUpperCase() : '';
+  }
+
+  initialize({
+    constructionGraph = null,
+    factEngine = null,
+    relationshipEngine = null,
+    reasoningEngine = null,
+    projectStateService = null,
+    specificationSME = null,
+    readyPromise = null
+  } = {}) {
     this.constructionGraph = constructionGraph;
     this.factEngine = factEngine;
     this.relationshipEngine = relationshipEngine;
     this.reasoningEngine = reasoningEngine;
     this.projectStateService = projectStateService;
+    this.specificationSME = specificationSME;
+    this.readyPromise = readyPromise || Promise.resolve();
     this.initialized = true;
   }
 
@@ -68,12 +86,27 @@ class ChiefIntelligenceBridge {
       question,
       projectState: null,
       reasoningResult: null,
+      specificationAnswer: null,
       facts: [],
       relationships: [],
       specifications: [],
       specificationUsage: null,
       drawingContext: drawingContext
     };
+    const rawQuestion = String(question || '').trim();
+    const sheetMatch = this.resolveQuestionSheet(rawQuestion);
+    const normalizedSheetId = sheetMatch ? sheetMatch.replace(/\s+/g, '').toUpperCase() : '';
+    const resolvedSheet = drawingContext?.identity?.sheetNumber
+      ? { sheetNumber: drawingContext.identity.sheetNumber, pageId: drawingContext.identity.pageId, documentId: drawingContext.identity.documentId }
+      : (this.specificationSME?.getSheetFromQuestion ? this.specificationSME.getSheetFromQuestion(rawQuestion) : null)
+        || (this.specificationSME?.getSheetForSheetNumber ? this.specificationSME.getSheetForSheetNumber(normalizedSheetId) : null);
+    console.log('SPEC_SME_ROUTE', {
+      rawQuestion,
+      specSmeIntentMatch: this.shouldUseMissionCompanionIntelligence(question),
+      sheetRegexMatch: sheetMatch || '',
+      normalizedSheetId,
+      resolvedSheet: resolvedSheet ? { sheetNumber: resolvedSheet.sheetNumber, pageId: resolvedSheet.pageId, documentId: resolvedSheet.documentId } : null
+    });
 
     // Get project state
     try {
@@ -130,6 +163,49 @@ class ChiefIntelligenceBridge {
       }
     }
 
+    if (this.specificationSME) {
+      try {
+        const relationshipLookup = globalThis.__chiefRelationshipLookupForQuestion?.(rawQuestion, drawingContext) || [];
+        console.log('CHIEF_61FX100_RELATIONSHIP_LOOKUP', {
+          lookupKey: {
+            question: rawQuestion,
+            sheetMatch,
+            normalizedSheetId,
+            drawingPageId: resolvedSheet?.pageId || drawingContext?.identity?.pageId || '',
+            projectId: this.specificationSME?.projectId || ''
+          },
+          returnedRelationships: relationshipLookup.map(item => ({
+            sheetNumber: item.sheetNumber,
+            sectionNumber: item.sectionNumber,
+            sectionTitle: item.sectionTitle,
+            relationshipType: item.relationshipType,
+            status: item.status,
+            origin: item.origin,
+            drawingPageId: item.drawingPageId
+          }))
+        });
+        const specificationAnswer = this.specificationSME.answerQuestion(question, {
+          activeSheet: resolvedSheet,
+          drawingContext,
+          drawingLinks: relationshipLookup
+        });
+        console.log('SME_DRAWING_IDENTITY_LOOKUP', {
+          inputSheetId: normalizedSheetId || '',
+          resolvedCanonicalPageId: resolvedSheet?.pageId || '',
+          relationshipCount: specificationAnswer?.specifications?.length || 0
+        });
+        context.specificationAnswer = specificationAnswer;
+        console.log('SPEC_SME_RESULT', {
+          question: rawQuestion,
+          queryType: context.specificationAnswer?.queryType || '',
+          sectionNumbers: context.specificationAnswer?.specifications?.map(item => item.sectionNumber) || [],
+          drawingCount: context.specificationAnswer?.drawings?.length || 0
+        });
+      } catch (error) {
+        context.specificationAnswer = null;
+      }
+    }
+
     return context;
   }
 
@@ -147,25 +223,73 @@ class ChiefIntelligenceBridge {
   /**
    * Generate answer from Mission Companion intelligence
    */
-  generateMissionCompanionAnswer(question, context) {
-    if (!context.hasContext || !context.reasoningResult) {
+  generateMissionCompanionAnswer(question, context, mode = 'source') {
+    if (!context.hasContext || (!context.reasoningResult && !context.specificationAnswer)) {
       return null;
     }
+
+    const specificationAnswer = context.specificationAnswer || null;
+    const answerContent = context.reasoningResult?.answer || (() => {
+      if (!specificationAnswer) return '';
+      const sections = Array.isArray(specificationAnswer.specifications) ? specificationAnswer.specifications.slice(0, 6) : [];
+      const drawings = Array.isArray(specificationAnswer.drawings) ? specificationAnswer.drawings.slice(0, 6) : [];
+      if (mode === 'assisted') {
+        const lines = [];
+        lines.push('Specification requirement');
+        if (specificationAnswer.answer) lines.push(specificationAnswer.answer);
+        if (sections.length) {
+          lines.push('');
+          lines.push('What the Bedford source establishes');
+          for (const item of sections) {
+            lines.push(`- ${item.sectionNumber} — ${item.sectionTitle}${item.relationshipType ? ` (${item.relationshipType})` : ''}`);
+            if (item.summary) lines.push(`  Evidence: ${item.summary}`);
+          }
+        }
+        if (drawings.length) {
+          lines.push('');
+          lines.push('Field verification');
+          for (const item of drawings) {
+            lines.push(`- ${item.sheetNumber || item.pageId}${item.sheetTitle ? ` — ${item.sheetTitle}` : ''}${item.relationshipTypes?.length ? ` (${[...new Set(item.relationshipTypes)].join(', ')})` : ''}`);
+          }
+        }
+        return lines.join('\n');
+      }
+
+      const lines = [];
+      if (specificationAnswer.answer) lines.push(specificationAnswer.answer);
+      if (sections.length) {
+        lines.push('');
+        lines.push('Related Specifications:');
+        for (const item of sections) {
+          lines.push(`- ${item.sectionNumber} — ${item.sectionTitle}${item.relationshipType ? ` (${item.relationshipType})` : ''}`);
+          if (item.summary) lines.push(`  Evidence: ${item.summary}`);
+        }
+      }
+      if (drawings.length) {
+        lines.push('');
+        lines.push('Related Drawings:');
+        for (const item of drawings) {
+          lines.push(`- ${item.sheetNumber || item.pageId}${item.sheetTitle ? ` — ${item.sheetTitle}` : ''}${item.relationshipTypes?.length ? ` (${[...new Set(item.relationshipTypes)].join(', ')})` : ''}`);
+        }
+      }
+      return lines.join('\n');
+    })();
 
     const answer = {
       source: 'mission-companion',
       question,
-      answer: context.reasoningResult.answer,
-      confidence: context.reasoningResult.confidence,
-      reasoningPath: context.reasoningResult.reasoningPath,
-      evidence: context.reasoningResult.evidence,
-      assumptions: context.reasoningResult.assumptions,
-      unresolvedQuestions: context.reasoningResult.unresolvedQuestions,
-      conflicts: context.reasoningResult.conflicts,
+      answer: answerContent,
+      confidence: context.reasoningResult?.confidence || (context.specificationAnswer?.specifications?.length ? 0.9 : 0),
+      reasoningPath: context.reasoningResult?.reasoningPath || [],
+      evidence: context.reasoningResult?.evidence || [],
+      assumptions: context.reasoningResult?.assumptions || [],
+      unresolvedQuestions: context.reasoningResult?.unresolvedQuestions || [],
+      conflicts: context.reasoningResult?.conflicts || [],
+      specificationAnswer: context.specificationAnswer,
       projectState: context.projectState,
       facts: context.facts,
       relationships: context.relationships,
-      diagnostics: context.reasoningResult.diagnostics
+      diagnostics: context.reasoningResult?.diagnostics || { source: 'specification-sme' }
     };
 
     return answer;
@@ -231,6 +355,30 @@ class ChiefIntelligenceBridge {
       parts.push('');
     }
 
+    if (context.specificationAnswer) {
+      parts.push('SPECIFICATION SME:');
+      if (context.specificationAnswer.answer) {
+        parts.push(context.specificationAnswer.answer);
+      }
+      if (context.specificationAnswer.specifications?.length > 0) {
+        parts.push('Related Specifications:');
+        for (const item of context.specificationAnswer.specifications.slice(0, 12)) {
+          parts.push(`  - ${item.sectionNumber} — ${item.sectionTitle}${item.relationshipType ? ` (${item.relationshipType})` : ''}`);
+          if (item.summary) {
+            parts.push(`    Evidence: ${item.summary}`);
+          }
+        }
+        parts.push('');
+      }
+      if (context.specificationAnswer.drawings?.length > 0) {
+        parts.push('Related Drawings:');
+        for (const item of context.specificationAnswer.drawings.slice(0, 12)) {
+          parts.push(`  - ${item.sheetNumber || item.pageId}${item.sheetTitle ? ` — ${item.sheetTitle}` : ''}${item.relationshipTypes?.length ? ` (${[...new Set(item.relationshipTypes)].join(', ')})` : ''}`);
+        }
+        parts.push('');
+      }
+    }
+
     // Add facts
     if (context.facts.length > 0) {
       parts.push('RELATED FACTS:');
@@ -261,7 +409,9 @@ class ChiefIntelligenceBridge {
     const evidenceCount = 
       (context.reasoningResult?.evidence?.length || 0) +
       (context.facts?.length || 0) +
-      (context.relationships?.length || 0);
+      (context.relationships?.length || 0) +
+      (context.specificationAnswer?.specifications?.length || 0) +
+      (context.specificationAnswer?.drawings?.length || 0);
     
     return evidenceCount > 0;
   }

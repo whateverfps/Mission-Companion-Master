@@ -160,8 +160,11 @@ import { createChiefDrawingDock } from './chief-drawing-dock.js';
 import { answerChiefDrawingContextQuestion, buildChiefDrawingContext, createChiefDrawingContextSynchronizer } from './chief-drawing-context.js';
 import { classifyChiefDrawingCommand, resolveChiefDrawingCommand } from './chief-drawing-command-router.js';
 import { buildChiefDrawingCards } from './chief-drawing-cards.js';
+import { createChiefIntelligenceBridge } from './chief-intelligence-bridge.js';
+import { createChiefSpecificationSME } from './chief-specification-sme.js';
 import { building61DrawingCatalogFor } from './building-61-drawing-catalog.js';
 import { generatedDrawingCatalogFor, normalizeGeneratedDrawingCatalog } from './generated-drawing-catalogs.js';
+import { createSpecificationReverseIndex } from './specification-reverse-index.js';
 import { getPerformanceDiagnosticsState, markFirstPaint, markHydrated, performanceDiagnosticsEnabled } from './performance-diagnostics.js';
 
 installGlobalHandlers();
@@ -340,6 +343,175 @@ const drawingSpecificationLinks = createDrawingSpecificationLinkService({ index:
 const projectRelationshipEngine = createProjectRelationshipEngine();
 const projectObjectRegistry = createProjectObjectRegistry({ persistence: engine.projectObjectPersistence(), onDiagnostic: metric => logger.debug('Project object registry performance', metric) });
 const constructionGraph = createConstructionGraph({ persistence: engine.constructionGraphPersistence(), relationshipEngine: projectRelationshipEngine, objectRegistry: projectObjectRegistry, onDiagnostic: metric => logger.debug('Construction graph performance', metric) });
+const chiefIntelligenceBridge = createChiefIntelligenceBridge();
+let bedfordRelationshipResults = null;
+const bedfordRelationshipResultsBootstrap = fetch(new URL('project-data/bedford/relationships/building-61-spec-links.json', document.baseURI).toString())
+  .then(response => response.ok ? response.json() : null)
+  .then(data => {
+    bedfordRelationshipResults = data?.results || null;
+    const totalRelationships = bedfordRelationshipResults
+      ? Object.values(bedfordRelationshipResults).reduce((sum, sheet) => sum + (Array.isArray(sheet?.links) ? sheet.links.length : 0), 0)
+      : 0;
+    if (!totalRelationships) {
+      logger.warning('Bedford relationship bootstrap returned no links', { contained: true, source: 'project-data/bedford/relationships/building-61-spec-links.json' });
+    } else {
+      logger.debug('Bedford relationship bootstrap', { source: 'project-data/bedford/relationships/building-61-spec-links.json', loaded: totalRelationships });
+    }
+    return { ok: Boolean(totalRelationships), loaded: totalRelationships };
+  })
+  .catch(error => {
+    logger.warning('Bedford relationship bootstrap failed', { contained: true, source: 'project-data/bedford/relationships/building-61-spec-links.json', message: error?.message || String(error) });
+    bedfordRelationshipResults = null;
+    return { ok: false, loaded: 0, reason: error?.message || String(error) };
+  });
+function bedfordRelationshipLinksForSheet(sheetNumber = '') {
+  const sheet = String(sheetNumber || '').trim();
+  const rawLinks = [...(bedfordRelationshipResults?.[sheet]?.links || [])];
+  if (rawLinks.length) return rawLinks.map(link => ({ ...link, sheetNumber: sheet, projectId: BEDFORD_PROJECT_ID }));
+  const canonicalSheet = chiefSpecificationSME?.getSheetForSheetNumber?.(sheet) || drawingCatalog.recordsForDocument(BEDFORD_DRAWING_DOCUMENT_ID).find(item => item.sheetNumber === sheet) || null;
+  const pageId = canonicalSheet?.pageId || '';
+  const serviceLinks = pageId ? drawingSpecificationLinks.forPage(pageId) : drawingSpecificationLinks.forProject(BEDFORD_PROJECT_ID).filter(item => String(item.sheetNumber || '').trim() === sheet);
+  if (serviceLinks.length) return serviceLinks.map(link => ({ ...link, sheetNumber: sheet || link.sheetNumber || canonicalSheet?.sheetNumber || '', projectId: BEDFORD_PROJECT_ID }));
+  return [];
+}
+function bedfordRelationshipLinksForProject() {
+  if (bedfordRelationshipResults) {
+    const rawLinks = Object.entries(bedfordRelationshipResults).flatMap(([sheetNumber, sheetData]) => (Array.isArray(sheetData?.links) ? sheetData.links : []).map(link => ({ ...link, sheetNumber, projectId: BEDFORD_PROJECT_ID })));
+    if (rawLinks.length) return rawLinks;
+  }
+  const serviceLinks = drawingSpecificationLinks.forProject(BEDFORD_PROJECT_ID);
+  if (serviceLinks.length) return serviceLinks.map(link => ({ ...link, projectId: BEDFORD_PROJECT_ID }));
+  return [];
+}
+const chiefSpecificationSME = createChiefSpecificationSME({
+  projectId: BEDFORD_PROJECT_ID,
+  getAuthoritativeSections: () => specificationIndex.sections({ projectId: BEDFORD_PROJECT_ID }),
+  getDrawingLinks: () => bedfordRelationshipLinksForProject(),
+  getDrawingCatalog: () => drawingCatalog.recordsForDocument(BEDFORD_DRAWING_DOCUMENT_ID),
+  reverseIndex: null
+});
+globalThis.__specificationReverseIndex = createSpecificationReverseIndex({ drawingSpecificationLinks, projectObjectRegistry });
+chiefIntelligenceBridge.initialize({
+  specificationSME: chiefSpecificationSME
+});
+let bedfordDrawingSpecificationLinksBootstrap = Promise.resolve({ loaded: 0, reason: 'pending' });
+const bedfordSpecificationIndexBootstrap = fetch(new URL('project-data/bedford/specifications/authoritative-spec-index.json', document.baseURI).toString())
+  .then(response => response.ok ? response.json() : null)
+  .then(data => {
+    const sections = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.sections)
+        ? data.sections
+        : [];
+    if (sections.length) {
+      const document = { id: BEDFORD_SPEC_DOCUMENT_ID, projectId: BEDFORD_PROJECT_ID, name: 'Bedford Specification Manual', title: 'Bedford Specification Manual' };
+      specificationIndex.index({
+        document,
+        sourceSections: sections.map(section => ({
+          ...section,
+          pageStart: section.pageStart || section.startPdfPage || section.startPage || null,
+          pageEnd: section.pageEnd || section.endPdfPage || section.endPage || section.startPdfPage || section.startPage || null
+        }))
+      });
+      return { ok: true, sections: sections.length };
+    }
+    logger.warning('Bedford authoritative specification index preload returned no sections', { contained: true, source: 'project-data/bedford/specifications/authoritative-spec-index.json' });
+    return { ok: false, sections: 0, reason: 'no sections returned' };
+  })
+  .catch(error => {
+    logger.warning('Bedford authoritative specification index preload failed', { contained: true, source: 'project-data/bedford/specifications/authoritative-spec-index.json', message: error?.message || String(error) });
+    return { ok: false, sections: 0, reason: error?.message || String(error) };
+  });
+const bedfordDrawingCatalogBootstrap = fetch(new URL('project-data/bedford/drawing-catalogs/building-61.json', document.baseURI).toString())
+  .then(response => response.ok ? response.json() : null)
+  .then(data => {
+    const sheets = Array.isArray(data?.sheets) ? data.sheets : [];
+    if (sheets.length) {
+      drawingCatalog.reconcile({
+        documentId: BEDFORD_DRAWING_DOCUMENT_ID,
+        documentType: 'drawing-set',
+        projectId: BEDFORD_PROJECT_ID,
+        drawingSetId: data.drawingSetId || data.buildingId || '',
+        pageCount: Number(data.pageCount) || sheets.length,
+        authoritativeRecords: sheets
+      });
+      return { ok: true, sheets: sheets.length };
+    }
+    logger.warning('Bedford drawing catalog preload returned no sheets', { contained: true, source: 'project-data/bedford/drawing-catalogs/building-61.json' });
+    return { ok: false, sheets: 0, reason: 'no sheets returned' };
+  })
+  .catch(error => {
+    logger.warning('Bedford drawing catalog preload failed', { contained: true, source: 'project-data/bedford/drawing-catalogs/building-61.json', message: error?.message || String(error) });
+    return { ok: false, sheets: 0, reason: error?.message || String(error) };
+  });
+const bedfordBootstrapReady = Promise.allSettled([bedfordSpecificationIndexBootstrap, bedfordDrawingCatalogBootstrap, bedfordRelationshipResultsBootstrap]);
+bedfordDrawingSpecificationLinksBootstrap = bedfordBootstrapReady.then(async () => {
+  try {
+    return await loadBedfordDrawingSpecMappings({
+      drawingSpecificationLinks,
+      specificationIndex,
+      projectId: BEDFORD_PROJECT_ID,
+      drawingDocumentId: BEDFORD_SPEC_DOCUMENT_ID
+    });
+  } catch (error) {
+    logger.warning('Bedford drawing specification link bootstrap failed', { contained: true, source: 'project-data/bedford/relationships/building-61-spec-links.json', message: error?.message || String(error) });
+    return { loaded: 0, reason: error?.message || String(error) };
+  }
+});
+const bedfordRuntimeBootstrapReady = Promise.allSettled([bedfordBootstrapReady, bedfordDrawingSpecificationLinksBootstrap]);
+globalThis.__mcBedfordBootstrapReady = bedfordRuntimeBootstrapReady;
+chiefIntelligenceBridge.readyPromise = bedfordRuntimeBootstrapReady;
+void bedfordRuntimeBootstrapReady.then(async results => {
+  try {
+    const runtimeLinks = bedfordRelationshipLinksForProject();
+    const projectScopedLinks = runtimeLinks;
+    const explorerPageId = activeDrawingViewerAnalysis?.sheets?.find(item => item.sheetNumber === '61FX100')?.pageId || 'drawing-page:bedford-b61-drawings:16';
+    const explorerLookup = runtimeLinks.filter(item => item.drawingPageId === explorerPageId || item.sheetNumber === '61FX100');
+    console.log('BEDFORD_RELATIONSHIP_RUNTIME_STATE', {
+      totalRelationshipCount: runtimeLinks.length,
+      projectScopedRelationshipCount: projectScopedLinks.length,
+      relationshipStoreServiceName: 'drawingSpecificationLinks',
+      hydrationPromiseComplete: true,
+      firstFewRelationshipKeys: runtimeLinks.slice(0, 5).map(item => `${item.sheetNumber || ''}:${item.sectionNumber || ''}:${item.drawingPageId || ''}`),
+      relationshipRecordsContainingSheetId: runtimeLinks.filter(item => String(item.sheetNumber || '').includes('61FX100')),
+      relationshipRecordsContainingPageId: runtimeLinks.filter(item => String(item.drawingPageId || '').includes('drawing-page:bedford-b61-drawings:16'))
+    });
+    console.log('EXPLORER_61FX100_RELATIONSHIP_LOOKUP', {
+      lookupKey: { sheetNumber: '61FX100', pageId: explorerPageId, projectId: BEDFORD_PROJECT_ID },
+      returnedRelationships: explorerLookup.map(item => ({ sheetNumber: item.sheetNumber, sectionNumber: item.sectionNumber, sectionTitle: item.sectionTitle, relationshipType: item.relationshipType, status: item.status, origin: item.origin, drawingPageId: item.drawingPageId }))
+    });
+  } catch (error) {
+    console.log('BEDFORD_RELATIONSHIP_RUNTIME_STATE', { error: error?.message || String(error) });
+  }
+});
+
+void bedfordSpecificationIndexBootstrap.then(result => {
+  if (!result?.ok) return result;
+  void fetch(new URL('project-data/bedford/specifications/bedford-spec-index.json', document.baseURI).toString())
+    .then(response => response.ok ? response.json() : null)
+    .then(data => {
+      const sections = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.sections)
+          ? data.sections
+          : [];
+      if (sections.length) chiefSpecificationSME.setTextSections(sections);
+      else logger.warning('Bedford specification text preload returned no sections', { contained: true, source: 'project-data/bedford/specifications/bedford-spec-index.json' });
+    })
+    .catch(error => {
+      logger.warning('Bedford specification text preload failed', { contained: true, source: 'project-data/bedford/specifications/bedford-spec-index.json', message: error?.message || String(error) });
+    });
+  return bedfordRelationshipResultsBootstrap;
+});
+void bedfordDrawingCatalogBootstrap.then(result => {
+  if (!result?.ok) return result;
+  logger.debug('Bedford drawing catalog bootstrap', {
+    source: 'project-data/bedford/drawing-catalogs/building-61.json',
+    sheets: result?.sheets || 0,
+    reason: result?.reason || ''
+  });
+  return result;
+});
 const scheduleIdleWork = callback => {
   if (typeof globalThis.requestIdleCallback === 'function') return globalThis.requestIdleCallback(callback, { timeout: 1000 });
   return setTimeout(() => callback({ didTimeout: true, timeRemaining: () => 0 }), 0);
@@ -602,6 +774,8 @@ let specificationDrawingReturnTarget = null;
 let specificationSourceTarget = null;
 let pendingDrawingPanelScroll = null;
 let constructionIntelligenceExpanded = new Set(loadConstructionIntelligencePanelState().expanded);
+const chiefDrawingThumbnailPdfCache = new Map();
+const chiefDrawingThumbnailRenderCache = new Map();
 
 // Store specification results by pageId to preserve across navigation
 const pageRequirementState = new Map();
@@ -1927,6 +2101,8 @@ async function switchExperience(nextExperience, { destination = '', focus = true
     alert('Finish or cancel the open form before switching experiences.');
     return false;
   }
+  const activeElement = document.activeElement;
+  if (activeElement && activeElement !== document.body && typeof activeElement.blur === 'function') activeElement.blur();
   if (next === 'mission-control' && view === 'specification-source') {
     await specificationSourceViewer.close('workspace-changed');
     specificationSourceTarget = null;
@@ -2046,6 +2222,34 @@ async function openProfessionalDestination(target = {}) {
   }
   const destination = target.view || navigationTarget.destination || 'project';
   await switchExperience('professional-workspace', { destination });
+  if (destination === 'drawings') await renderDrawingWorkspace('professional');
+}
+
+async function openChiefSpecificationViewer(sectionNumber, { returnTarget = 'chat', preserveDrawingReturnState = false } = {}) {
+  const docResult = await openSpecificationDocument(sectionNumber, engine);
+  if (!docResult) return false;
+
+  const { section } = docResult;
+  specificationDrawingReturnTarget = preserveDrawingReturnState ? captureDrawingSupportReturnState() : null;
+  specificationSourceTarget = {
+    documentId: section.documentId,
+    projectId: section.projectId || state().activeProject || '',
+    pageNumber: Number(section.startPdfPage) || 0,
+    sectionNumber: section.sectionNumber || sectionNumber,
+    sectionTitle: section.sectionTitle || '',
+    articleReference: '',
+    returnTarget
+  };
+  await switchExperience('professional-workspace', { destination: 'specification-source' });
+  console.log('CHIEF_SPEC_DESTINATION_RESOLVED', {
+    sectionNumber: section.sectionNumber || sectionNumber,
+    requestedDestination: 'specification-source',
+    actualDestination: view,
+    rendererFunction: 'renderSpecificationSourceEvidence',
+    viewerContainerId: 'specificationSourceEvidence',
+    sourcePage: Number(section.startPdfPage) || 0
+  });
+  return true;
 }
 
 function missionControlActionLabel(priority) {
@@ -2104,6 +2308,409 @@ function chiefDrawingEvidenceMarkup(message, projectDocuments = [], analyses = [
     </div>
     <button type="button" class="subtle" data-action-target='${esc(JSON.stringify(createActionTarget({ kind: 'drawing', projectId: state().activeProject || '', documentId: evidence.documentId, drawingSetId: evidence.drawingSetId, sheetId: evidence.sheetId, sheetNumber: evidence.sheetNumber, pageNumber: evidence.pageNumber, observationId: evidence.observationId, region: evidence.region, origin: 'chief-preview', messageId: message.id, returnTarget: 'chief-answer' })))}'>Open exact drawing</button>
   </section>`;
+}
+
+const CHIEF_DISCIPLINE_PRIMARY_PREFIXES = {
+  HVAC: ['23'],
+  Fire: ['21', '28'],
+  Telecommunications: ['27'],
+  Electrical: ['26'],
+  Plumbing: ['22'],
+  Architectural: ['03', '04', '05', '06', '07', '08', '09', '10', '11', '12'],
+  Hazmat: ['01', '02']
+};
+
+function chiefDisciplineLabel(question = '') {
+  const lower = String(question || '').toLowerCase();
+  if (/(hvac|mechanical|duct|ductwork|air conditioning|ventilation|controls)/.test(lower)) return 'HVAC';
+  if (/(fire protection|fire alarm|sprinkler|suppression|notification|waterflow|tamper|smoke detector)/.test(lower)) return 'Fire';
+  if (/(telecom|telecommunications|communications|structured cabling|fiber|network|rack|cable tray)/.test(lower)) return 'Telecommunications';
+  if (/(electrical|lighting|receptacle|raceway|conductor|grounding|panelboard|power distribution)/.test(lower)) return 'Electrical';
+  if (/(plumbing|domestic water|sanitary|fixture|valve|testing|commissioning)/.test(lower)) return 'Plumbing';
+  if (/(architecture|architectural|partition|gypsum|door|frame|glazing|ceiling|finish|firestopping|signage|wall protection)/.test(lower)) return 'Architectural';
+  if (/(abatement|asbestos|lead|icra|infection control|containment|negative pressure|dust)/.test(lower)) return 'Hazmat';
+  return '';
+}
+
+function chiefSectionRelationshipBadge(relationshipType) {
+  const label = String(relationshipType || 'RELATED').trim() || 'RELATED';
+  return `<span class="mc-chief-spec-relationship mc-chief-spec-relationship-${esc(label.toLowerCase())}">${esc(label)}</span>`;
+}
+
+function chiefSheetForDrawingPage(pageId) {
+  try {
+    const sheet = chiefSpecificationSME?.getSheetForPageId?.(pageId) || null;
+    return sheet ? { ...sheet, sheetId: sheet.sheetId || sheet.sheetNumber || '', sheetNumber: sheet.sheetNumber || sheet.sheetId || '' } : null;
+  } catch {
+    return null;
+  }
+}
+
+function chiefSheetForDrawingReference(drawing = {}) {
+  const direct = chiefSheetForDrawingPage(drawing.pageId);
+  if (direct) return direct;
+  const pageNumber = Number(String(drawing.pageId || '').match(/:page:(\d+)/i)?.[1] || drawing.pageNumber || 0);
+  if (!pageNumber) return null;
+  const record = drawingCatalog.recordsForDocument(BEDFORD_DRAWING_DOCUMENT_ID).find(item => Number(item.pdfPageNumber) === pageNumber);
+  return record ? {
+    ...record,
+    documentId: record.documentId || BEDFORD_DRAWING_DOCUMENT_ID,
+    pageNumber: Number(record.pageNumber || record.pdfPageNumber) || pageNumber,
+    sheetId: record.sheetId || record.sheetNumber || record.pageId || '',
+    drawingSetId: record.drawingSetId || '',
+    sheetNumber: record.sheetNumber || drawing.sheetNumber || '',
+    sheetTitle: record.sheetTitle || drawing.sheetTitle || ''
+  } : null;
+}
+
+function chiefDrawingCardActionForSheet(sheet = null, drawing = null) {
+  const documentId = sheet?.documentId || drawing?.documentId || '';
+  const pageId = sheet?.pageId || drawing?.pageId || '';
+  const pageNumber = Number(sheet?.pageNumber || sheet?.pdfPageNumber || drawing?.pageNumber || drawing?.pdfPageNumber) || null;
+  if (!documentId) return null;
+  return createActionTarget({
+    kind: 'drawing',
+    projectId: state().activeProject || '',
+    documentId,
+    drawingSetId: sheet?.drawingSetId || drawing?.drawingSetId || '',
+    pageId,
+    sheetId: sheet?.sheetNumber || sheet?.sheetId || drawing?.sheetNumber || drawing?.sheetId || '',
+    pageNumber,
+    origin: 'chief-specification'
+  });
+}
+
+async function openChiefDrawingCardFromTarget(button, target = {}) {
+  const resolvedSheetId = button?.dataset?.chiefDrawingSheetId || '';
+  const resolvedPageId = button?.dataset?.chiefDrawingPageId || '';
+  const resolvedPageNumber = Number(button?.dataset?.chiefDrawingPageNumber) || null;
+  const documentId = button?.dataset?.chiefDrawingDocumentId || '';
+  const sheetNumber = button?.dataset?.chiefDrawingSheetNumber || '';
+  const sheetBefore = activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId) || null;
+  const analysis = activeDrawingViewerAnalysis || (documentId ? (await currentDrawingAnalyses()).find(item => item.documentId === documentId) || null : null);
+  const canonicalSheet = analysis?.sheets?.find(item => item.sheetId === resolvedSheetId) || analysis?.sheets?.find(item => item.pageId === resolvedPageId) || analysis?.sheets?.find(item => Number(item.pageNumber) === Number(resolvedPageNumber)) || analysis?.sheets?.find(item => item.sheetNumber === sheetNumber) || chiefSheetForDrawingReference({ pageId: resolvedPageId, pageNumber: resolvedPageNumber, sheetNumber: resolvedSheetId || sheetNumber }) || null;
+  const selectionAnalysis = analysis || (canonicalSheet ? {
+    projectId: target.projectId || state().activeProject || BEDFORD_PROJECT_ID,
+    documentId: documentId || BEDFORD_DRAWING_DOCUMENT_ID,
+    drawingSetId: canonicalSheet?.drawingSetId || target.drawingSetId || '',
+    sheets: [canonicalSheet],
+    observations: []
+  } : null);
+  console.log('CHIEF_DRAWING_CARD_CLICK_CAPTURE', {
+    clickedElement: button?.outerHTML || '',
+    closestDrawingCard: button?.closest?.('.mc-chief-spec-drawing-card')?.outerHTML || '',
+    resolvedSheetId,
+    resolvedPageId,
+    resolvedPageNumber,
+    canonicalDrawingRecord: canonicalSheet || null,
+    activeSheetBefore: sheetBefore?.sheetNumber || '',
+    drawingTargetBefore: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null
+  });
+  if (selectionAnalysis && canonicalSheet) {
+    console.log('CHIEF_DRAWING_CANONICAL_TARGET', {
+      canonicalDrawingRecord: canonicalSheet ? { sheetId: canonicalSheet.sheetId, pageId: canonicalSheet.pageId, pageNumber: canonicalSheet.pageNumber, sheetNumber: canonicalSheet.sheetNumber, sheetTitle: canonicalSheet.sheetTitle } : null
+    });
+    console.log('CHIEF_DRAWING_OPEN_START', {
+      functionUsed: 'selectPlansSheet',
+      activeSheetBefore: sheetBefore?.sheetNumber || '',
+      drawingTargetBefore: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null
+    });
+    console.log('CHIEF_DRAWING_WORKSPACE_ACTIVATION_BEFORE', {
+      activeShell: experience,
+      missionControlHidden: $('#missionControlShell')?.hidden ?? null,
+      missionControlAriaHidden: $('#missionControlShell')?.getAttribute('aria-hidden'),
+      professionalWorkspaceHidden: $('#professionalWorkspaceShell')?.hidden ?? null,
+      professionalWorkspaceAriaHidden: $('#professionalWorkspaceShell')?.getAttribute('aria-hidden'),
+      activeProfessionalDestination: view,
+      selectedSheet: canonicalSheet.sheetNumber,
+      selectedPageId: canonicalSheet.pageId
+    });
+    await switchExperience('mission-control');
+    await showMissionControlView('plans');
+    console.log('CHIEF_DRAWING_DESTINATION_RESOLVED', {
+      requestedDestination: 'drawings',
+      actualDestination: 'plans',
+      rendererFunction: 'renderMissionControlPlans',
+      viewerContainerId: 'missionDrawingViewer',
+      selectedSheet: canonicalSheet.sheetNumber,
+      selectedPageId: canonicalSheet.pageId
+    });
+    console.log('CHIEF_DRAWING_WORKSPACE_ACTIVATION_AFTER', {
+      activeShell: experience,
+      missionControlHidden: $('#missionControlShell')?.hidden ?? null,
+      missionControlAriaHidden: $('#missionControlShell')?.getAttribute('aria-hidden'),
+      professionalWorkspaceHidden: $('#professionalWorkspaceShell')?.hidden ?? null,
+      professionalWorkspaceAriaHidden: $('#professionalWorkspaceShell')?.getAttribute('aria-hidden'),
+      activeProfessionalDestination: view,
+      selectedSheet: canonicalSheet.sheetNumber,
+      selectedPageId: canonicalSheet.pageId
+    });
+    chiefConstructionContext = createChiefConstructionContext({
+      conversationId: engine.activeConversation()?.conversationId,
+      projectId: target.projectId || selectionAnalysis.projectId,
+      planResult: activePlanQuery || {},
+      drawingTarget: createDrawingTarget({
+        projectId: selectionAnalysis.projectId,
+        documentId: selectionAnalysis.documentId,
+        drawingSetId: selectionAnalysis.drawingSetId,
+        drawingId: canonicalSheet.drawingId || '',
+        sheetId: canonicalSheet.sheetId,
+        pageId: canonicalSheet.pageId,
+        pageNumber: canonicalSheet.pageNumber,
+        sheetNumber: canonicalSheet.sheetNumber,
+        observationId: target.observationId || '',
+        region: target.region || null,
+        origin: 'chief-specification',
+        returnTarget: 'chief-answer'
+      }),
+      workPackageReferences: { matchingSheetIds: drawingMatchingSheetIds, matchingObservationIds: activePlanQuery?.matchingObservationIds || [] },
+      updatedFrom: target.origin || 'shared-action'
+    });
+    await selectPlansSheet({ analysis: selectionAnalysis, sheet: canonicalSheet, shell: 'professional', navigationStartedAt: performance.now(), scrollActiveCard: true });
+    drawingTarget = createDrawingTarget({
+      projectId: selectionAnalysis.projectId,
+      documentId: selectionAnalysis.documentId,
+      drawingSetId: selectionAnalysis.drawingSetId,
+      drawingId: canonicalSheet.drawingId || '',
+      sheetId: canonicalSheet.sheetId,
+      pageId: canonicalSheet.pageId,
+      pageNumber: canonicalSheet.pageNumber,
+      sheetNumber: canonicalSheet.sheetNumber,
+      observationId: target.observationId || '',
+      region: target.region || null,
+      origin: 'chief-specification',
+      returnTarget: 'chief-answer'
+    });
+    console.log('CHIEF_DRAWING_SELECTION_RESULT', {
+      requestedSheetId: resolvedSheetId,
+      requestedPageId: resolvedPageId,
+      activeSheetAfterSelection: activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId)?.sheetNumber || canonicalSheet.sheetNumber || '',
+      activePageIdAfterSelection: drawingTarget?.pageId || '',
+      documentId: drawingTarget?.documentId || '',
+      pageNumber: drawingTarget?.pageNumber || null,
+      rendererCalled: Boolean(activeDrawingViewerAnalysis)
+    });
+    console.log('CHIEF_DRAWING_OPEN_RESULT', {
+      activeSheetAfter: activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId)?.sheetNumber || '',
+      drawingTargetAfter: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null
+    });
+    return true;
+  }
+  console.log('DRAWING_OPEN_FALLBACK_REASON', {
+    resolvedSheetId,
+    resolvedPageId,
+    resolvedPageNumber,
+    analysisFound: Boolean(analysis),
+    sheetFound: Boolean(canonicalSheet),
+    activeSheetBefore: sheetBefore?.sheetNumber || '',
+    documentId,
+    fallbackSheetNumber: canonicalSheet?.sheetNumber || ''
+  });
+  console.log('CHIEF_DRAWING_OPEN_RESULT', {
+    activeSheetAfter: activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId)?.sheetNumber || '',
+    drawingTargetAfter: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null,
+    fallback: true
+  });
+  await openProfessionalDestination({ view: 'drawings', documentId, projectId: state().activeProject, sheetId: resolvedSheetId, pageNumber: resolvedPageNumber, origin: 'chief-specification' });
+  return false;
+}
+
+function chiefRelationshipLookupForQuestion(question = '', drawingContext = null) {
+  const rawQuestion = String(question || '').trim();
+  const sheetMatch = chiefIntelligenceBridge.resolveQuestionSheet(rawQuestion);
+  const normalizedSheetId = sheetMatch ? sheetMatch.replace(/\s+/g, '').toUpperCase() : '';
+  const explicitSheet = normalizedSheetId ? chiefSpecificationSME?.getSheetFromQuestion?.(rawQuestion) || null : null;
+  const sheetFromNumber = normalizedSheetId ? chiefSpecificationSME?.getSheetForSheetNumber?.(normalizedSheetId) || null : null;
+  const resolvedSheet = explicitSheet || sheetFromNumber || null;
+  const drawingPageId = resolvedSheet?.pageId || drawingContext?.identity?.pageId || '';
+  const runtimeLinks = bedfordRelationshipLinksForSheet(normalizedSheetId) || (drawingPageId ? drawingSpecificationLinks.forPage(drawingPageId) : drawingSpecificationLinks.forProject(BEDFORD_PROJECT_ID));
+  const projectScopedLinks = runtimeLinks;
+  const matches = runtimeLinks.filter(item => item.drawingPageId === drawingPageId || item.sheetNumber === normalizedSheetId || item.sheetId === normalizedSheetId);
+  console.log('CHIEF_61FX100_RELATIONSHIP_LOOKUP', {
+    lookupKey: {
+      question: rawQuestion,
+      sheetMatch,
+      normalizedSheetId,
+      drawingPageId,
+      projectId: BEDFORD_PROJECT_ID
+    },
+    projectScopedRelationshipCount: projectScopedLinks.length,
+    returnedRelationships: matches.map(item => ({
+      sheetNumber: item.sheetNumber,
+      sectionNumber: item.sectionNumber,
+      sectionTitle: item.sectionTitle,
+      relationshipType: item.relationshipType,
+      status: item.status,
+      origin: item.origin,
+      drawingPageId: item.drawingPageId
+    }))
+  });
+  return matches;
+}
+globalThis.__chiefRelationshipLookupForQuestion = chiefRelationshipLookupForQuestion;
+
+function chiefSpecificationAnswerMarkup(message, question = '') {
+  const sheetContext = message?.drawingContext?.sheetNumber ? {
+    sheetNumber: message.drawingContext.sheetNumber,
+    pageId: message.drawingContext.pageId,
+    documentId: message.drawingContext.documentId
+  } : null;
+  const answer = message?.specificationAnswer || (question ? chiefSpecificationSME.answerQuestion(question, {
+    activeSheet: sheetContext,
+    drawingContext: message?.drawingContext || null
+  }) : null);
+  if (!answer?.specifications?.length && !answer?.drawings?.length) return '';
+
+  const disciplineLabel = answer.queryType === 'discipline' ? chiefDisciplineLabel(question) : '';
+  const primaryPrefixes = disciplineLabel ? CHIEF_DISCIPLINE_PRIMARY_PREFIXES[disciplineLabel] || [] : [];
+  const isPrimary = sectionNumber => !primaryPrefixes.length ? true : primaryPrefixes.some(prefix => String(sectionNumber || '').replace(/\s+/g, '').startsWith(prefix));
+  const primarySpecifications = answer.queryType === 'discipline' ? answer.specifications.filter(item => isPrimary(item.sectionNumber)) : answer.specifications;
+  const secondarySpecifications = answer.queryType === 'discipline' ? answer.specifications.filter(item => !isPrimary(item.sectionNumber)) : [];
+  const structuredDrawings = [...new Map([
+    ...(Array.isArray(answer.drawings) ? answer.drawings : []),
+    ...(Array.isArray(answer.specifications) ? answer.specifications.flatMap(item => Array.isArray(item.drawings) ? item.drawings : []) : [])
+  ].map(item => [item.sheetNumber || item.pageId || item.drawingPageId || item.documentId, item])).values()].filter(Boolean);
+
+  const specCard = item => {
+    const drawings = Array.isArray(item.drawings) ? item.drawings : [];
+    const detailText = [item.summary || item.evidence || item.reason || item.evidenceText || '', item.confidence ? `Confidence ${Math.round(Number(item.confidence) * 100)}%` : ''].filter(Boolean).join(' · ');
+    return `<article class="mc-chief-spec-card">
+      <header>
+        <div>
+          <span>${esc(item.sectionNumber || 'Section')}</span>
+          <strong>${esc(item.sectionTitle || 'Specification')}</strong>
+        </div>
+        ${chiefSectionRelationshipBadge(item.relationshipType)}
+      </header>
+      ${detailText ? `<p>${esc(detailText)}</p>` : ''}
+      <div class="mc-chief-spec-card-actions">
+        <button type="button" data-chief-spec-section="${esc(item.sectionNumber || '')}" data-chief-spec-renderer="chiefSpecificationAnswerMarkup" data-chief-spec-answer-type="${esc(answer.queryType || '')}">View Specification</button>
+      </div>
+      ${drawings.length ? `<div class="mc-chief-spec-drawing-list">${drawings.slice(0, 6).map(drawing => {
+        const sheet = chiefSheetForDrawingReference(drawing);
+        const actionTarget = chiefDrawingCardActionForSheet(sheet, drawing);
+        if (!actionTarget) return '';
+        const title = [sheet?.sheetNumber || drawing.sheetNumber, sheet?.sheetTitle || drawing.sheetTitle].filter(Boolean).join(' — ') || drawing.pageId;
+        const subtitle = [drawing.relationshipTypes?.join(', '), drawing.discipline].filter(Boolean).join(' · ');
+        return `<button type="button" class="mc-chief-spec-drawing-card" data-chief-drawing-card="true" data-chief-drawing-sheet-id="${esc(sheet?.sheetNumber || sheet?.sheetId || drawing.sheetNumber || '')}" data-chief-drawing-page-id="${esc(sheet?.pageId || drawing.pageId || '')}" data-chief-drawing-page-number="${esc(String(actionTarget.pageNumber || drawing.pageNumber || ''))}" data-chief-drawing-document-id="${esc(actionTarget.documentId || '')}" data-chief-drawing-sheet-number="${esc(sheet?.sheetNumber || drawing.sheetNumber || '')}" data-chief-drawing-thumbnail='${esc(JSON.stringify({ documentId: actionTarget.documentId, pageNumber: actionTarget.pageNumber, pageId: sheet?.pageId || drawing.pageId || '' }))}'>
+          <div class="mc-chief-spec-drawing-thumb" aria-hidden="true"><canvas data-chief-drawing-thumb-canvas></canvas><img data-chief-drawing-thumb-image alt="" hidden /></div>
+          <div class="mc-chief-spec-drawing-card-copy">
+            <strong>${esc(title)}</strong>
+            ${subtitle ? `<small>${esc(subtitle)}</small>` : ''}
+          </div>
+          <span class="mc-chief-spec-relationship mc-chief-spec-relationship-${esc(String(drawing.relationshipTypes?.[0] || 'RELATED').toLowerCase())}">${esc(drawing.relationshipTypes?.[0] || 'RELATED')}</span>
+        </button>`;
+      }).join('')}</div>` : ''}
+    </article>`;
+  };
+
+  const drawingCard = drawing => {
+    const sheet = chiefSheetForDrawingReference(drawing);
+    const actionTarget = chiefDrawingCardActionForSheet(sheet, drawing);
+    console.log('DRAWING_METADATA_RESOLVED', {
+      pageId: drawing.pageId,
+      sheet: sheet ? { sheetNumber: sheet.sheetNumber, sheetTitle: sheet.sheetTitle, pageId: sheet.pageId, pdfPageNumber: sheet.pdfPageNumber } : null,
+      actionTarget: actionTarget ? { documentId: actionTarget.documentId, pageNumber: actionTarget.pageNumber, sheetId: actionTarget.sheetId } : null
+    });
+    const title = [sheet?.sheetNumber || drawing.sheetNumber || '', sheet?.sheetTitle || drawing.sheetTitle || ''].filter(Boolean).join(' — ') || drawing.pageId || 'Drawing';
+    const subtitle = [drawing.relationshipTypes?.join(', '), drawing.discipline].filter(Boolean).join(' · ');
+    const fallbackActionTarget = actionTarget || createActionTarget({ kind: 'drawing', projectId: state().activeProject || '', documentId: BEDFORD_DRAWING_DOCUMENT_ID, pageNumber: Number(String(drawing.pageId || '').match(/:page:(\d+)/i)?.[1] || drawing.pageNumber || 0), origin: 'chief-specification' });
+    return `<button type="button" class="mc-chief-spec-drawing-card" data-chief-drawing-card="true" data-chief-drawing-sheet-id="${esc(sheet?.sheetNumber || sheet?.sheetId || drawing.sheetNumber || '')}" data-chief-drawing-page-id="${esc(sheet?.pageId || drawing.pageId || '')}" data-chief-drawing-page-number="${esc(String(fallbackActionTarget.pageNumber || drawing.pageNumber || ''))}" data-chief-drawing-document-id="${esc(fallbackActionTarget.documentId || '')}" data-chief-drawing-sheet-number="${esc(sheet?.sheetNumber || drawing.sheetNumber || '')}" data-chief-drawing-thumbnail='${esc(JSON.stringify({ documentId: fallbackActionTarget.documentId, pageNumber: fallbackActionTarget.pageNumber, pageId: sheet?.pageId || drawing.pageId || '' }))}'>
+      <div class="mc-chief-spec-drawing-thumb" aria-hidden="true"><canvas data-chief-drawing-thumb-canvas></canvas><img data-chief-drawing-thumb-image alt="" hidden /></div>
+      <div class="mc-chief-spec-drawing-card-copy">
+        <span>${esc(drawing.relationshipTypes?.[0] || 'RELATED')}</span>
+        <strong>${esc(title)}</strong>
+        ${subtitle ? `<small>${esc(subtitle)}</small>` : ''}
+      </div>
+    </button>`;
+  };
+
+  const specGroups = answer.queryType === 'discipline' ? `
+    ${primarySpecifications.length ? `<section class="mc-chief-spec-group"><header><span>PRIMARY ${esc(disciplineLabel || 'SPECIFICATION')} SPECIFICATIONS</span></header><div class="mc-chief-spec-card-list">${primarySpecifications.map(specCard).join('')}</div></section>` : ''}
+    ${secondarySpecifications.length ? `<section class="mc-chief-spec-group"><header><span>RELATED / CROSS-DISCIPLINE REQUIREMENTS</span></header><div class="mc-chief-spec-card-list">${secondarySpecifications.map(specCard).join('')}</div></section>` : ''}
+  ` : `<section class="mc-chief-spec-group"><header><span>${answer.queryType === 'specification' ? 'SPECIFICATION' : 'SPECIFICATION REFERENCES'}</span></header><div class="mc-chief-spec-card-list">${answer.specifications.map(specCard).join('')}</div></section>`;
+
+  const drawingsMarkup = structuredDrawings.length ? `<section class="mc-chief-spec-group"><header><span>${answer.queryType === 'specification' ? 'RELATED BUILDING 61 DRAWINGS' : 'RELATED DRAWINGS'}</span></header><div class="mc-chief-spec-card-list">${structuredDrawings.map(drawingCard).join('')}</div></section>` : '';
+  const currentSheet = message?.drawingContext?.sheetNumber ? `<p class="mc-chief-spec-context"><strong>Current sheet:</strong> ${esc(message.drawingContext.sheetNumber)}${message.drawingContext.sheetTitle ? ` — ${esc(message.drawingContext.sheetTitle)}` : ''}</p>` : '';
+  const hasStructuredResults = Boolean(answer.specifications?.length || answer.drawings?.length);
+  const answerText = hasStructuredResults && answer.queryType !== 'general'
+    ? answer.queryType === 'drawing'
+      ? `Building 61 drawing ${sheetContext?.sheetNumber || message?.drawingContext?.sheetNumber || ''} has ${answer.specifications.length} specification section${answer.specifications.length === 1 ? '' : 's'}.`
+      : answer.queryType === 'specification'
+        ? `Structured Bedford specification results are shown below for ${answer.specifications[0]?.sectionNumber || 'this section'}.`
+        : answer.queryType === 'discipline'
+          ? `Structured Bedford specification results are shown below for ${disciplineLabel || 'this discipline'}.`
+          : answer.answer
+    : answer.answer;
+
+  return `<section class="mc-chief-specification-answer" aria-label="Chief specification drill-down">
+    <header class="mc-chief-specification-answer-header">
+      <div>
+        <span>SPECIFICATION SME</span>
+        <strong>${esc(answer.queryType === 'drawing' ? 'Drawing-scoped answer' : answer.queryType === 'specification' ? 'Specification answer' : answer.queryType === 'discipline' ? 'Discipline answer' : 'Specification result')}</strong>
+      </div>
+      ${chiefSectionRelationshipBadge(answer.queryType || 'RESULT')}
+    </header>
+    ${currentSheet}
+    ${answerText ? `<p class="mc-chief-specification-answer-text">${esc(answerText)}</p>` : ''}
+    ${specGroups}
+    ${drawingsMarkup}
+  </section>`;
+}
+
+async function renderChiefDrawingThumbnails() {
+  const answerMessages = [...$('#missionControlContent')?.querySelectorAll?.('.mc-control-message.assistant') || []];
+  const latestAnswer = answerMessages.at(-1) || null;
+  const cards = [...latestAnswer?.querySelectorAll?.('[data-chief-drawing-thumbnail]') || []];
+  if (!cards.length) return;
+  const uniqueCards = [...new Map(cards.map(card => {
+    const payload = (() => { try { return JSON.parse(card.dataset.chiefDrawingThumbnail || '{}'); } catch { return {}; } })();
+    const key = `${payload.documentId || ''}:${Number(payload.pageNumber) || 0}`;
+    return [key, { card, payload }];
+  })).values()];
+  console.log('THUMBNAIL_RENDER_START', { count: uniqueCards.length, renderedSheetIds: uniqueCards.map(item => item.card.querySelector('strong')?.textContent || '').filter(Boolean) });
+  const visibleCards = uniqueCards.filter(item => item.card.offsetParent !== null);
+  await Promise.all(visibleCards.map(async ({ card, payload }) => {
+    const documentId = payload.documentId || '';
+    const pageNumber = Number(payload.pageNumber) || 0;
+    const pageKey = `${documentId}:${pageNumber}`;
+    const canvas = card.querySelector('[data-chief-drawing-thumb-canvas]');
+    const image = card.querySelector('[data-chief-drawing-thumb-image]');
+    if (!canvas?.getContext || !documentId || !pageNumber) return;
+    const cached = chiefDrawingThumbnailRenderCache.get(pageKey);
+    if (cached?.snapshot) {
+      canvas.width = cached.width;
+      canvas.height = cached.height;
+      canvas.getContext('2d')?.drawImage?.(cached.snapshot, 0, 0);
+      if (image) image.src = cached.snapshot.toDataURL('image/png');
+      return;
+    }
+    try {
+      let pdf = chiefDrawingThumbnailPdfCache.get(documentId);
+      if (!pdf) {
+        const source = await engine.sourceFile(documentId);
+        if (!source?.sourceBlob) return;
+        pdf = await openPdfBlob(source.sourceBlob);
+        chiefDrawingThumbnailPdfCache.set(documentId, pdf);
+      }
+      const page = await pdf.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 0.18 });
+      canvas.width = Math.max(1, Math.round(viewport.width));
+      canvas.height = Math.max(1, Math.round(viewport.height));
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      await page.render({ canvasContext: context, viewport }).promise;
+      const snapshot = document.createElement('canvas');
+      snapshot.width = canvas.width;
+      snapshot.height = canvas.height;
+      snapshot.getContext('2d')?.drawImage?.(canvas, 0, 0);
+      chiefDrawingThumbnailRenderCache.set(pageKey, { width: canvas.width, height: canvas.height, snapshot });
+      if (image) image.src = snapshot.toDataURL('image/png');
+      console.log('THUMBNAIL_RENDER_RESULT', { documentId, pageNumber, width: canvas.width, height: canvas.height, cached: false });
+    } catch (error) {
+      logger.debug('Chief drawing thumbnail render failed', { contained: true, documentId, pageNumber, message: error?.message || String(error) });
+    }
+  }));
 }
 
 function chiefLocationPresentationMarkup(presentation = null) {
@@ -2206,10 +2813,11 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
         <div class="mc-chief-workspace-questions" aria-label="Suggested construction questions">
           <span>Suggested questions</span>
           <div class="mc-chief-question-list">
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="Where is the planned work?">Where is the planned work?</button>
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="What drawings apply to this room?">What drawings apply to this room?</button>
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="What specifications govern this work?">What specifications govern this work?</button>
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="Are there related RFIs or submittals?">Are there related RFIs or submittals?</button>
+            <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs apply to 61FX100?">What specs apply to 61FX100?</button>
+            <button type="button" class="mc-chief-question-chip" data-control-prompt="What drawings relate to 28 31 00?">What drawings relate to 28 31 00?</button>
+            <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs cover HVAC and what drawings relate?">What specs cover HVAC and what drawings relate?</button>
+            <button type="button" class="mc-chief-question-chip" data-control-prompt="How long after NTP until a schedule is required according to the specifications?">How long after NTP until a schedule is required according to the specifications?</button>
+            <button type="button" class="mc-chief-question-chip" data-control-prompt="What specifications govern 61H-101?">What specifications govern 61H-101?</button>
           </div>
         </div>
       </header>
@@ -2230,7 +2838,12 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
           </div>
           <div class="mc-control-messages" role="log" aria-live="polite" aria-label="Chief conversation messages">
             ${chiefLocationPresentationMarkup(activeChiefLocationPresentation)}
-            ${messages.length ? (await Promise.all(messages.map(async message => `<article class="mc-control-message ${message.role}" id="mc-message-${esc(message.id)}"><header><strong>${message.role === 'assistant' ? 'Chief' : 'You'}</strong>${message.role === 'assistant' ? `<span>${esc(missionControlResponseModeLabel(message.mode))}</span>` : ''}</header>${constructionWorkPackageMarkup(message)}${message.role === 'assistant' ? chiefDrawingEvidenceMarkup(message, projectDocuments, drawingAnalyses) : ''}<div class="mc-control-message-content">${esc(message.content).replace(/\n/g, '<br>')}</div>${missionControlMessageActions(message, drawingSourceIds)}</article>`))).join('') : `<div class="mc-control-chat-empty"><strong>Start a conversation</strong><p>Ask about the active project or attach supported documents. Answers remain linked to exact source records.</p></div>`}
+            ${messages.length ? (await Promise.all(messages.map(async (message, index) => {
+              const previousUserQuestion = [...messages.slice(0, index)].reverse().find(item => item.role === 'user')?.content || '';
+              const specificationAnswerMarkup = message.role === 'assistant' ? chiefSpecificationAnswerMarkup(message, previousUserQuestion) : '';
+              const suppressRawChiefContent = Boolean(specificationAnswerMarkup && message.role === 'assistant' && message.specificationAnswer?.specifications?.length);
+              return `<article class="mc-control-message ${message.role}" id="mc-message-${esc(message.id)}"><header><strong>${message.role === 'assistant' ? 'Chief' : 'You'}</strong>${message.role === 'assistant' ? `<span>${esc(missionControlResponseModeLabel(message.mode))}</span>` : ''}</header>${constructionWorkPackageMarkup(message)}${message.role === 'assistant' ? chiefDrawingEvidenceMarkup(message, projectDocuments, drawingAnalyses) : ''}${specificationAnswerMarkup}${!suppressRawChiefContent ? `<div class="mc-control-message-content">${esc(message.content).replace(/\n/g, '<br>')}</div>` : ''}${missionControlMessageActions(message, drawingSourceIds)}</article>`;
+            }))).join('') : `<div class="mc-control-chat-empty"><strong>Start a conversation</strong><p>Ask about the active project or attach supported documents. Answers remain linked to exact source records.</p></div>`}
           </div>
           ${historyVisible ? `<section class="mc-chief-history" aria-labelledby="mcChiefHistoryTitle"><div class="mc-chief-history-header"><div><span>CONVERSATION HISTORY</span><h2 id="mcChiefHistoryTitle">Recent threads</h2></div></div><div class="mc-chief-history-list">${historyItems.length ? historyItems.map(item => `<button type="button" class="mc-chief-history-item" data-conversation-id="${esc(item.conversationId)}"><strong>${esc(item.title || 'Conversation')}</strong><span>${esc(item.updatedAt ? new Date(item.updatedAt).toLocaleString() : 'Not updated')}</span></button>`).join('') : '<p class="mc-chief-history-empty">No history yet.</p>'}</div></section>` : ''}
           <form id="missionControlComposer" class="mc-control-composer">
@@ -2255,6 +2868,7 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
     </section>`;
   $('#missionControlMode').value = state().settings.mode;
   if ($('#chiefStatusImage')) setChiefState($('#chiefStatus')?.dataset.chiefState || 'idle');
+  if (experience === 'mission-control') void renderChiefDrawingThumbnails();
   if ($('#missionInlineDrawingViewer') && activeWorkPackage?.presentation?.primaryDrawing) await renderDrawingWorkspace('mission-control');
 }
 
@@ -3112,7 +3726,7 @@ function drawingContextMarkup(context, selectedObject = null, choices = [], spec
   return `<div class="mc-drawing-page-context" aria-label="Selected drawing page context">
     <section><h3>Summary</h3><dl><div><dt>Sheet</dt><dd>${esc(page.sheetNumber || `Page ${page.pdfPageNumber || ''}`)}</dd></div><div><dt>Discipline</dt><dd>${esc(page.discipline || 'Unknown')}</dd></div><div><dt>Drawing type</dt><dd>${esc(page.drawingType || 'Unknown')}</dd></div></dl></section>
     <section><h3>Selected Object</h3>${selectedObject ? `<strong>${esc(selectedObject.label)}</strong><dl><div><dt>Permanent ID</dt><dd>${esc(selectedObject.objectId)}</dd></div><div><dt>Tag</dt><dd>${esc(selectedObject.tag || 'Unavailable')}</dd></div><div><dt>Type</dt><dd>${esc(selectedObject.type)}</dd></div><div><dt>Trade</dt><dd>${esc(selectedObject.trade || 'Unknown')}</dd></div><div><dt>System</dt><dd>${esc(selectedObject.system || 'Unavailable')}</dd></div><div><dt>Room</dt><dd>${esc(selectedObject.roomId || 'Unavailable')}</dd></div><div><dt>State</dt><dd>${esc(selectedObject.verificationState)}</dd></div><div><dt>Confidence</dt><dd>${Math.round((selectedObject.confidence || 0) * 100)}%</dd></div></dl><p>${esc(selectedObject.evidenceText || 'No additional evidence text.')}</p>${validNormalizedRegion(selectedObject.region) ? '<button data-drawing-object-location>Show Location</button>' : '<p>Location not verified.</p>'}<div><button data-project-object-confirm>Confirm Object</button>${selectedObject.verificationState === 'candidate' ? '<button data-project-object-reject>Reject Candidate</button>' : ''}<button data-project-object-edit>Edit Object</button><button data-project-object-adjust-region>Adjust Region</button><button data-project-object-alias>Add Alias</button>${duplicateObjects.length ? '<button data-project-object-merge>Merge Objects</button><button data-project-object-keep-separate>Keep Separate</button>' : ''}${selectedObject.mergedObjectIds?.length ? '<button data-project-object-split>Split Incorrect Merge</button>' : ''}<button data-project-object-history>View History</button><button class="subtle" data-drawing-clear-object>Clear Selection</button></div>` : choices.length ? `<p>Multiple drawing objects overlap this location.</p><ol>${choices.map(item => `<li><button data-drawing-select-object="${esc(item.objectId)}">${esc(item.label)}</button></li>`).join('')}</ol>` : `<p>No verified object identified.</p>${validNormalizedRegion(drawingTarget?.region) ? '<button data-project-object-create>Create Project Object</button>' : ''}`}${drawingLocationReturnViewport ? '<button class="subtle" data-drawing-return-location>Return to Previous View</button>' : ''}</section>
-    <section><h3>Specifications</h3>${specificationLinks.length ? `<ul>${specificationLinks.filter(item => item.status !== 'rejected').map(item => `<li><strong>${esc(item.sectionNumber)} — ${esc(item.sectionTitle)}</strong><span>${esc(item.status)}</span><button data-drawing-open-spec="${esc(item.linkId)}">Open Section</button>${item.status === 'suggested' ? `<button data-drawing-confirm-spec="${esc(item.linkId)}">Confirm Link</button><button data-drawing-reject-spec="${esc(item.linkId)}">Reject Suggestion</button>` : ''}</li>`).join('')}</ul>` : records(context?.specifications, 'No linked specifications.')}${selectedObject ? '<button class="subtle" data-drawing-link-spec>Link Specification</button>' : ''}</section>
+    <section><h3>Specifications</h3>${specificationLinks.length ? `<ul>${specificationLinks.filter(item => item.status !== 'rejected').map(item => `<li><strong>${esc(item.sectionNumber)} — ${esc(item.sectionTitle)}</strong><span>${esc(item.status)}</span><button data-chief-spec-section="${esc(item.sectionNumber)}" data-chief-spec-renderer="drawingContextMarkup" data-chief-spec-answer-type="drawing-context">Open Section</button>${item.status === 'suggested' ? `<button data-drawing-confirm-spec="${esc(item.linkId)}">Confirm Link</button><button data-drawing-reject-spec="${esc(item.linkId)}">Reject Suggestion</button>` : ''}</li>`).join('')}</ul>` : records(context?.specifications, 'No linked specifications.')}${selectedObject ? '<button class="subtle" data-drawing-link-spec>Link Specification</button>' : ''}</section>
     <section><h3>Related Drawings</h3>${records(context?.relatedDrawings, 'No related drawings.')}</section>
     <section><h3>Inspection Items</h3>${records(context?.inspectionItems)}</section>
     <section><h3>Equipment</h3>${records(context?.equipment)}</section>
@@ -4017,11 +4631,76 @@ $$('[data-control-view]').forEach(button => button.onclick = () => showMissionCo
 $('#missionControlContent').onclick = async event => {
   const button = event.target.closest('button');
   if (!button) return;
+  if (button.dataset.chiefDrawingCard) {
+    console.log('CHIEF_DRAWING_DELEGATED_HANDLER', {
+      clickedElement: button.outerHTML,
+      dataset: { ...button.dataset },
+      sheetId: button.dataset.chiefDrawingSheetId || '',
+      pageId: button.dataset.chiefDrawingPageId || '',
+      pageNumber: Number(button.dataset.chiefDrawingPageNumber) || null
+    });
+    await openChiefDrawingCardFromTarget(button, { projectId: state().activeProject, origin: 'chief-specification' });
+    return;
+  }
   if (button.dataset.actionTarget) {
     const actionTarget = resolveSharedActionTarget(button.dataset.actionTarget);
     if (!actionTarget) return;
     if (actionTarget.kind === 'drawing') {
-      chiefConstructionContext = createChiefConstructionContext({ conversationId: engine.activeConversation()?.conversationId, projectId: actionTarget.projectId, planResult: activePlanQuery || {}, drawingTarget: createDrawingTarget({ projectId: actionTarget.projectId, documentId: actionTarget.documentId, drawingSetId: actionTarget.drawingSetId, drawingId: actionTarget.drawingId, sheetId: actionTarget.sheetId, pageNumber: actionTarget.pageNumber, observationId: actionTarget.observationId, region: actionTarget.region, origin: actionTarget.origin || 'assistant' }), workPackageReferences: { matchingSheetIds: drawingMatchingSheetIds, matchingObservationIds: activePlanQuery?.matchingObservationIds || [] }, updatedFrom: actionTarget.origin || 'shared-action' });
+      console.log('CHIEF_DRAWING_CLICK', {
+        resolvedSheetId: actionTarget.sheetId || '',
+        resolvedPageId: actionTarget.pageId || '',
+        resolvedPageNumber: actionTarget.pageNumber || null,
+        canonicalDrawingRecord: activeDrawingViewerAnalysis?.sheets?.find(item => item.sheetId === actionTarget.sheetId || item.pageId === actionTarget.pageId || Number(item.pageNumber) === Number(actionTarget.pageNumber)) || null,
+        functionUsed: 'openProfessionalDestination',
+        activeSheetBefore: activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId)?.sheetNumber || '',
+        drawingTargetBefore: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null
+      });
+      const analysis = activeDrawingViewerAnalysis || (drawingTarget?.documentId ? await engine.drawingAnalysis(drawingTarget.documentId) : null);
+      const sheet = analysis?.sheets?.find(item => item.sheetId === actionTarget.sheetId) || analysis?.sheets?.find(item => item.pageId === actionTarget.pageId) || analysis?.sheets?.find(item => Number(item.pageNumber) === Number(actionTarget.pageNumber)) || null;
+      if (analysis && sheet) {
+        chiefConstructionContext = createChiefConstructionContext({
+          conversationId: engine.activeConversation()?.conversationId,
+          projectId: actionTarget.projectId,
+          planResult: activePlanQuery || {},
+          drawingTarget: createDrawingTarget({
+            projectId: analysis.projectId,
+            documentId: analysis.documentId,
+            drawingSetId: analysis.drawingSetId,
+            drawingId: sheet.drawingId || '',
+            sheetId: sheet.sheetId,
+            pageId: sheet.pageId,
+            pageNumber: sheet.pageNumber,
+            sheetNumber: sheet.sheetNumber,
+            observationId: actionTarget.observationId || '',
+            region: actionTarget.region || null,
+            origin: 'chief-specification',
+            returnTarget: 'chief-answer'
+          }),
+          workPackageReferences: { matchingSheetIds: drawingMatchingSheetIds, matchingObservationIds: activePlanQuery?.matchingObservationIds || [] },
+          updatedFrom: actionTarget.origin || 'shared-action'
+        });
+        const shellName = 'professional';
+        await selectPlansSheet({ analysis, sheet, shell: shellName, navigationStartedAt: performance.now(), scrollActiveCard: true });
+        drawingTarget = createDrawingTarget({
+          projectId: analysis.projectId,
+          documentId: analysis.documentId,
+          drawingSetId: analysis.drawingSetId,
+          drawingId: sheet.drawingId || '',
+          sheetId: sheet.sheetId,
+          pageId: sheet.pageId,
+          pageNumber: sheet.pageNumber,
+          sheetNumber: sheet.sheetNumber,
+          observationId: actionTarget.observationId || '',
+          region: actionTarget.region || null,
+          origin: 'chief-specification',
+          returnTarget: 'chief-answer'
+        });
+        console.log('CHIEF_DRAWING_CLICK', {
+          activeSheetAfter: activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId)?.sheetNumber || '',
+      drawingTargetAfter: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null
+    });
+    return;
+  }
       await openProfessionalDestination({ view: 'drawings', documentId: actionTarget.documentId, projectId: actionTarget.projectId, sheetId: actionTarget.sheetId, pageNumber: actionTarget.pageNumber, observationId: actionTarget.observationId, region: actionTarget.region, origin: actionTarget.origin || 'assistant' });
       return;
     }
@@ -4149,6 +4828,26 @@ $('#missionControlContent').onclick = async event => {
     await openProfessionalDestination({ view: button.dataset.controlSourceSection ? 'knowledge' : 'sources', documentId: selectedDoc });
     return;
   }
+  if (button.dataset.chiefSpecSection) {
+    console.log('CHIEF_SPEC_ACTION_TRACE', {
+      answerQueryType: button.dataset.chiefSpecAnswerType || '',
+      rendererFunction: button.dataset.chiefSpecRenderer || '',
+      buttonOuterHTML: button.outerHTML || '',
+      closestClickableAncestor: button.closest?.('[data-chief-spec-section], [data-chief-drawing-card], [data-action-target]')?.outerHTML || '',
+      handlerFunction: 'missionControlContent-chief-spec-section',
+      destination: 'specification-source'
+    });
+    event.preventDefault();
+    event.stopPropagation();
+    const result = await openChiefSpecificationViewer(button.dataset.chiefSpecSection, { returnTarget: 'chat' });
+    console.log('CHIEF_SPEC_HANDLER_RESULT', {
+      sectionNumber: button.dataset.chiefSpecSection || '',
+      openerFunction: 'openChiefSpecificationViewer',
+      destination: view,
+      activeShell: experience
+    });
+    return;
+  }
   if (button.dataset.controlDrawingDocument) {
     drawingTarget = createDrawingTarget({ projectId: state().activeProject, documentId: button.dataset.controlDrawingDocument, pageNumber: Number(button.dataset.controlDrawingPage) });
     await showMissionControlView('plans');
@@ -4214,9 +4913,11 @@ $('#missionControlContent').addEventListener('submit', async event => {
   const button = $('#missionControlSend');
   busy = true; button.disabled = true; button.textContent = 'Thinking…';
   setChiefState('busy');
+  let conversationPrep = null;
   try {
     const current = state();
     const conversation = engine.activeConversation();
+    conversationPrep = engine.ensureActiveConversation({ projectId: current.activeProject });
     const navigationIntent = classifyEngineeringNavigationIntent(promptValue);
     const [analyses, documents, sections] = await Promise.all([navigationIntent.kind === 'exact-drawing-navigation' ? currentGlobalDrawingRegistryAnalyses(promptValue) : currentDrawingAnalyses(), engine.documents(), engine.sections()]);
     const locationPresentation = buildChiefLocationPresentation(promptValue, { analyses, documents, sections, returnTarget: 'chief-answer', projectId: current.activeProject });
@@ -4281,7 +4982,10 @@ $('#missionControlContent').addEventListener('submit', async event => {
     setChiefState('success');
     await renderChiefWorkspace({ historyVisible: chiefHistoryVisible });
     $('.mc-control-messages')?.scrollTo({ top: $('.mc-control-messages').scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  } catch (error) { setChiefState('error'); alert(error.message); }
+  } catch (error) {
+    setChiefState('error');
+    alert(error.message);
+  }
   finally { busy = false; if ($('#missionControlSend')) { $('#missionControlSend').disabled = false; $('#missionControlSend').textContent = 'Ask Chief'; } }
 });
 
@@ -4292,6 +4996,7 @@ async function ingestMissionControlFiles(files) {
   if (unsupported.length) { alert('Image review is not supported yet. Attach PDF, DOCX, spreadsheet, text, or supported structured-text files.'); return; }
   missionControlAttachments = files.map(file => ({ name: file.name, status: 'processing' }));
   await renderMissionControlChat();
+  let conversationPrep = null;
   try {
     const result = await engine.ingest(files, () => {}, state().activeLibrary);
     for (const document of result.documents.filter(item => item.status === 'verified')) engine.addConversationAttachment(document.id);
@@ -4384,6 +5089,19 @@ app.addEventListener('change', async event => {
   }
 });
 
+app.addEventListener('click', event => {
+  const card = event.target?.closest?.('[data-chief-drawing-card]');
+  if (!card) return;
+  console.log('CHIEF_DRAWING_RAW_CLICK', {
+    eventTarget: event.target?.outerHTML || '',
+    eventTargetClosest: card?.outerHTML || '',
+    resolvedChiefDrawingCard: card.outerHTML || '',
+    sheetId: card.dataset.chiefDrawingSheetId || '',
+    pageId: card.dataset.chiefDrawingPageId || '',
+    pageNumber: Number(card.dataset.chiefDrawingPageNumber) || null
+  });
+}, true);
+
 app.addEventListener('click', async event => {
   const button = event.target.closest('button');
   if (!button || !button.closest('.mc-drawing-workspace')) return;
@@ -4441,6 +5159,59 @@ app.addEventListener('click', async event => {
   if(button.hasAttribute('data-chief-dock-close')){chiefDrawingDock.close();const dock=button.closest('.mc-chief-drawing-dock');if(dock)dock.hidden=true;return;}
   if(button.hasAttribute('data-chief-dock-collapse')){const next=chiefDrawingDock.state().collapsed?chiefDrawingDock.expand():chiefDrawingDock.collapse();const dock=button.closest('.mc-chief-drawing-dock');if(dock){dock.classList.toggle('collapsed',next.collapsed);button.textContent=next.collapsed?'Expand':'Collapse';for(const child of [...dock.children].slice(1))child.hidden=next.collapsed;}return;}
   if(button.dataset.chiefCardAction){let target={};try{target=JSON.parse(button.dataset.chiefCardTarget||'{}');}catch{}const result=await drawingActionRouter.execute(button.dataset.chiefCardAction,target,{executionToken:`card:${event.timeStamp}`});if(!result.ok){button.insertAdjacentHTML('afterend','<small class="mc-chief-action-error">That drawing action is no longer available.</small>');}return;}
+  if (button.dataset.chiefDrawingCard && !button.closest('#missionControlContent')) {
+    const resolvedSheetId = button.dataset.chiefDrawingSheetId || '';
+    const resolvedPageId = button.dataset.chiefDrawingPageId || '';
+    const resolvedPageNumber = Number(button.dataset.chiefDrawingPageNumber) || null;
+    const documentId = button.dataset.chiefDrawingDocumentId || '';
+    const sheetNumber = button.dataset.chiefDrawingSheetNumber || '';
+    const sheetBefore = activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId) || null;
+    const analysis = activeDrawingViewerAnalysis || (documentId ? await engine.drawingAnalysis(documentId) : null);
+    const sheet = analysis?.sheets?.find(item => item.sheetId === resolvedSheetId) || analysis?.sheets?.find(item => item.pageId === resolvedPageId) || analysis?.sheets?.find(item => Number(item.pageNumber) === Number(resolvedPageNumber)) || analysis?.sheets?.find(item => item.sheetNumber === sheetNumber) || null;
+    console.log('CHIEF_DRAWING_CLICK', {
+      resolvedSheetId,
+      resolvedPageId,
+      resolvedPageNumber,
+      canonicalDrawingRecord: sheet || null,
+      functionUsed: 'selectPlansSheet',
+      activeSheetBefore: sheetBefore?.sheetNumber || '',
+      drawingTargetBefore: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null
+    });
+    if (analysis && sheet) {
+      const shellName = 'professional';
+      await selectPlansSheet({ analysis, sheet, shell: shellName, navigationStartedAt: performance.now(), scrollActiveCard: true });
+      drawingTarget = createDrawingTarget({
+        projectId: analysis.projectId,
+        documentId: analysis.documentId,
+        drawingSetId: analysis.drawingSetId,
+        drawingId: sheet.drawingId || '',
+        sheetId: sheet.sheetId,
+        pageId: sheet.pageId,
+        pageNumber: sheet.pageNumber,
+        sheetNumber: sheet.sheetNumber,
+      origin: 'chief-specification',
+      returnTarget: 'chief-answer'
+    });
+    await switchExperience('mission-control');
+    await showMissionControlView('plans');
+    console.log('CHIEF_DRAWING_WORKSPACE_STATE', {
+      activeSheet: activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId)?.sheetNumber || '',
+      activePageId: drawingTarget?.pageId || '',
+      activeShell: experience,
+      professionalWorkspaceHidden: $('#professionalWorkspaceShell')?.hidden ?? null,
+        drawingViewerVisible: !$('#professionalWorkspaceShell')?.hidden && !$('#professionalWorkspaceShell')?.classList.contains('mc-shell-inactive') && Boolean($('#drawingInspector') || $('#missionDrawingViewer'))
+      });
+      console.log('CHIEF_DRAWING_CLICK', {
+        activeSheetAfter: activeDrawingViewerAnalysis?.sheets?.find(item => item.pageId === drawingTarget?.pageId || item.sheetId === drawingTarget?.sheetId)?.sheetNumber || '',
+        drawingTargetAfter: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null
+      });
+      return;
+    }
+    console.log('CHIEF_DRAWING_CLICK', { resolvedSheetId, resolvedPageId, resolvedPageNumber, canonicalDrawingRecord: null, functionUsed: 'openProfessionalDestination-fallback', activeSheetBefore: sheetBefore?.sheetNumber || '', drawingTargetBefore: drawingTarget ? { sheetId: drawingTarget.sheetId, pageId: drawingTarget.pageId, pageNumber: drawingTarget.pageNumber, documentId: drawingTarget.documentId } : null });
+    await openProfessionalDestination({ view: 'drawings', documentId, projectId: state().activeProject, sheetId: resolvedSheetId, pageNumber: resolvedPageNumber, origin: 'chief-specification' });
+    return;
+  }
+  if (button.dataset.chiefSpecSection) { await openChiefSpecificationViewer(button.dataset.chiefSpecSection); return; }
   const navigationStartedAt = globalThis.performance?.now?.() ?? Date.now();
   const pageSelectionRequest = button.dataset.drawingSheet || button.hasAttribute('data-drawing-previous') || button.hasAttribute('data-drawing-next') ? ++drawingPageSelectionRequest : 0;
   const persistedAnalysis = activeDrawingViewerAnalysis?.documentId === drawingTarget?.documentId
@@ -4597,7 +5368,50 @@ app.addEventListener('click', async event => {
     drawingSpecificationLinks.link({ projectId: state().activeProject, drawingDocumentId: drawingTarget?.documentId, drawingPageId: selectedDrawingObject.pageId, objectId: selectedDrawingObject.objectId, specificationDocumentId: section.documentId, sectionNumber: section.sectionNumber, evidenceSource: 'manual-selection', evidenceText: selectedDrawingObject.evidenceText, confidence: 1, status: 'confirmed', origin: 'manual', note });
     drawingRequirementsResolver.invalidate(); await renderDrawingWorkspace(shell); return;
   }
-  if (button.dataset.drawingOpenSpec) { const pageId = drawingTarget?.pageId || activeDrawingViewerAnalysis?.sheets.find(item => item.pageNumber === drawingTarget?.pageNumber)?.pageId; const link = drawingSpecificationLinks.forPage(pageId).find(item => item.linkId === button.dataset.drawingOpenSpec); const target = drawingSpecificationLinks.openTarget(link); if (target) { specificationDrawingReturnTarget = captureDrawingSupportReturnState(); await openProfessionalDestination(target); } return; }
+  if (button.dataset.chiefSpecSection) {
+    console.log('CHIEF_SPEC_ACTION_TRACE', {
+      answerQueryType: button.dataset.chiefSpecAnswerType || '',
+      rendererFunction: button.dataset.chiefSpecRenderer || '',
+      buttonOuterHTML: button.outerHTML || '',
+      closestClickableAncestor: button.closest?.('[data-chief-spec-section], [data-chief-drawing-card], [data-action-target]')?.outerHTML || '',
+      handlerFunction: 'drawing-workspace-chief-spec-section',
+      destination: 'specification-source'
+    });
+    event.preventDefault();
+    event.stopPropagation();
+    console.log('CHIEF_SPEC_CLICK_CONTRACT', {
+      sectionNumber: button.dataset.chiefSpecSection || '',
+      dataset: { ...button.dataset },
+      handlerBranch: 'drawing-workspace',
+      openerFunction: 'openChiefSpecificationViewer',
+      destination: 'specification-source'
+    });
+    await openChiefSpecificationViewer(button.dataset.chiefSpecSection, { returnTarget: 'drawings', preserveDrawingReturnState: true });
+    console.log('CHIEF_SPEC_HANDLER_RESULT', {
+      sectionNumber: button.dataset.chiefSpecSection || '',
+      openerFunction: 'openChiefSpecificationViewer',
+      destination: view,
+      activeShell: experience
+    });
+    return;
+  }
+  if (button.dataset.drawingOpenSpec) {
+    const pageId = drawingTarget?.pageId || activeDrawingViewerAnalysis?.sheets.find(item => item.pageNumber === drawingTarget?.pageNumber)?.pageId;
+    const link = drawingSpecificationLinks.forPage(pageId).find(item => item.linkId === button.dataset.drawingOpenSpec);
+    if (link) {
+      specificationDrawingReturnTarget = captureDrawingSupportReturnState();
+      console.log('CHIEF_SPEC_DESTINATION_RESOLVED', {
+        sectionNumber: link.sectionNumber || '',
+        requestedDestination: 'specification-source',
+        actualDestination: 'specification-source',
+        rendererFunction: 'renderSpecificationSourceEvidence',
+        viewerContainerId: 'specificationSourceEvidence',
+        sourcePage: Number(link.articleReference?.pageNumber || link.startPdfPage || 0)
+      });
+      await openChiefSpecificationViewer(link.sectionNumber, { returnTarget: 'drawings', preserveDrawingReturnState: true });
+    }
+    return;
+  }
   if (button.dataset.projectObjectAskChief && selectedDrawingObject?.objectId === button.dataset.projectObjectAskChief) {
     pendingDrawingContext = { ...createDrawingTarget({ ...drawingTarget, projectId: state().activeProject, origin: 'selected-project-object' }), projectObjectId: selectedDrawingObject.objectId };
     chiefDrawingDock.open();const dock=$('.mc-chief-drawing-dock');if(dock){dock.hidden=false;dock.classList.add('open');const prompt=$('#chiefDrawingDockPrompt');if(prompt){prompt.value=`What governs ${selectedDrawingObject.label}?`;prompt.focus();}}
@@ -5883,7 +6697,12 @@ $('#messages').onclick = event => {
     if (suggestion.dataset.promptQuestion) {
       $('#prompt').value = suggestion.dataset.promptQuestion;
       resizeComposer();
-      $('#prompt').focus();
+      const form = $('#missionControlComposer');
+      if (form?.requestSubmit) {
+        form.requestSubmit();
+      } else {
+        form?.querySelector('#missionControlSend')?.click();
+      }
     }
 
     return;
@@ -6052,7 +6871,9 @@ async function ask() {
   $('#prompt').disabled = true;
   renderPreparingAnswer(revealResponse);
 
+  let conversationPrep = null;
   try {
+    conversationPrep = engine.ensureActiveConversation({ projectId: state().activeProject });
     const navigationIntent = classifyEngineeringNavigationIntent(prompt);
     if (navigationIntent.kind === 'exact-drawing-navigation') {
       const [analyses, documents, sections] = await Promise.all([currentGlobalDrawingRegistryAnalyses(prompt), engine.documents(), engine.sections()]);
@@ -6139,7 +6960,6 @@ async function ask() {
   } catch (error) {
     setChiefState('error');
     $('[data-pending-answer]')?.remove();
-
     captureError(error, {
       module: 'Conversation',
       action: 'ask'
@@ -7314,21 +8134,7 @@ async function openSpecificationExplorer(sheet = {}) {
     alert('Specification Explorer not available - no active sheet');
     return;
   }
-
-  // Load the Building 61 spec links mapping
-  let specLinks = {};
-  try {
-    const response = await fetch('project-data/bedford/relationships/building-61-spec-links.json');
-    if (response.ok) {
-      const data = await response.json();
-      specLinks = data.results || {};
-    }
-  } catch (error) {
-    console.error(error);
-  }
-
-  // Look up specs for the current sheet
-  const sheetSpecs = specLinks[sheet.sheetNumber];
+  const sheetSpecs = { links: bedfordRelationshipLinksForSheet(sheet.sheetNumber) };
   
   if (!sheetSpecs || !sheetSpecs.links || sheetSpecs.links.length === 0) {
     alert(`No specification mappings found for sheet ${sheet.sheetNumber}`);
@@ -7387,98 +8193,9 @@ async function openSpecificationExplorer(sheet = {}) {
     button.addEventListener('click', async () => {
       const li = button.closest('li[data-spec-section]');
       const sectionNumber = li.dataset.specSection;
-      const docResult = await openSpecificationDocument(sectionNumber, engine);
-      
-      if (!docResult) {
-        return; // Error already shown by openSpecificationDocument
-      }
-
-      const { source, section } = docResult;
-
-      // Close modal
       modal.close();
       modal.remove();
-      
-      // Create full-screen viewer FIRST - must always be visible
-      const viewer = document.createElement('div');
-      viewer.className = 'mc-native-spec-viewer';
-      viewer.style.cssText = `
-        position: fixed;
-        inset: 0;
-        width: 100vw;
-        height: 100vh;
-        z-index: 2147483647;
-        background: #111;
-        display: flex;
-        flex-direction: column;
-      `;
-
-      const header = document.createElement('div');
-      header.style.cssText = `
-        height: 48px;
-        flex: 0 0 48px;
-        background: #222;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 16px;
-      `;
-
-      const title = document.createElement('div');
-      title.textContent = `Bedford Specifications — ${section.sectionNumber || sectionNumber}`;
-
-      const closeButton = document.createElement('button');
-      closeButton.textContent = 'Close';
-      closeButton.style.cssText = 'padding: 6px 16px; cursor: pointer; background: #444; color: white; border: 1px solid #555; border-radius: 4px; font-size: 13px;';
-
-      header.appendChild(title);
-      header.appendChild(closeButton);
-
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = `
-        flex: 1;
-        width: 100%;
-        min-height: 0;
-        border: 0;
-        background: white;
-      `;
-
-      viewer.appendChild(header);
-      viewer.appendChild(iframe);
-
-      // Append viewer to document.body NOW - this ensures it's always visible
-      document.body.appendChild(viewer);
-
-      // Handle close button
-      let blobUrl = null;
-      closeButton.addEventListener('click', () => {
-        if (blobUrl) URL.revokeObjectURL(blobUrl);
-        viewer.remove();
-      });
-
-      // Also close on Escape key
-      const escapeHandler = (event) => {
-        if (event.key === 'Escape') {
-          if (blobUrl) URL.revokeObjectURL(blobUrl);
-          viewer.remove();
-          document.removeEventListener('keydown', escapeHandler);
-        }
-      };
-      document.addEventListener('keydown', escapeHandler);
-
-      // Now load the PDF - if this fails, show error in iframe
-      if (!source?.sourceBlob) {
-        iframe.srcdoc = '<h2 style="font-family:sans-serif;padding:30px">Specification PDF source is unavailable.</h2>';
-        return;
-      }
-
-      try {
-        blobUrl = URL.createObjectURL(source.sourceBlob);
-        iframe.src = `${blobUrl}#page=${Number(section.startPdfPage) || 1}`;
-      } catch (error) {
-        iframe.srcdoc = `<pre style="padding:30px">Failed to load specification PDF: ${String(error.message || error)}</pre>`;
-      }
+      await openChiefSpecificationViewer(sectionNumber, { returnTarget: 'drawings', preserveDrawingReturnState: true });
     });
   });
 
@@ -10189,6 +10906,8 @@ async function renderSpecificationSourceEvidence() {
     specificationSourceTarget = null;
     if (specificationDrawingReturnTarget?.target) {
       restoreDrawingSupportReturnState();
+    } else if (target.returnTarget === 'chat') {
+      await switchExperience('mission-control', { destination: 'chat' });
     } else show('knowledge');
   });
   stageMetric('shell-visible');
@@ -12285,6 +13004,7 @@ function verifyStartup() {
 
 engine.initialize()
   .then(async () => {
+    await Promise.allSettled([bedfordSpecificationIndexBootstrap, bedfordDrawingCatalogBootstrap]);
     // Ensure built-in Bedford project exists
     const existingBedford = state().projects.find(p => p.id === BEDFORD_PROJECT_ID);
     if (!existingBedford) {
