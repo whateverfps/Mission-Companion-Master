@@ -28,6 +28,7 @@ import {
   moduleStatus
 } from './diagnostics.js';
 import { analyzeCorpus } from './core/reasoning.js';
+import { normalizeChiefResponseMode } from './chief-response-mode.js';
 import { createPdfSourceRecord, inspectStorageCapacity } from './pdf-source.js';
 import { buildDrawingAnalysis } from './drawing-intelligence.js';
 import { classifyDrawingOrphans, validateDrawingOwnership } from './drawing-lifecycle.js';
@@ -36,6 +37,7 @@ import { createProjectDocumentCache } from './cache/project-document-cache.js';
 import { createProjectSectionCache } from './cache/project-section-cache.js';
 import { isDrawingDocument, persistDocumentClassification } from './document-routing.js';
 import { getChiefIntelligenceBridge } from './chief-intelligence-bridge.js';
+import { assessAssistedEvidence, buildAssistedEvidenceExpansion, buildAssistedSearchQueries, selectAssistedPassages } from './chief-assisted-evidence.js';
 
 const STATE_KEY = COMPACT_STATE_KEY;
 const DOC_DB = 'mc-master-documents-v2';
@@ -1711,13 +1713,21 @@ export const engine = {
 
   async ask(prompt, mode = state.settings.mode, options = {}) {
     const cleanedPrompt = String(prompt || '').trim();
+    const rawMode = String(mode || '');
+    const normalizedMode = normalizeChiefResponseMode(rawMode);
+    const requestId = String(options.requestId || createIdentifier());
 
     if (!cleanedPrompt) {
       throw new Error('Enter a question.');
     }
 
+    console.log('ENGINE_RESPONSE_MODE_RECEIVED', {
+      rawMode,
+      normalizedMode
+    });
+
     logger.info('Analysis started', {
-      mode,
+      mode: normalizedMode,
       promptLength: cleanedPrompt.length
     });
 
@@ -1732,20 +1742,28 @@ export const engine = {
       await bridge.readyPromise;
     }
     const bridgeContext = bridge?.initialized ? bridge.buildProjectContext(cleanedPrompt, options.drawingContext) : null;
+    const hasBridgeEvidence = Boolean(
+      bridgeContext?.specificationAnswer &&
+      bridge?.hasSufficientEvidence?.(bridgeContext)
+    );
+    const bridgeSpecificationCount = bridgeContext?.specificationAnswer?.specifications?.length || 0;
     console.log('CHIEF_ASK_ROUTE', {
       question: cleanedPrompt,
-      mode,
+      mode: normalizedMode,
       bridgeInitialized: Boolean(bridge?.initialized),
       bridgeHasSpecAnswer: Boolean(bridgeContext?.specificationAnswer),
-      bridgeHasSufficientEvidence: bridge?.hasSufficientEvidence?.(bridgeContext) || false,
+      bridgeHasSufficientEvidence: hasBridgeEvidence,
+      providerRequired: mode !== 'offline',
+      bridgeSpecificationCount,
+      retrievalHitCount: 0,
       drawingContextSheet: options.drawingContext?.identity?.sheetNumber || options.drawingContext?.sheetNumber || '',
       drawingContextPageId: options.drawingContext?.identity?.pageId || options.drawingContext?.pageId || ''
     });
-    if (bridgeContext?.specificationAnswer && bridge?.hasSufficientEvidence?.(bridgeContext)) {
-      const bridgeAnswer = bridge.generateMissionCompanionAnswer(cleanedPrompt, bridgeContext, mode);
+    if (hasBridgeEvidence && normalizedMode === 'offline') {
+      const bridgeAnswer = bridge.generateMissionCompanionAnswer(cleanedPrompt, bridgeContext, normalizedMode);
       console.log('CHIEF_ASK_SPEC_RESULT', {
         question: cleanedPrompt,
-        mode,
+        mode: normalizedMode,
         queryType: bridgeContext.specificationAnswer?.queryType || '',
         sectionNumbers: bridgeContext.specificationAnswer?.specifications?.map(item => item.sectionNumber) || [],
         drawingCount: bridgeContext.specificationAnswer?.drawings?.length || 0
@@ -1772,7 +1790,8 @@ export const engine = {
         retrievalMeta: {},
         citationVerification,
         createdAt: new Date().toISOString(),
-        mode,
+        mode: normalizedMode,
+        requestId,
         specificationAnswer: answer.specificationAnswer
       };
       const activeConversation = this.ensureActiveConversation({ projectId: state.activeProject });
@@ -1784,9 +1803,22 @@ export const engine = {
         createdAt: new Date().toISOString()
       }, activeConversationId);
       this.appendConversationMessage(message, activeConversationId);
+      console.log('ASSISTANT_MESSAGE_FINALIZED', {
+        requestId,
+        mode: normalizedMode,
+        contentPreview: String(message.content || '').slice(0, 160)
+      });
       return structuredClone(message);
     }
     const hits = await this.search(cleanedPrompt, { documentIds: scopedDocumentIds, sectionIds, pageNumbers });
+    console.log('CHIEF_AI_ROUTE', {
+      question: cleanedPrompt,
+      mode: normalizedMode,
+      hasBridgeEvidence,
+      bridgeSpecificationCount,
+      retrievalHitCount: hits.length,
+      providerRequired: mode !== 'offline'
+    });
     console.log('CHIEF_ASK_GENERIC_RETRIEVAL', {
       question: cleanedPrompt,
       hits: hits.length,
@@ -1798,11 +1830,20 @@ export const engine = {
 
     let answer;
 
-    if (mode === 'offline') {
+    console.log('SME_CONTEXT_READY', {
+      requestId,
+      mode: normalizedMode,
+      hasBridgeEvidence,
+      bridgeSpecificationCount,
+      retrievalHitCount: hits.length
+    });
+
+    if (normalizedMode === 'offline') {
       answer = callOffline(cleanedPrompt, hits);
     } else {
       let structuredAnalysis = '';
       let dependencyAnalysis = '';
+      let assistedEvidenceExpansion = { assessment: null, query: '', hits: [], context: '' };
 
       try {
         const analysis = analyzeCorpus(cleanedPrompt, hits, {
@@ -1859,9 +1900,99 @@ export const engine = {
         }
       }
 
+      if (normalizedMode === 'assisted') {
+        const assessment = assessAssistedEvidence({
+          question: cleanedPrompt,
+          bridgeContext,
+          initialHits: hits
+        });
+        const assistedSearchQueries = buildAssistedSearchQueries({
+          question: cleanedPrompt,
+          bridgeContext,
+          initialHits: hits,
+          assessment
+        });
+
+        console.log('ASSISTED_QUERY_ANALYSIS', {
+          requestId,
+          question: cleanedPrompt,
+          mode: normalizedMode,
+          initialEvidenceCount: assessment.initialEvidenceCount,
+          hasProjectEvidence: assessment.hasProjectEvidence,
+          scheduleIntent: assessment.scheduleIntent,
+          directTimingEvidence: assessment.directTimingEvidence,
+          sufficient: assessment.sufficient,
+          needsExpansion: assessment.needsExpansion,
+          sectionHints: assessment.sectionHints.slice(0, 12)
+        });
+        console.log('ASSISTED_SEARCH_QUERIES', {
+          requestId,
+          queryCount: assistedSearchQueries.length,
+          queries: assistedSearchQueries.slice(0, 12)
+        });
+
+        if (assessment.needsExpansion) {
+          const authoritativeSections = await this.retrievableSections();
+          const corpusDocumentCount = new Set(
+            authoritativeSections.map(section =>
+              String(section.documentId || section.document?.id || section.documentName || '').trim()
+            ).filter(Boolean)
+          ).size;
+
+          console.log('ASSISTED_CORPUS_STATS', {
+            requestId,
+            sectionCount: authoritativeSections.length,
+            documentCount: corpusDocumentCount,
+            retrievedSectionCount: 0,
+            mode: normalizedMode,
+            question: cleanedPrompt,
+            query: assessment.expansionQuery
+          });
+
+          assistedEvidenceExpansion = buildAssistedEvidenceExpansion({
+            question: cleanedPrompt,
+            bridgeContext,
+            initialHits: hits,
+            authoritativeSections,
+            retrieve,
+            limit: Math.max(8, state.settings.topK || 10)
+          });
+
+          const selectedPassages = selectAssistedPassages(
+            assistedEvidenceExpansion.hits,
+            assistedEvidenceExpansion.assessment
+          );
+
+          console.log('ASSISTED_RETRIEVAL_HITS', {
+            requestId,
+            queryCount: assistedEvidenceExpansion.queries?.length || assistedSearchQueries.length,
+            hitCount: assistedEvidenceExpansion.hits.length,
+            sectionNumbers: assistedEvidenceExpansion.hits.map(hit => hit.sectionNumber).slice(0, 12),
+            pageRanges: assistedEvidenceExpansion.hits.map(hit => `${hit.pageStart || ''}-${hit.pageEnd || ''}`).slice(0, 12)
+          });
+          console.log('ASSISTED_PASSAGES_SELECTED', {
+            requestId,
+            selectedCount: selectedPassages.length,
+            sectionNumbers: selectedPassages.map(hit => hit.sectionNumber).slice(0, 8),
+            pageRanges: selectedPassages.map(hit => `${hit.pageStart || ''}-${hit.pageEnd || ''}`).slice(0, 8),
+            previews: selectedPassages.map(hit => String(hit.text || hit.summary || '').slice(0, 120)).slice(0, 3)
+          });
+          console.log('ASSISTED_PROVIDER_CONTEXT', {
+            requestId,
+            contextLength: assistedEvidenceExpansion.context.length,
+            preview: assistedEvidenceExpansion.context.slice(0, 400)
+          });
+        }
+      }
+
+      const bridgeEvidenceContext = bridge?.buildContextString?.(bridgeContext) || '';
       const evidenceContext = buildContext(hits, cleanedPrompt, options.drawingContext);
       const context = [
-        evidenceContext,
+        bridgeEvidenceContext ? `AUTHORITATIVE PROJECT SME CONTEXT:\n${bridgeEvidenceContext}` : '',
+        evidenceContext ? `INDEXED PROJECT EVIDENCE:\n${evidenceContext}` : '',
+        normalizedMode === 'assisted' && assistedEvidenceExpansion.context
+          ? assistedEvidenceExpansion.context
+          : '',
         structuredAnalysis,
         dependencyAnalysis
       ].filter(Boolean).join('\n\n');
@@ -1869,7 +2000,12 @@ export const engine = {
       answer = await callAI(
         cleanedPrompt,
         context,
-        mode
+        normalizedMode,
+        {
+          requestId,
+          bridgeContextIncluded: Boolean(bridgeEvidenceContext),
+          contextLength: context.length
+        }
       );
     }
 
@@ -1887,7 +2023,9 @@ export const engine = {
       retrievalMeta: hits.meta || {},
       citationVerification,
       createdAt: new Date().toISOString(),
-      mode,
+      mode: normalizedMode,
+      requestId,
+      specificationAnswer: bridgeContext?.specificationAnswer || null,
       drawingContext: options.drawingContext ? {
         projectId: String(options.drawingContext.projectId || ''), documentId: String(options.drawingContext.documentId || ''),
         drawingSetId: String(options.drawingContext.drawingSetId || ''), sheetId: String(options.drawingContext.sheetId || ''),
@@ -1910,6 +2048,12 @@ export const engine = {
       createdAt: new Date().toISOString()
     }, conversationId);
     this.appendConversationMessage(message, conversationId);
+
+    console.log('ASSISTANT_MESSAGE_FINALIZED', {
+      requestId,
+      mode: normalizedMode,
+      contentPreview: String(message.content || '').slice(0, 160)
+    });
 
     logger.info('Analysis completed', {
       mode,
@@ -3338,7 +3482,7 @@ function calculateOfflineConfidence(hits) {
   };
 }
 
-async function callAI(prompt, context, mode) {
+async function callAI(prompt, context, mode, meta = {}) {
   const settings = state.settings;
 
   if (!settings.openaiKey) {
@@ -3349,21 +3493,26 @@ async function callAI(prompt, context, mode) {
 
   const rules = {
     source:
-      'Answer only from the supplied evidence. If the evidence does not support an answer, say exactly that. Do not use outside knowledge. Cite every material claim with [S#].',
+      'Answer directly in the first 1-3 sentences using only the supplied evidence. Then briefly state the controlling Bedford specification sections, drawings, or other authoritative evidence that support the answer. Do not repeat the evidence verbatim, do not dump tables or raw retrieval text, and do not mention internal markers, raw PDF-page IDs, or "Evidence Gaps". If the evidence does not support an answer, say exactly what was found and what controlling source category should be checked next. Cite material claims using the supplied evidence, but prefer plain section numbers and titles in the prose. For project-specific questions, do not invent deadlines, durations, quantities, tolerances, acceptance criteria, or contractual obligations from general knowledge; any such requirement must be supported by the supplied evidence.',
 
     assisted:
-      'Use supplied evidence as the controlling source. Clearly label any general professional knowledge as "General SME context" and never present it as project-specific. Cite project claims with [S#].',
+      'Act as a senior owner-side construction and engineering advisor. Answer directly in the first 1-3 sentences. Use the supplied evidence as the controlling source, then interpret it concisely in practical project terms. Distinguish explicit contract requirements from reasonable interpretation and professional recommendation. Prefer a concise answer-first structure such as "Answer", "Basis", and "Practical takeaway" when helpful. Do not repeat the evidence verbatim, do not dump raw retrieval text, do not expose internal markers, raw PDF page identifiers, or generic evidence-gap boilerplate, and do not use generic schedule ranges or other outside knowledge unless the user explicitly asks for general practice. For project-specific questions, do not invent deadlines, durations, quantities, tolerances, acceptance criteria, responsibilities, or contractual obligations from general knowledge; any such requirement must be supported by the supplied evidence. Treat retrieved hits as candidate evidence only; evaluate section titles and content for relevance before treating them as controlling. If the evidence is incomplete, state what was found, what was not found, and the next controlling source to inspect. Clearly label any general professional knowledge as "General SME context" and never present it as project-specific. If the context includes an AUTHORITATIVE PROJECT PDF EVIDENCE block, treat that block as higher-priority project evidence and synthesize from it instead of repeating lower-confidence summaries or retrieval trails. Cite project claims using the supplied evidence, but keep the prose focused on the answer rather than the retrieval trail.',
 
     general:
-      'Answer as a general professional assistant. Use supplied evidence when relevant and cite it with [S#].'
+      'Answer as a general professional assistant. Answer directly first, then use supplied evidence when relevant to support or refine the response. Avoid copying raw retrieval text, raw PDF-page IDs, or internal markers. Cite material project claims using the supplied evidence and keep the prose concise and useful.'
   };
 
   const system = [
     'You are Mission Companion, a rigorous subject-matter analysis system.',
     rules[mode] || rules.source,
+    'Use the supplied evidence as context, not as prose to reproduce.',
+    'Answer the user first, then summarize the basis and practical takeaway in a concise professional style.',
     'Check for conflicts, exceptions, definitions, and cross-references.',
     'Prefer precise, defensible conclusions over confident guesses.',
-    'End with a short Evidence Gaps section when anything important is uncertain.'
+    'Do not expose raw retrieval logs, page lists, internal confidence text, raw PDF-page identifiers, or placeholder markers in the final answer.',
+    mode === 'assisted'
+      ? 'For expert-assisted mode, present the controlling project evidence first and only add general SME interpretation when it is clearly distinguished from project-specific requirements. Treat the deterministic SME findings as evidence to reason from, not prose to echo. Do not promote generalized construction knowledge into a project-specific deadline, duration, quantity, tolerance, acceptance criterion, or contractual obligation unless the supplied evidence explicitly supports it. When retrieved evidence is tangential, explain that it is not controlling and look for the actual governing section or contract provision instead.'
+      : 'When anything important is uncertain, explain the specific gap without adding generic industry ranges unless the user explicitly asks for them.'
   ].join(' ');
 
   const body = {
@@ -3389,6 +3538,21 @@ async function callAI(prompt, context, mode) {
   if (!settings.openaiModel.startsWith('gpt-5')) {
     body.temperature = 0.1;
   }
+
+  console.log('AI_PROVIDER_REQUEST', {
+    requestId: String(meta.requestId || ''),
+    mode,
+    model: settings.openaiModel,
+    contextLength: Number(meta.contextLength) || String(context || '').length,
+    bridgeContextIncluded: Boolean(meta.bridgeContextIncluded)
+  });
+  console.log('CHIEF_AI_PROVIDER_CALL', {
+    requestId: String(meta.requestId || ''),
+    mode,
+    model: settings.openaiModel,
+    contextLength: Number(meta.contextLength) || String(context || '').length,
+    bridgeContextIncluded: Boolean(meta.bridgeContextIncluded)
+  });
 
   const controller = new AbortController();
 
@@ -3425,6 +3589,19 @@ async function callAI(prompt, context, mode) {
     const content =
       responseBody?.choices?.[0]?.message?.content ||
       'No response returned.';
+
+    console.log('AI_PROVIDER_RESPONSE', {
+      requestId: String(meta.requestId || ''),
+      mode,
+      success: true,
+      preview: String(content).slice(0, 160)
+    });
+    console.log('CHIEF_AI_PROVIDER_RESULT', {
+      requestId: String(meta.requestId || ''),
+      mode,
+      success: true,
+      responseLength: content.length
+    });
 
     const citations = [
       ...content.matchAll(/\[S(\d+)\]/g)
