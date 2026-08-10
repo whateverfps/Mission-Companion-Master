@@ -449,6 +449,24 @@
           "evidenceSource": "Drawing type and discipline analysis",
           "evidenceText": "Sheet 61A-400 is a Plan in Architectural discipline",
           "reason": "Specification section 08 80 00 is typically referenced by Plan sheets in Architectural discipline"
+        },
+        {
+          "linkId": "link-9-8",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:9",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "08 71 00",
+          "sectionTitle": "DOOR HARDWARE",
+          "origin": "drawing-text-reference",
+          "status": "governing",
+          "relationshipType": "GOVERNING",
+          "evidenceLevel": "DIRECT",
+          "confidence": 0.96,
+          "evidenceSource": "Door and frame schedule note",
+          "evidenceText": "The door and frame schedule note on 61A-400 states: 'SEE SPECIFICATIONS 08 71 00 FOR DOOR HARDWARE REQUIREMENTS.'",
+          "reason": "The sheet directly references Bedford Section 08 71 00 for door hardware requirements."
         }
       ]
     },
@@ -507,6 +525,24 @@
           "evidenceSource": "Drawing type and discipline analysis",
           "evidenceText": "Sheet 61A-401 is a Plan in Architectural discipline",
           "reason": "Specification section 08 80 00 is typically referenced by Plan sheets in Architectural discipline"
+        },
+        {
+          "linkId": "link-10-8",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:10",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "08 71 00",
+          "sectionTitle": "DOOR HARDWARE",
+          "origin": "drawing-text-reference",
+          "status": "governing",
+          "relationshipType": "GOVERNING",
+          "evidenceLevel": "DIRECT",
+          "confidence": 0.96,
+          "evidenceSource": "Door and frame schedule note",
+          "evidenceText": "The door and frame schedule note on 61A-401 states: 'SEE SPECIFICATIONS 08 71 00 FOR DOOR HARDWARE REQUIREMENTS.'",
+          "reason": "The sheet directly references Bedford Section 08 71 00 for door hardware requirements."
         }
       ]
     },
@@ -549,6 +585,42 @@
           "evidenceSource": "Drawing type and discipline analysis",
           "evidenceText": "Sheet 61A-511 is a Details in Architectural discipline",
           "reason": "Specification section 06 20 00 is typically referenced by Details sheets in Architectural discipline"
+        },
+        {
+          "linkId": "link-11-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:11",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 22 16",
+          "sectionTitle": "NON-STRUCTURAL METAL FRAMING",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.83,
+          "evidenceSource": "Typical partition framing details",
+          "evidenceText": "Sheet 61A-511 is titled Architectural Partition and Framing Details and shows typical interior partition framing, metal studs, runners, and attachment details.",
+          "reason": "Bedford Section 09 22 16 directly governs the non-structural metal framing shown in the partition framing details."
+        },
+        {
+          "linkId": "link-11-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:11",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 29 00",
+          "sectionTitle": "GYPSUM BOARD",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.82,
+          "evidenceSource": "Typical partition assembly details",
+          "evidenceText": "The same sheet shows gypsum wallboard layers and fastening/finish conditions at typical partition assemblies.",
+          "reason": "Bedford Section 09 29 00 directly governs the gypsum board components shown in the partition detail sheet."
         }
       ]
     },
@@ -591,6 +663,42 @@
           "evidenceSource": "Drawing type and discipline analysis",
           "evidenceText": "Sheet 61A-512 is a Details in Architectural discipline",
           "reason": "Specification section 06 20 00 is typically referenced by Details sheets in Architectural discipline"
+        },
+        {
+          "linkId": "link-12-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:12",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 22 16",
+          "sectionTitle": "NON-STRUCTURAL METAL FRAMING",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.84,
+          "evidenceSource": "Head-of-wall and partition detail sheets",
+          "evidenceText": "Sheet 61A-512 is titled Architectural Partition Head Details and shows head-of-wall conditions, metal studs, tracks, and wall attachment at rated partitions.",
+          "reason": "Bedford Section 09 22 16 directly governs the framing components shown in the head detail sheet."
+        },
+        {
+          "linkId": "link-12-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:12",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 29 00",
+          "sectionTitle": "GYPSUM BOARD",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.82,
+          "evidenceSource": "Head-of-wall and fire-rated partition details",
+          "evidenceText": "The same sheet shows gypsum board at the head-of-wall conditions and fire-rated partition assemblies.",
+          "reason": "Bedford Section 09 29 00 directly governs the gypsum board assemblies shown in the head detail sheet."
         }
       ]
     },
@@ -633,6 +741,42 @@
           "evidenceSource": "Drawing type and discipline analysis",
           "evidenceText": "Sheet 61A-531 is a Details in Architectural discipline",
           "reason": "Specification section 06 20 00 is typically referenced by Details sheets in Architectural discipline"
+        },
+        {
+          "linkId": "link-13-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:13",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 29 00",
+          "sectionTitle": "GYPSUM BOARD",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.82,
+          "evidenceSource": "Ceiling details with gypsum board framing",
+          "evidenceText": "Sheet 61A-531 is titled Architectural Ceiling Details and shows gypsum board ceiling, hat channel, tape/finish requirements, and ceiling suspension components.",
+          "reason": "Bedford Section 09 29 00 directly governs the gypsum board elements shown in the ceiling detail sheet."
+        },
+        {
+          "linkId": "link-13-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:13",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 91 00",
+          "sectionTitle": "PAINTING",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.74,
+          "evidenceSource": "Ceiling detail finish notes",
+          "evidenceText": "The ceiling detail sheet includes finish calls for tape/finish and wall finish conditions adjacent to the gypsum board ceiling detail.",
+          "reason": "Bedford Section 09 91 00 applies to the finish conditions shown on the ceiling detail sheet."
         }
       ]
     },
