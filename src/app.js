@@ -1086,13 +1086,12 @@ app.innerHTML = `
       <span class="mc-control-mark" aria-hidden="true">M</span>
       <div><strong>MISSION COMPANION</strong><span>Mission Control</span></div>
     </div>
-    <button id="openProfessionalWorkspace" class="mc-control-experience-switch">Open Professional Workspace</button>
+    <button id="openProfessionalWorkspace" class="mc-control-settings-button" type="button" aria-label="Open Professional Workspace" title="Open Professional Workspace"><span aria-hidden="true">⚙</span></button>
   </header>
   <nav class="mc-control-nav" aria-label="Mission Control navigation">
     <button data-control-view="dashboard">Dashboard</button>
     <button data-control-home aria-current="page">Chief</button>
     <button data-control-view="plans">Drawings</button>
-    <button data-control-experience="professional-workspace">Professional Workspace</button>
     <span style="position:absolute;left:-9999px;clip:rect(0 0 0 0);"><button data-control-view="plans">Open Plans</button></span>
   </nav>
   <main id="missionControlMain" tabindex="-1">
@@ -4622,9 +4621,6 @@ async function renderMissionControl(prefetchedDocuments = null, prefetchedSectio
 }
 
 $('#openProfessionalWorkspace').onclick = () => switchExperience('professional-workspace', { destination: view });
-$('[data-control-experience]')?.addEventListener('click', () => {
-  void switchExperience('professional-workspace', { destination: view });
-});
 $('#returnMissionControl').onclick = () => switchExperience('mission-control');
 
 function showMissionControlView(name = 'home') {
