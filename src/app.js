@@ -1,4 +1,7 @@
 import { engine } from './engine.js';
+import { normalizeChiefResponseMode, missionControlResponseModeLabel, resolveChiefResponseModeSelection } from './chief-response-mode.js';
+import { resolveChiefSpecificationAnswerPresentation } from './chief-specification-answer-rendering.js';
+import { createIdentifier } from './identifiers.js';
 import { conversationPreview } from './conversations.js';
 import { logger, setLifecycle, registerModule, captureError, verifyButtons, runHealthChecks, diagnosticSnapshot, installGlobalHandlers } from './diagnostics.js';
 import {
@@ -99,7 +102,6 @@ import {
 } from './bedford-project.js';
 import {
   buildMissionControlModel,
-  missionControlResponseModeLabel,
   normalizeStartupExperience,
   resolvePreviousProject,
   separateMissionControlProjects
@@ -2570,6 +2572,7 @@ function chiefSpecificationAnswerMarkup(message, question = '') {
     ...(Array.isArray(answer.drawings) ? answer.drawings : []),
     ...(Array.isArray(answer.specifications) ? answer.specifications.flatMap(item => Array.isArray(item.drawings) ? item.drawings : []) : [])
   ].map(item => [item.sheetNumber || item.pageId || item.drawingPageId || item.documentId, item])).values()].filter(Boolean);
+  const presentation = resolveChiefSpecificationAnswerPresentation(message);
 
   const specCard = item => {
     const drawings = Array.isArray(item.drawings) ? item.drawings : [];
@@ -2630,18 +2633,27 @@ function chiefSpecificationAnswerMarkup(message, question = '') {
     ${secondarySpecifications.length ? `<section class="mc-chief-spec-group"><header><span>RELATED / CROSS-DISCIPLINE REQUIREMENTS</span></header><div class="mc-chief-spec-card-list">${secondarySpecifications.map(specCard).join('')}</div></section>` : ''}
   ` : `<section class="mc-chief-spec-group"><header><span>${answer.queryType === 'specification' ? 'SPECIFICATION' : 'SPECIFICATION REFERENCES'}</span></header><div class="mc-chief-spec-card-list">${answer.specifications.map(specCard).join('')}</div></section>`;
 
-  const drawingsMarkup = structuredDrawings.length ? `<section class="mc-chief-spec-group"><header><span>${answer.queryType === 'specification' ? 'RELATED BUILDING 61 DRAWINGS' : 'RELATED DRAWINGS'}</span></header><div class="mc-chief-spec-card-list">${structuredDrawings.map(drawingCard).join('')}</div></section>` : '';
+  const drawingsMarkup = structuredDrawings.length ? `<section class="mc-chief-spec-group"><header><span>${answer.queryType === 'specification' ? 'RELATED BUILDING 61 DRAWINGS' : 'RELATED DRAWINGS'}</span></header><div class="mc-chief-spec-drawing-list">${structuredDrawings.map(drawingCard).join('')}</div></section>` : '';
   const currentSheet = message?.drawingContext?.sheetNumber ? `<p class="mc-chief-spec-context"><strong>Current sheet:</strong> ${esc(message.drawingContext.sheetNumber)}${message.drawingContext.sheetTitle ? ` — ${esc(message.drawingContext.sheetTitle)}` : ''}</p>` : '';
   const hasStructuredResults = Boolean(answer.specifications?.length || answer.drawings?.length);
   const answerText = hasStructuredResults && answer.queryType !== 'general'
-    ? answer.queryType === 'drawing'
-      ? `Building 61 drawing ${sheetContext?.sheetNumber || message?.drawingContext?.sheetNumber || ''} has ${answer.specifications.length} specification section${answer.specifications.length === 1 ? '' : 's'}.`
-      : answer.queryType === 'specification'
-        ? `Structured Bedford specification results are shown below for ${answer.specifications[0]?.sectionNumber || 'this section'}.`
-        : answer.queryType === 'discipline'
-          ? `Structured Bedford specification results are shown below for ${disciplineLabel || 'this discipline'}.`
-          : answer.answer
-    : answer.answer;
+    ? presentation.source === 'deterministic-sme'
+      ? answer.queryType === 'drawing'
+        ? `Building 61 drawing ${sheetContext?.sheetNumber || message?.drawingContext?.sheetNumber || ''} has ${answer.specifications.length} specification section${answer.specifications.length === 1 ? '' : 's'}.`
+        : answer.queryType === 'specification'
+          ? `Structured Bedford specification results are shown below for ${answer.specifications[0]?.sectionNumber || 'this section'}.`
+          : answer.queryType === 'discipline'
+            ? `Structured Bedford specification results are shown below for ${disciplineLabel || 'this discipline'}.`
+            : presentation.text
+      : presentation.text
+    : presentation.text;
+  console.log('CHIEF_RENDER_TEXT_SOURCE', {
+    requestId: message?.traceId || message?.requestId || '',
+    messageId: message?.id || '',
+    mode: message?.mode || '',
+    source: presentation.source,
+    preview: String(answerText || '').slice(0, 160)
+  });
 
   return `<section class="mc-chief-specification-answer" aria-label="Chief specification drill-down">
     <header class="mc-chief-specification-answer-header">
@@ -4960,12 +4972,35 @@ $('#missionControlContent').addEventListener('submit', async event => {
       const analyses = await currentDrawingAnalyses();
       pendingScope = buildPlanQueryScope({ viewerTarget: exactDrawingContext, matchingSheetIds: [exactDrawingContext.sheetId] }, sections, analyses);
     }
-    const message = await engine.ask(promptValue, $('#missionControlMode')?.value || current.settings.mode, exactDrawingContext ? {
+    const responseModeSelect = $('#missionControlMode');
+    const modeSelection = resolveChiefResponseModeSelection({
+      selectedOptionText: responseModeSelect?.selectedOptions?.[0]?.textContent?.trim() || '',
+      selectedOptionValue: responseModeSelect?.value || '',
+      uiStateMode: current.settings.mode || 'offline'
+    });
+    const requestId = createIdentifier();
+    console.log('CHIEF_MODE_SELECTED', {
+      requestId,
+      selectedOptionText: modeSelection.selectedOptionText,
+      selectedOptionValue: modeSelection.selectedOptionValue,
+      uiStateMode: modeSelection.uiStateMode,
+      normalizedMode: modeSelection.normalizedMode,
+      modePassedToEngine: modeSelection.modePassedToEngine
+    });
+    console.log('CHIEF_RESPONSE_MODE_TRACE', {
+      selectedOptionText: modeSelection.selectedOptionText,
+      selectedOptionValue: modeSelection.selectedOptionValue,
+      uiStateMode: modeSelection.uiStateMode,
+      normalizedMode: modeSelection.normalizedMode,
+      modePassedToEngine: modeSelection.modePassedToEngine
+    });
+    const message = await engine.ask(promptValue, modeSelection.modePassedToEngine, exactDrawingContext ? {
       ...(drawingScope || pendingScope),
       routingDocumentIds: construction?.planResult?.routingProfile?.documentIds || [],
       drawingContext: exactDrawingContext,
-      workPackageReferences: { matchingSheetIds: construction?.planResult.matchingSheetIds || [exactDrawingContext.sheetId], matchingObservationIds: construction?.planResult.matchingObservationIds || [exactDrawingContext.observationId].filter(Boolean) }
-    } : { documentIds: conversation?.attachmentDocumentIds || [] });
+      workPackageReferences: { matchingSheetIds: construction?.planResult.matchingSheetIds || [exactDrawingContext.sheetId], matchingObservationIds: construction?.planResult.matchingObservationIds || [exactDrawingContext.observationId].filter(Boolean) },
+      requestId
+    } : { documentIds: conversation?.attachmentDocumentIds || [], requestId });
     const project = current.projects.find(item => item.id === current.activeProject);
     const libraries = engine.libraries();
     activeRetrievalSession = createRetrievalSession({ question: promptValue, timestamp: message.createdAt, project, library: libraries.find(item => item.id === current.activeLibrary), mode: message.mode, messageId: message.id, hits: message.hits, citations: message.citations, citationVerification: message.citationVerification, retrievalMeta: message.retrievalMeta, documents, libraries, sections });
@@ -6061,21 +6096,12 @@ async function openEvidenceSource(evidence, destination) {
   show(destination);
 }
 
-function modeLabel(mode) {
-  return {
-    offline: 'Offline evidence',
-    source: 'Source-only AI',
-    assisted: 'Expert-assisted AI',
-    general: 'General assistant AI'
-  }[mode] || 'Offline evidence';
-}
-
 async function refresh() {
   const currentState = state();
-  const selectedMode = currentState.settings.mode || 'offline';
+  const selectedMode = normalizeChiefResponseMode(currentState.settings.mode || 'offline');
 
   $('#mode').value = selectedMode;
-  $('#kMode').textContent = modeLabel(selectedMode);
+  $('#kMode').textContent = missionControlResponseModeLabel(selectedMode);
 
   $('#kAI').textContent = selectedMode === 'offline'
     ? 'Not required'
