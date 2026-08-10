@@ -306,10 +306,12 @@ export async function loadBedfordDrawingSpecMappings({
   drawingSpecificationLinks, 
   specificationIndex, 
   projectId, 
-  drawingDocumentId 
+  drawingDocumentId,
+  fetcher = globalThis.fetch,
+  baseUri = globalThis.document?.baseURI || globalThis.location?.href || import.meta.url
 } = {}) {
   try {
-    const response = await fetch(new URL('project-data/bedford/relationships/building-61-spec-links.json', document.baseURI).toString());
+    const response = await fetcher(new URL('project-data/bedford/relationships/building-61-spec-links.json', baseUri).toString());
     if (!response.ok) {
       return { loaded: 0, reason: 'Mapping file not found' };
     }

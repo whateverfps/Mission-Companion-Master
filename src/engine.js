@@ -35,6 +35,7 @@ import { COMPACT_STATE_KEY, COMPACT_STATE_MAX_BYTES, compactStateCategorySizes, 
 import { createProjectDocumentCache } from './cache/project-document-cache.js';
 import { createProjectSectionCache } from './cache/project-section-cache.js';
 import { isDrawingDocument, persistDocumentClassification } from './document-routing.js';
+import { getChiefIntelligenceBridge } from './chief-intelligence-bridge.js';
 
 const STATE_KEY = COMPACT_STATE_KEY;
 const DOC_DB = 'mc-master-documents-v2';
@@ -94,6 +95,13 @@ let sectionCache;
 
 function normalizeProjectIds(projectIds) {
   return [...new Set((Array.isArray(projectIds) ? projectIds : [projectIds]).map(value => String(value ?? '').trim()).filter(Boolean))];
+}
+
+export function resolveActiveConversationTarget(conversations = [], activeConversationId = '') {
+  const normalizedConversations = Array.isArray(conversations) ? conversations : [];
+  const exact = normalizedConversations.find(item => item.conversationId === activeConversationId) || null;
+  if (exact) return exact;
+  return selectActiveConversation(normalizedConversations, activeConversationId);
 }
 
 function invalidateProjectKnowledgeCaches(projectIds, { documents = true, sections = true } = {}) {
@@ -642,6 +650,20 @@ export const engine = {
     return structuredClone(selectActiveConversation(state.conversations, state.activeConversationId));
   },
 
+  ensureActiveConversation({ projectId = state.activeProject } = {}) {
+    const activeConversation = resolveActiveConversationTarget(state.conversations, state.activeConversationId);
+    if (activeConversation) {
+      if (state.activeConversationId !== activeConversation.conversationId) {
+        state.activeConversationId = activeConversation.conversationId;
+        state.chat = activeConversation.messages;
+        save();
+      }
+      return { conversation: structuredClone(activeConversation), created: false, repaired: state.activeConversationId === activeConversation.conversationId };
+    }
+    const created = this.createConversation({ projectId });
+    return { conversation: created, created: true, repaired: false };
+  },
+
   createConversation({ projectId = '', title = '', now = new Date().toISOString() } = {}) {
     const conversation = normalizeConversation({
       conversationId: createIdentifier(),
@@ -677,13 +699,25 @@ export const engine = {
   },
 
   appendConversationMessage(message, conversationId = state.activeConversationId) {
-    const conversation = state.conversations.find(item => item.conversationId === conversationId);
-    if (!conversation) throw new Error('Conversation not found.');
+    let resolvedConversationId = conversationId;
+    let conversation = state.conversations.find(item => item.conversationId === resolvedConversationId);
+    if (!conversation) {
+      const active = resolveActiveConversationTarget(state.conversations, state.activeConversationId);
+      if (active) {
+        resolvedConversationId = active.conversationId;
+        state.activeConversationId = resolvedConversationId;
+        state.chat = active.messages;
+        conversation = state.conversations.find(item => item.conversationId === resolvedConversationId) || null;
+      }
+    }
+    if (!conversation) {
+      throw new Error('Conversation not found.');
+    }
     const normalized = { ...structuredClone(message), id: message?.id || createIdentifier(), createdAt: message?.createdAt || new Date().toISOString() };
     conversation.messages.push(normalized);
     conversation.updatedAt = normalized.createdAt;
     if (conversation.title === 'New conversation') conversation.title = defaultConversationTitle(conversation.messages);
-    if (conversationId === state.activeConversationId) state.chat = conversation.messages;
+    if (resolvedConversationId === state.activeConversationId) state.chat = conversation.messages;
     save();
     return structuredClone(normalized);
   },
@@ -1693,7 +1727,71 @@ export const engine = {
     const sheetIds = normalizeAttachmentDocumentIds(options.sheetIds);
     const routingDocumentIds = normalizeAttachmentDocumentIds(options.routingDocumentIds);
     const scopedDocumentIds = [...new Set([...documentIds, ...routingDocumentIds].filter(Boolean))];
+    const bridge = getChiefIntelligenceBridge?.();
+    if (bridge?.readyPromise) {
+      await bridge.readyPromise;
+    }
+    const bridgeContext = bridge?.initialized ? bridge.buildProjectContext(cleanedPrompt, options.drawingContext) : null;
+    console.log('CHIEF_ASK_ROUTE', {
+      question: cleanedPrompt,
+      mode,
+      bridgeInitialized: Boolean(bridge?.initialized),
+      bridgeHasSpecAnswer: Boolean(bridgeContext?.specificationAnswer),
+      bridgeHasSufficientEvidence: bridge?.hasSufficientEvidence?.(bridgeContext) || false,
+      drawingContextSheet: options.drawingContext?.identity?.sheetNumber || options.drawingContext?.sheetNumber || '',
+      drawingContextPageId: options.drawingContext?.identity?.pageId || options.drawingContext?.pageId || ''
+    });
+    if (bridgeContext?.specificationAnswer && bridge?.hasSufficientEvidence?.(bridgeContext)) {
+      const bridgeAnswer = bridge.generateMissionCompanionAnswer(cleanedPrompt, bridgeContext, mode);
+      console.log('CHIEF_ASK_SPEC_RESULT', {
+        question: cleanedPrompt,
+        mode,
+        queryType: bridgeContext.specificationAnswer?.queryType || '',
+        sectionNumbers: bridgeContext.specificationAnswer?.specifications?.map(item => item.sectionNumber) || [],
+        drawingCount: bridgeContext.specificationAnswer?.drawings?.length || 0
+      });
+      const answer = {
+        content: bridgeAnswer?.answer || bridgeContext.specificationAnswer.answer || '',
+        citations: [],
+        source: 'mission-companion',
+        specificationAnswer: bridgeAnswer?.specificationAnswer || bridgeContext.specificationAnswer,
+        reasoningPath: bridgeAnswer?.reasoningPath || [],
+        evidence: bridgeAnswer?.evidence || [],
+        assumptions: bridgeAnswer?.assumptions || [],
+        unresolvedQuestions: bridgeAnswer?.unresolvedQuestions || [],
+        conflicts: bridgeAnswer?.conflicts || [],
+        diagnostics: bridgeAnswer?.diagnostics || { source: 'specification-sme' }
+      };
+      const citationVerification = verifyCitations(answer.content, []);
+      const message = {
+        id: createIdentifier(),
+        role: 'assistant',
+        content: answer.content,
+        citations: answer.citations,
+        hits: [],
+        retrievalMeta: {},
+        citationVerification,
+        createdAt: new Date().toISOString(),
+        mode,
+        specificationAnswer: answer.specificationAnswer
+      };
+      const activeConversation = this.ensureActiveConversation({ projectId: state.activeProject });
+      const activeConversationId = activeConversation.conversation.conversationId;
+      this.appendConversationMessage({
+        id: createIdentifier(),
+        role: 'user',
+        content: cleanedPrompt,
+        createdAt: new Date().toISOString()
+      }, activeConversationId);
+      this.appendConversationMessage(message, activeConversationId);
+      return structuredClone(message);
+    }
     const hits = await this.search(cleanedPrompt, { documentIds: scopedDocumentIds, sectionIds, pageNumbers });
+    console.log('CHIEF_ASK_GENERIC_RETRIEVAL', {
+      question: cleanedPrompt,
+      hits: hits.length,
+      mode
+    });
     if ((scopedDocumentIds.length || sectionIds.length || pageNumbers.length) && !hits.length && !options.drawingContext) {
       throw new Error(pageNumbers.length || sectionIds.length ? 'The exact drawing scope has no usable indexed section evidence. The drawing viewer remains available.' : 'The selected attachments do not contain usable indexed sections for this question.');
     }
@@ -1803,16 +1901,15 @@ export const engine = {
       } : null
     };
 
-    if (!selectActiveConversation(state.conversations, state.activeConversationId)) {
-      this.createConversation({ projectId: state.activeProject });
-    }
+    const conversationPrep = this.ensureActiveConversation({ projectId: state.activeProject });
+    const conversationId = conversationPrep?.conversation?.conversationId || state.activeConversationId;
     this.appendConversationMessage({
       id: createIdentifier(),
       role: 'user',
       content: cleanedPrompt,
       createdAt: new Date().toISOString()
-    });
-    this.appendConversationMessage(message);
+    }, conversationId);
+    this.appendConversationMessage(message, conversationId);
 
     logger.info('Analysis completed', {
       mode,
