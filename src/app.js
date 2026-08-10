@@ -185,7 +185,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
   "'": '&#39;'
 }[c]));
 const fmt = n => new Intl.NumberFormat().format(n || 0);
-const missionPmisDashboardUrl = 'https://whateverfps.github.io/Mission-PMIS/';
+const missionPmisDashboardUrl = new URL('project-documents/bedford/PMIS/index.html?embedded=1', document.baseURI).toString();
 const chiefAssets = {
   idle: './src/assets/chief/chief-idle.png',
   busy: './src/assets/chief/chief-concept.png',
@@ -4481,7 +4481,6 @@ async function renderMissionControlDashboard() {
         </div>
         <div class="mc-dashboard-actions">
           <button type="button" data-control-action="refresh-dashboard">Refresh Dashboard</button>
-          <button type="button" data-control-action="open-dashboard-window">Open in New Window</button>
         </div>
       </header>
       <section class="mc-dashboard-surface" aria-label="Mission PMIS Dashboard">
