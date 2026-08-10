@@ -237,14 +237,51 @@
         }
       ]
   },
-  "61G-011": {
-    "success": true,
-    "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:4",
+    "61G-011": {
+      "success": true,
+      "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:4",
       "discipline": "General",
       "drawingType": "General Information",
       "populated": 0,
       "source": "drawing-type-inference",
-      "links": []
+      "links": [
+        {
+          "linkId": "link-4-1",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:4",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "01 35 26",
+          "sectionTitle": "SAFETY REQUIREMENTS",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.86,
+          "evidenceSource": "ICRA and infection control notes",
+          "evidenceText": "Sheet 61G-011 includes ICRA legend items and temporary wall / HEPA negative air / dust-control measures for occupied healthcare areas.",
+          "reason": "Bedford Section 01 35 26 explicitly includes dust control, healthcare safety, and ICRA-related mitigation that materially applies to the sheet’s infection-control measures."
+        },
+        {
+          "linkId": "link-4-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:4",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "01 57 19",
+          "sectionTitle": "TEMPORARY ENVIRONMENTAL CONTROLS",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.84,
+          "evidenceSource": "Temporary containment notes",
+          "evidenceText": "The same sheet shows temporary wall containment, HEPA negative air units, and dust-prevention measures to protect the active facility.",
+          "reason": "Bedford Section 01 57 19 governs environmental control measures including dust/debris control and work-area protection that match the sheet’s temporary containment notes."
+        }
+      ]
     },
   "61G-012": {
       "success": true,
