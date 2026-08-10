@@ -4,10 +4,10 @@
   "source": "drawing-type-inference",
   "note": "This mapping uses drawing type and discipline as evidence. True per-page text extraction will be added when infrastructure is available.",
   "stats": {
-    "totalLinks": 70,
+    "totalLinks": 222,
     "uniquePages": 70,
-    "sheetsWithSpecs": 38,
-    "sheetsWithZeroSpecs": 32
+    "sheetsWithSpecs": 52,
+    "sheetsWithZeroSpecs": 18
   },
   "results": {
     "61G-000": {
@@ -15,7 +15,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:1",
       "discipline": "General",
       "drawingType": "Cover Sheet",
-      "populated": 0,
+      "populated": 10,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -69,7 +69,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.9,
           "evidenceSource": "Cover sheet project scope",
-          "evidenceText": "The cover sheet lists 07 08 00 – Facility Exterior Closure Commissioning in the commissioning scope for the project.",
+          "evidenceText": "The cover sheet lists 07 08 00 \u2013 Facility Exterior Closure Commissioning in the commissioning scope for the project.",
           "reason": "The cover sheet directly references Bedford Section 07 08 00 as a commissioning requirement."
         },
         {
@@ -87,7 +87,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.9,
           "evidenceSource": "Cover sheet project scope",
-          "evidenceText": "The cover sheet lists 21 08 00 – Commissioning of Fire Suppression Systems in the commissioning scope for the project.",
+          "evidenceText": "The cover sheet lists 21 08 00 \u2013 Commissioning of Fire Suppression Systems in the commissioning scope for the project.",
           "reason": "The cover sheet directly references Bedford Section 21 08 00 as a commissioning requirement."
         },
         {
@@ -105,7 +105,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.9,
           "evidenceSource": "Cover sheet project scope",
-          "evidenceText": "The cover sheet lists 22 08 00 – Commissioning of Plumbing Systems in the commissioning scope for the project.",
+          "evidenceText": "The cover sheet lists 22 08 00 \u2013 Commissioning of Plumbing Systems in the commissioning scope for the project.",
           "reason": "The cover sheet directly references Bedford Section 22 08 00 as a commissioning requirement."
         },
         {
@@ -123,7 +123,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.9,
           "evidenceSource": "Cover sheet project scope",
-          "evidenceText": "The cover sheet lists 23 08 00 – Commissioning of HVAC Systems in the commissioning scope for the project.",
+          "evidenceText": "The cover sheet lists 23 08 00 \u2013 Commissioning of HVAC Systems in the commissioning scope for the project.",
           "reason": "The cover sheet directly references Bedford Section 23 08 00 as a commissioning requirement."
         },
         {
@@ -141,7 +141,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.9,
           "evidenceSource": "Cover sheet project scope",
-          "evidenceText": "The cover sheet lists 26 08 00 – Commissioning of Electrical Systems in the commissioning scope for the project.",
+          "evidenceText": "The cover sheet lists 26 08 00 \u2013 Commissioning of Electrical Systems in the commissioning scope for the project.",
           "reason": "The cover sheet directly references Bedford Section 26 08 00 as a commissioning requirement."
         },
         {
@@ -159,7 +159,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.9,
           "evidenceSource": "Cover sheet project scope",
-          "evidenceText": "The cover sheet lists 27 08 00 – Commissioning of Communications Systems in the commissioning scope for the project.",
+          "evidenceText": "The cover sheet lists 27 08 00 \u2013 Commissioning of Communications Systems in the commissioning scope for the project.",
           "reason": "The cover sheet directly references Bedford Section 27 08 00 as a commissioning requirement."
         },
         {
@@ -177,7 +177,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.9,
           "evidenceSource": "Cover sheet project scope",
-          "evidenceText": "The cover sheet lists 28 08 00 – Commissioning of Security Systems in the commissioning scope for the project.",
+          "evidenceText": "The cover sheet lists 28 08 00 \u2013 Commissioning of Security Systems in the commissioning scope for the project.",
           "reason": "The cover sheet directly references Bedford Section 28 08 00 as a commissioning requirement."
         },
         {
@@ -195,7 +195,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.9,
           "evidenceSource": "Cover sheet project scope",
-          "evidenceText": "The cover sheet lists 33 08 00 – Commissioning of Site Utilities in the commissioning scope for the project.",
+          "evidenceText": "The cover sheet lists 33 08 00 \u2013 Commissioning of Site Utilities in the commissioning scope for the project.",
           "reason": "The cover sheet directly references Bedford Section 33 08 00 as a commissioning requirement."
         }
       ]
@@ -207,9 +207,9 @@
       "drawingType": "Drawing Index",
       "populated": 0,
       "source": "drawing-type-inference",
-    "links": []
-  },
-  "61G-010": {
+      "links": []
+    },
+    "61G-010": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:3",
       "discipline": "General",
@@ -236,13 +236,13 @@
           "reason": "Explicit sheet note identifies Bedford Section 01 35 26 as required for the project."
         }
       ]
-  },
+    },
     "61G-011": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:4",
       "discipline": "General",
       "drawingType": "General Information",
-      "populated": 0,
+      "populated": 2,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -261,7 +261,7 @@
           "confidence": 0.86,
           "evidenceSource": "ICRA and infection control notes",
           "evidenceText": "Sheet 61G-011 includes ICRA legend items and temporary wall / HEPA negative air / dust-control measures for occupied healthcare areas.",
-          "reason": "Bedford Section 01 35 26 explicitly includes dust control, healthcare safety, and ICRA-related mitigation that materially applies to the sheet’s infection-control measures."
+          "reason": "Bedford Section 01 35 26 explicitly includes dust control, healthcare safety, and ICRA-related mitigation that materially applies to the sheet\u2019s infection-control measures."
         },
         {
           "linkId": "link-4-2",
@@ -279,11 +279,11 @@
           "confidence": 0.84,
           "evidenceSource": "Temporary containment notes",
           "evidenceText": "The same sheet shows temporary wall containment, HEPA negative air units, and dust-prevention measures to protect the active facility.",
-          "reason": "Bedford Section 01 57 19 governs environmental control measures including dust/debris control and work-area protection that match the sheet’s temporary containment notes."
+          "reason": "Bedford Section 01 57 19 governs environmental control measures including dust/debris control and work-area protection that match the sheet\u2019s temporary containment notes."
         }
       ]
     },
-  "61G-012": {
+    "61G-012": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:5",
       "discipline": "General",
@@ -328,14 +328,14 @@
           "reason": "Explicit sheet note references Bedford Section 01 57 19 for temporary environmental controls."
         }
       ]
-  },
-  "61H-101": {
+    },
+    "61H-101": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:6",
       "discipline": "Hazardous",
       "drawingType": "Plan",
-      "populated": 1,
-      "source": "drawing-type-inference",
+      "populated": 5,
+      "source": "evidence-enriched",
       "links": [
         {
           "linkId": "link-6-1",
@@ -345,25 +345,99 @@
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:6",
           "specificationDocumentId": "bedford-specification-manual",
           "sectionNumber": "02 82 11",
-          "sectionTitle": "TRADITIONAL ASBESTOS ABATEMENT",
+          "sectionTitle": "CLASS I NEGATIVE PRESSURE ENCLOSURE ASBESTOS ABATEMENT",
           "origin": "drawing-text-reference",
           "status": "governing",
           "relationshipType": "GOVERNING",
           "evidenceLevel": "DIRECT",
+          "confidence": 0.99,
+          "evidenceSource": "Drawing keynote",
+          "evidenceText": "Keynote 1 explicitly requires containment barrier and personnel decontamination facility per Section 02 82 11 during abatement work.",
+          "reason": "The sheet directly cites Bedford Section 02 82 11 for hazardous-material abatement containment and decontamination."
+        },
+        {
+          "linkId": "link-6-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:6",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "02 82 13.13",
+          "sectionTitle": "GLOVEBAG ASBESTOS ABATEMENT",
+          "origin": "drawing-text-reference",
+          "status": "governing",
+          "relationshipType": "GOVERNING",
+          "evidenceLevel": "DIRECT",
+          "confidence": 0.99,
+          "evidenceSource": "Drawing general note",
+          "evidenceText": "Hazardous Material Abatement General Note 24 explicitly directs coordination with the industrial hygienist and final confirmation of abated areas per Section 02 82 13.13.",
+          "reason": "The drawing explicitly references Bedford Section 02 82 13.13, Glovebag Asbestos Abatement."
+        },
+        {
+          "linkId": "link-6-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:6",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "02 83 33.13",
+          "sectionTitle": "LEAD-BASED PAINT REMOVAL AND DISPOSAL",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
           "confidence": 0.98,
-          "evidenceSource": "Drawing note",
-          "evidenceText": "Lead abatement keynote instructs the contractor to provide containment barrier and personnel decontamination facility per Section 02 82 11 during abatement work.",
-          "reason": "Explicit sheet keynote references Bedford Section 02 82 11 for abatement containment and decontamination facilities."
+          "evidenceSource": "Drawing keynote and abatement legend",
+          "evidenceText": "The sheet identifies lead-containing paint to be abated; the first-level keynote also directs removal of lead-based paint throughout the affected room and door frames.",
+          "reason": "Bedford Section 02 83 33.13 governs removal and disposal of lead-based paint, which is expressly shown as abatement scope on this sheet."
+        },
+        {
+          "linkId": "link-6-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:6",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "02 41 00",
+          "sectionTitle": "DEMOLITION",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.86,
+          "evidenceSource": "Referenced spec related work",
+          "evidenceText": "The abatement work is required prior to demolition, and Bedford Sections 02 82 11 and 02 83 33.13 both identify Section 02 41 00 as related demolition work.",
+          "reason": "Section 02 41 00 materially applies because the hazardous-material removal precedes and coordinates with demolition shown by the sheet notes.",
+          "parentSpecification": "02 82 11 / 02 83 33.13"
+        },
+        {
+          "linkId": "link-6-5",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:6",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 91 00",
+          "sectionTitle": "PAINTING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.79,
+          "evidenceSource": "Referenced lead spec related work",
+          "evidenceText": "Bedford Section 02 83 33.13 lists Section 09 91 00 for surface preparation that disturbs lead-based paint; the sheet identifies lead-painted surfaces and frames for abatement.",
+          "reason": "Painting requirements are directly cross-referenced by the lead-abatement specification for surfaces affected by the work.",
+          "parentSpecification": "02 83 33.13"
         }
       ]
-  },
-  "61H-102": {
+    },
+    "61H-102": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:7",
       "discipline": "Hazardous",
       "drawingType": "Plan",
-      "populated": 1,
-      "source": "drawing-type-inference",
+      "populated": 5,
+      "source": "evidence-enriched",
       "links": [
         {
           "linkId": "link-7-1",
@@ -373,18 +447,92 @@
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:7",
           "specificationDocumentId": "bedford-specification-manual",
           "sectionNumber": "02 82 11",
-          "sectionTitle": "TRADITIONAL ASBESTOS ABATEMENT",
+          "sectionTitle": "CLASS I NEGATIVE PRESSURE ENCLOSURE ASBESTOS ABATEMENT",
           "origin": "drawing-text-reference",
           "status": "governing",
           "relationshipType": "GOVERNING",
           "evidenceLevel": "DIRECT",
+          "confidence": 0.99,
+          "evidenceSource": "Drawing keynote",
+          "evidenceText": "Keynote 1 explicitly requires containment barrier and personnel decontamination facility per Section 02 82 11 during abatement work.",
+          "reason": "The sheet directly cites Bedford Section 02 82 11 for hazardous-material abatement containment and decontamination."
+        },
+        {
+          "linkId": "link-7-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:7",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "02 82 13.13",
+          "sectionTitle": "GLOVEBAG ASBESTOS ABATEMENT",
+          "origin": "drawing-text-reference",
+          "status": "governing",
+          "relationshipType": "GOVERNING",
+          "evidenceLevel": "DIRECT",
+          "confidence": 0.99,
+          "evidenceSource": "Drawing general note",
+          "evidenceText": "Hazardous Material Abatement General Note 24 explicitly directs coordination with the industrial hygienist and final confirmation of abated areas per Section 02 82 13.13.",
+          "reason": "The drawing explicitly references Bedford Section 02 82 13.13, Glovebag Asbestos Abatement."
+        },
+        {
+          "linkId": "link-7-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:7",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "02 83 33.13",
+          "sectionTitle": "LEAD-BASED PAINT REMOVAL AND DISPOSAL",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
           "confidence": 0.98,
-          "evidenceSource": "Drawing note",
-          "evidenceText": "Lead abatement keynote instructs the contractor to provide containment barrier and personnel decontamination facility per Section 02 82 11 during abatement work.",
-          "reason": "Explicit sheet keynote references Bedford Section 02 82 11 for abatement containment and decontamination facilities."
+          "evidenceSource": "Drawing keynote and abatement legend",
+          "evidenceText": "The sheet identifies lead-containing paint to be abated; the first-level keynote also directs removal of lead-based paint throughout the affected room and door frames.",
+          "reason": "Bedford Section 02 83 33.13 governs removal and disposal of lead-based paint, which is expressly shown as abatement scope on this sheet."
+        },
+        {
+          "linkId": "link-7-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:7",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "02 41 00",
+          "sectionTitle": "DEMOLITION",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.86,
+          "evidenceSource": "Referenced spec related work",
+          "evidenceText": "The abatement work is required prior to demolition, and Bedford Sections 02 82 11 and 02 83 33.13 both identify Section 02 41 00 as related demolition work.",
+          "reason": "Section 02 41 00 materially applies because the hazardous-material removal precedes and coordinates with demolition shown by the sheet notes.",
+          "parentSpecification": "02 82 11 / 02 83 33.13"
+        },
+        {
+          "linkId": "link-7-5",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:7",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 91 00",
+          "sectionTitle": "PAINTING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.79,
+          "evidenceSource": "Referenced lead spec related work",
+          "evidenceText": "Bedford Section 02 83 33.13 lists Section 09 91 00 for surface preparation that disturbs lead-based paint; the sheet identifies lead-painted surfaces and frames for abatement.",
+          "reason": "Painting requirements are directly cross-referenced by the lead-abatement specification for surfaces affected by the work.",
+          "parentSpecification": "02 83 33.13"
         }
       ]
-  },
+    },
     "61A-001": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:8",
@@ -399,7 +547,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:9",
       "discipline": "Architectural",
       "drawingType": "Plan",
-      "populated": 3,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -475,7 +623,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:10",
       "discipline": "Architectural",
       "drawingType": "Plan",
-      "populated": 3,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -551,7 +699,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:11",
       "discipline": "Architectural",
       "drawingType": "Details",
-      "populated": 2,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -629,7 +777,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:12",
       "discipline": "Architectural",
       "drawingType": "Details",
-      "populated": 2,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -707,7 +855,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:13",
       "discipline": "Architectural",
       "drawingType": "Details",
-      "populated": 2,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -923,49 +1071,186 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:15",
       "discipline": "Fire Protection",
       "drawingType": "General Information",
-      "populated": 0,
-      "source": "drawing-type-inference",
-      "links": []
+      "populated": 3,
+      "source": "evidence-enriched",
+      "links": [
+        {
+          "linkId": "link-15-1",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:15",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "21 13 13",
+          "sectionTitle": "WET-PIPE SPRINKLER SYSTEMS",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.98,
+          "evidenceSource": "Drawing symbols/details/general notes",
+          "evidenceText": "The sheet defines wet-pipe fire protection piping, new and demolition sprinkler heads, valves, FDC/flow components, and sprinkler-pipe hanger/support details.",
+          "reason": "Bedford Section 21 13 13 governs modification and installation of wet-pipe sprinkler systems shown throughout 61FX001."
+        },
+        {
+          "linkId": "link-15-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:15",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "07 84 00",
+          "sectionTitle": "FIRESTOPPING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.94,
+          "evidenceSource": "Drawing note + parent spec related work",
+          "evidenceText": "General notes require UL-approved fireproof caulking at penetrations through fire-, smoke-, and full-height walls; Section 21 13 13 also lists 07 84 00 as Related Work.",
+          "reason": "Firestopping materially applies to sprinkler piping penetrations shown and described on this sheet.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-15-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:15",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "01 33 23",
+          "sectionTitle": "SHOP DRAWINGS, PRODUCT DATA, AND SAMPLES",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.84,
+          "evidenceSource": "Drawing submittal note + parent spec related work",
+          "evidenceText": "The sheet requires complete equipment selections and technical drawings/submittals; Section 21 13 13 lists 01 33 23 as Related Work.",
+          "reason": "Shop-drawing and product-data requirements materially apply to the sprinkler system work and supports detailed on this sheet.",
+          "parentSpecification": "21 13 13"
+        }
+      ]
     },
     "61FX100": {
       "success": true,
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:16",
       "discipline": "Fire Protection",
       "drawingType": "Plan",
-      "populated": 2,
-      "source": "drawing-type-inference",
+      "populated": 6,
+      "source": "evidence-enriched",
       "links": [
         {
-          "linkId": "link-16-3",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-16-1",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:16",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 14 00",
-          "sectionTitle": "SIGNAGE",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX100 is a Plan in Fire Protection discipline",
-          "reason": "Specification section 10 14 00 is typically referenced by Plan sheets in Fire Protection discipline"
+          "sectionNumber": "21 13 13",
+          "sectionTitle": "WET-PIPE SPRINKLER SYSTEMS",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.99,
+          "evidenceSource": "Drawing general notes/keynotes",
+          "evidenceText": "The plan requires NFPA 13 wet-pipe sprinkler modifications, new/replacement upright sprinkler heads, branch piping connections, black-steel piping, hangers and supports.",
+          "reason": "Bedford Section 21 13 13 directly governs the wet-pipe sprinkler modifications shown on the plan."
         },
         {
-          "linkId": "link-16-9",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-16-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:16",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 26 00",
+          "sectionNumber": "28 31 00",
           "sectionTitle": "FIRE DETECTION AND ALARM",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX100 is a Plan in Fire Protection discipline",
-          "reason": "Specification section 10 26 00 is typically referenced by Plan sheets in Fire Protection discipline"
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.95,
+          "evidenceSource": "Drawing keynote",
+          "evidenceText": "Keynote 6 calls for a new heat/smoke detector and fire-alarm strobe/horn coordinated with the renovation work.",
+          "reason": "Bedford Section 28 31 00 governs the new fire detection and notification devices shown on the plan."
+        },
+        {
+          "linkId": "link-16-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:16",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "01 33 23",
+          "sectionTitle": "SHOP DRAWINGS, PRODUCT DATA, AND SAMPLES",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.91,
+          "evidenceSource": "Drawing submittal note + parent spec related work",
+          "evidenceText": "The plan requires shop drawings identifying pipe sizes, bracing, hangers and sprinkler heads plus product cut sheets; Section 21 13 13 lists 01 33 23 as Related Work.",
+          "reason": "The project-specific sprinkler submittals shown on the drawing are governed by Section 01 33 23.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-16-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:16",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "07 84 00",
+          "sectionTitle": "FIRESTOPPING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.96,
+          "evidenceSource": "Drawing general note + parent spec related work",
+          "evidenceText": "The plan requires UL-approved fireproof caulking at sprinkler piping penetrations of fire-, smoke-, and full-height walls; Section 21 13 13 lists 07 84 00 as Related Work.",
+          "reason": "Firestopping is explicitly required by both the drawing and the wet-pipe sprinkler specification.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-16-5",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:16",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 91 00",
+          "sectionTitle": "PAINTING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.82,
+          "evidenceSource": "Drawing general note + parent spec related work",
+          "evidenceText": "The plan requires patching and painting where floor, wall or ceiling cutting/filling occurs; Section 21 13 13 lists 09 91 00 as Related Work.",
+          "reason": "Painting applies to restoration associated with the sprinkler modifications shown on the plan.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-16-6",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:16",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "21 08 00",
+          "sectionTitle": "COMMISSIONING OF FIRE SUPPRESSION SYSTEMS",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.94,
+          "evidenceSource": "Drawing commissioning note + parent spec related work",
+          "evidenceText": "The plan requires all new piping to be cleaned and tested prior to commissioning; Section 21 13 13 lists 21 08 00 as Related Work.",
+          "reason": "Commissioning of the modified fire-suppression system is explicitly triggered by the drawing and parent sprinkler specification.",
+          "parentSpecification": "21 13 13"
         }
       ]
     },
@@ -974,40 +1259,120 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:17",
       "discipline": "Fire Protection",
       "drawingType": "Plan",
-      "populated": 2,
-      "source": "drawing-type-inference",
+      "populated": 6,
+      "source": "evidence-enriched",
       "links": [
         {
-          "linkId": "link-17-3",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-17-1",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:17",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 14 00",
-          "sectionTitle": "SIGNAGE",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX101 is a Plan in Fire Protection discipline",
-          "reason": "Specification section 10 14 00 is typically referenced by Plan sheets in Fire Protection discipline"
+          "sectionNumber": "21 13 13",
+          "sectionTitle": "WET-PIPE SPRINKLER SYSTEMS",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.99,
+          "evidenceSource": "Drawing general notes/keynotes",
+          "evidenceText": "The plan requires NFPA 13 wet-pipe sprinkler modifications, new/replacement upright sprinkler heads, branch piping connections, black-steel piping, hangers and supports.",
+          "reason": "Bedford Section 21 13 13 directly governs the wet-pipe sprinkler modifications shown on the plan."
         },
         {
-          "linkId": "link-17-9",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-17-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:17",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 26 00",
+          "sectionNumber": "28 31 00",
           "sectionTitle": "FIRE DETECTION AND ALARM",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX101 is a Plan in Fire Protection discipline",
-          "reason": "Specification section 10 26 00 is typically referenced by Plan sheets in Fire Protection discipline"
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.95,
+          "evidenceSource": "Drawing keynote",
+          "evidenceText": "Keynote 6 calls for a new heat/smoke detector and fire-alarm strobe/horn coordinated with the renovation work.",
+          "reason": "Bedford Section 28 31 00 governs the new fire detection and notification devices shown on the plan."
+        },
+        {
+          "linkId": "link-17-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:17",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "01 33 23",
+          "sectionTitle": "SHOP DRAWINGS, PRODUCT DATA, AND SAMPLES",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.91,
+          "evidenceSource": "Drawing submittal note + parent spec related work",
+          "evidenceText": "The plan requires shop drawings identifying pipe sizes, bracing, hangers and sprinkler heads plus product cut sheets; Section 21 13 13 lists 01 33 23 as Related Work.",
+          "reason": "The project-specific sprinkler submittals shown on the drawing are governed by Section 01 33 23.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-17-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:17",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "07 84 00",
+          "sectionTitle": "FIRESTOPPING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.96,
+          "evidenceSource": "Drawing general note + parent spec related work",
+          "evidenceText": "The plan requires UL-approved fireproof caulking at sprinkler piping penetrations of fire-, smoke-, and full-height walls; Section 21 13 13 lists 07 84 00 as Related Work.",
+          "reason": "Firestopping is explicitly required by both the drawing and the wet-pipe sprinkler specification.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-17-5",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:17",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 91 00",
+          "sectionTitle": "PAINTING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.82,
+          "evidenceSource": "Drawing general note + parent spec related work",
+          "evidenceText": "The plan requires patching and painting where floor, wall or ceiling cutting/filling occurs; Section 21 13 13 lists 09 91 00 as Related Work.",
+          "reason": "Painting applies to restoration associated with the sprinkler modifications shown on the plan.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-17-6",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:17",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "21 08 00",
+          "sectionTitle": "COMMISSIONING OF FIRE SUPPRESSION SYSTEMS",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.94,
+          "evidenceSource": "Drawing commissioning note + parent spec related work",
+          "evidenceText": "The plan requires all new piping to be cleaned and tested prior to commissioning; Section 21 13 13 lists 21 08 00 as Related Work.",
+          "reason": "Commissioning of the modified fire-suppression system is explicitly triggered by the drawing and parent sprinkler specification.",
+          "parentSpecification": "21 13 13"
         }
       ]
     },
@@ -1016,40 +1381,120 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:18",
       "discipline": "Fire Protection",
       "drawingType": "Plan",
-      "populated": 2,
-      "source": "drawing-type-inference",
+      "populated": 6,
+      "source": "evidence-enriched",
       "links": [
         {
-          "linkId": "link-18-3",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-18-1",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:18",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 14 00",
-          "sectionTitle": "SIGNAGE",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX102 is a Plan in Fire Protection discipline",
-          "reason": "Specification section 10 14 00 is typically referenced by Plan sheets in Fire Protection discipline"
+          "sectionNumber": "21 13 13",
+          "sectionTitle": "WET-PIPE SPRINKLER SYSTEMS",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.99,
+          "evidenceSource": "Drawing general notes/keynotes",
+          "evidenceText": "The plan requires NFPA 13 wet-pipe sprinkler modifications, new/replacement upright sprinkler heads, branch piping connections, black-steel piping, hangers and supports.",
+          "reason": "Bedford Section 21 13 13 directly governs the wet-pipe sprinkler modifications shown on the plan."
         },
         {
-          "linkId": "link-18-9",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-18-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:18",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 26 00",
+          "sectionNumber": "28 31 00",
           "sectionTitle": "FIRE DETECTION AND ALARM",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX102 is a Plan in Fire Protection discipline",
-          "reason": "Specification section 10 26 00 is typically referenced by Plan sheets in Fire Protection discipline"
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.95,
+          "evidenceSource": "Drawing keynote",
+          "evidenceText": "Keynote 6 calls for a new heat/smoke detector and fire-alarm strobe/horn coordinated with the renovation work.",
+          "reason": "Bedford Section 28 31 00 governs the new fire detection and notification devices shown on the plan."
+        },
+        {
+          "linkId": "link-18-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:18",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "01 33 23",
+          "sectionTitle": "SHOP DRAWINGS, PRODUCT DATA, AND SAMPLES",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.91,
+          "evidenceSource": "Drawing submittal note + parent spec related work",
+          "evidenceText": "The plan requires shop drawings identifying pipe sizes, bracing, hangers and sprinkler heads plus product cut sheets; Section 21 13 13 lists 01 33 23 as Related Work.",
+          "reason": "The project-specific sprinkler submittals shown on the drawing are governed by Section 01 33 23.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-18-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:18",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "07 84 00",
+          "sectionTitle": "FIRESTOPPING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.96,
+          "evidenceSource": "Drawing general note + parent spec related work",
+          "evidenceText": "The plan requires UL-approved fireproof caulking at sprinkler piping penetrations of fire-, smoke-, and full-height walls; Section 21 13 13 lists 07 84 00 as Related Work.",
+          "reason": "Firestopping is explicitly required by both the drawing and the wet-pipe sprinkler specification.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-18-5",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:18",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 91 00",
+          "sectionTitle": "PAINTING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.82,
+          "evidenceSource": "Drawing general note + parent spec related work",
+          "evidenceText": "The plan requires patching and painting where floor, wall or ceiling cutting/filling occurs; Section 21 13 13 lists 09 91 00 as Related Work.",
+          "reason": "Painting applies to restoration associated with the sprinkler modifications shown on the plan.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-18-6",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:18",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "21 08 00",
+          "sectionTitle": "COMMISSIONING OF FIRE SUPPRESSION SYSTEMS",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.94,
+          "evidenceSource": "Drawing commissioning note + parent spec related work",
+          "evidenceText": "The plan requires all new piping to be cleaned and tested prior to commissioning; Section 21 13 13 lists 21 08 00 as Related Work.",
+          "reason": "Commissioning of the modified fire-suppression system is explicitly triggered by the drawing and parent sprinkler specification.",
+          "parentSpecification": "21 13 13"
         }
       ]
     },
@@ -1058,40 +1503,120 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:19",
       "discipline": "Fire Protection",
       "drawingType": "Plan",
-      "populated": 2,
-      "source": "drawing-type-inference",
+      "populated": 6,
+      "source": "evidence-enriched",
       "links": [
         {
-          "linkId": "link-19-3",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-19-1",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:19",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 14 00",
-          "sectionTitle": "SIGNAGE",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX401 is a Plan in Fire Protection discipline",
-          "reason": "Specification section 10 14 00 is typically referenced by Plan sheets in Fire Protection discipline"
+          "sectionNumber": "21 13 13",
+          "sectionTitle": "WET-PIPE SPRINKLER SYSTEMS",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.99,
+          "evidenceSource": "Drawing general notes/keynotes",
+          "evidenceText": "The plan requires NFPA 13 wet-pipe sprinkler modifications, new/replacement upright sprinkler heads, branch piping connections, black-steel piping, hangers and supports.",
+          "reason": "Bedford Section 21 13 13 directly governs the wet-pipe sprinkler modifications shown on the plan."
         },
         {
-          "linkId": "link-19-9",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-19-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:19",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 26 00",
+          "sectionNumber": "28 31 00",
           "sectionTitle": "FIRE DETECTION AND ALARM",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX401 is a Plan in Fire Protection discipline",
-          "reason": "Specification section 10 26 00 is typically referenced by Plan sheets in Fire Protection discipline"
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.95,
+          "evidenceSource": "Drawing keynote",
+          "evidenceText": "Keynote 6 calls for a new heat/smoke detector and fire-alarm strobe/horn coordinated with the renovation work.",
+          "reason": "Bedford Section 28 31 00 governs the new fire detection and notification devices shown on the plan."
+        },
+        {
+          "linkId": "link-19-3",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:19",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "01 33 23",
+          "sectionTitle": "SHOP DRAWINGS, PRODUCT DATA, AND SAMPLES",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.91,
+          "evidenceSource": "Drawing submittal note + parent spec related work",
+          "evidenceText": "The plan requires shop drawings identifying pipe sizes, bracing, hangers and sprinkler heads plus product cut sheets; Section 21 13 13 lists 01 33 23 as Related Work.",
+          "reason": "The project-specific sprinkler submittals shown on the drawing are governed by Section 01 33 23.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-19-4",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:19",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "07 84 00",
+          "sectionTitle": "FIRESTOPPING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.96,
+          "evidenceSource": "Drawing general note + parent spec related work",
+          "evidenceText": "The plan requires UL-approved fireproof caulking at sprinkler piping penetrations of fire-, smoke-, and full-height walls; Section 21 13 13 lists 07 84 00 as Related Work.",
+          "reason": "Firestopping is explicitly required by both the drawing and the wet-pipe sprinkler specification.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-19-5",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:19",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "09 91 00",
+          "sectionTitle": "PAINTING",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.94,
+          "evidenceSource": "Drawing general note + parent spec related work",
+          "evidenceText": "The enlarged-plan sheet explicitly requires all newly exposed sprinkler piping to be painted, and Section 21 13 13 lists 09 91 00 as Related Work.",
+          "reason": "Painting directly applies to newly exposed sprinkler piping on 61FX401.",
+          "parentSpecification": "21 13 13"
+        },
+        {
+          "linkId": "link-19-6",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:19",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "21 08 00",
+          "sectionTitle": "COMMISSIONING OF FIRE SUPPRESSION SYSTEMS",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.94,
+          "evidenceSource": "Drawing commissioning note + parent spec related work",
+          "evidenceText": "The plan requires all new piping to be cleaned and tested prior to commissioning; Section 21 13 13 lists 21 08 00 as Related Work.",
+          "reason": "Commissioning of the modified fire-suppression system is explicitly triggered by the drawing and parent sprinkler specification.",
+          "parentSpecification": "21 13 13"
         }
       ]
     },
@@ -1100,27 +1625,11 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:20",
       "discipline": "Fire Protection",
       "drawingType": "Details",
-      "populated": 1,
-      "source": "drawing-type-inference",
+      "populated": 2,
+      "source": "evidence-enriched",
       "links": [
         {
-          "linkId": "link-20-2",
-          "createdAt": "2026-08-08T14:05:22.233Z",
-          "projectId": "bedford",
-          "drawingDocumentId": "bedford-specification-manual",
-          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:20",
-          "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 14 00",
-          "sectionTitle": "SIGNAGE",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX501 is a Details in Fire Protection discipline",
-          "reason": "Specification section 10 14 00 is typically referenced by Details sheets in Fire Protection discipline"
-        },
-        {
-          "linkId": "link-20-3",
+          "linkId": "link-20-1",
           "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
@@ -1132,10 +1641,29 @@
           "status": "related",
           "relationshipType": "RELATED",
           "evidenceLevel": "SUPPORTED",
-          "confidence": 0.83,
+          "confidence": 0.99,
           "evidenceSource": "Drawing detail content",
-          "evidenceText": "Sheet 61FX501 includes a fire alarm matrix, fire alarm wire diagram, waterflow switch, tamper switch, and FACP diagram.",
-          "reason": "The fire alarm details on the sheet directly depict fire alarm system components governed by Bedford Section 28 31 00."
+          "evidenceText": "The sheet contains the fire alarm matrix and fire alarm diagram with FACP, waterflow switch, tamper switch, addressable monitor modules, and fire-alarm wiring.",
+          "reason": "Bedford Section 28 31 00 governs the fire detection and alarm system components and interfaces detailed on 61FX501."
+        },
+        {
+          "linkId": "link-20-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:20",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "28 08 00",
+          "sectionTitle": "\u2013 COMMISSIONING OF ELECTRONIC SAFETY AND SECURITY",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.9,
+          "evidenceSource": "Parent spec related work",
+          "evidenceText": "Bedford Section 28 31 00 identifies Section 28 08 00 as related commissioning work for electronic safety and security systems.",
+          "reason": "Commissioning applies to the fire-alarm system whose matrix, wiring and supervisory interfaces are detailed on this sheet.",
+          "parentSpecification": "28 31 00"
         }
       ]
     },
@@ -1144,24 +1672,45 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:21",
       "discipline": "Fire Protection",
       "drawingType": "Cutsheets / Basis of Design",
-      "populated": 1,
-      "source": "drawing-type-inference",
+      "populated": 2,
+      "source": "evidence-enriched",
       "links": [
         {
-          "linkId": "link-21-7",
-          "createdAt": "2026-08-08T14:05:22.233Z",
+          "linkId": "link-21-1",
+          "createdAt": "2026-08-10T00:00:00.000Z",
           "projectId": "bedford",
           "drawingDocumentId": "bedford-specification-manual",
           "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:21",
           "specificationDocumentId": "bedford-specification-manual",
-          "sectionNumber": "10 26 00",
-          "sectionTitle": "FIRE DETECTION AND ALARM",
-          "origin": "drawing-type-inference",
-          "status": "inferred",
-          "confidence": 0.6,
-          "evidenceSource": "Drawing type and discipline analysis",
-          "evidenceText": "Sheet 61FX901 is a Cutsheets / Basis of Design in Fire Protection discipline",
-          "reason": "Specification section 10 26 00 is typically referenced by Cutsheets / Basis of Design sheets in Fire Protection discipline"
+          "sectionNumber": "21 13 13",
+          "sectionTitle": "WET-PIPE SPRINKLER SYSTEMS",
+          "origin": "drawing-text-reference",
+          "status": "related",
+          "relationshipType": "RELATED",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.91,
+          "evidenceSource": "Basis-of-design cutsheet content",
+          "evidenceText": "The basis-of-design sheet contains fire-sprinkler piping product information and material standards for Schedule 10/40 steel fire sprinkler pipe.",
+          "reason": "Bedford Section 21 13 13 governs the wet-pipe sprinkler piping represented by the basis-of-design product data."
+        },
+        {
+          "linkId": "link-21-2",
+          "createdAt": "2026-08-10T00:00:00.000Z",
+          "projectId": "bedford",
+          "drawingDocumentId": "bedford-specification-manual",
+          "drawingPageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:21",
+          "specificationDocumentId": "bedford-specification-manual",
+          "sectionNumber": "01 33 23",
+          "sectionTitle": "SHOP DRAWINGS, PRODUCT DATA, AND SAMPLES",
+          "origin": "spec-cross-reference",
+          "status": "cross-reference",
+          "relationshipType": "CROSS_REFERENCE",
+          "evidenceLevel": "SUPPORTED",
+          "confidence": 0.88,
+          "evidenceSource": "Basis-of-design product data + parent spec related work",
+          "evidenceText": "The sheet is product/cutsheet information for sprinkler piping, and Section 21 13 13 explicitly lists Section 01 33 23 as Related Work for shop drawings and product data.",
+          "reason": "Section 01 33 23 governs the product-data/submittal content represented on 61FX901.",
+          "parentSpecification": "21 13 13"
         }
       ]
     },
@@ -1179,7 +1728,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:23",
       "discipline": "Plumbing",
       "drawingType": "Plan",
-      "populated": 2,
+      "populated": 6,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1216,7 +1765,7 @@
           "confidence": 0.82,
           "evidenceSource": "General notes",
           "evidenceText": "The same general notes state that all data obtained via testing and measuring shall be forwarded to the project engineer for review prior to demolition and new work, consistent with commissioning requirements.",
-          "reason": "The plumbing sheet’s testing and measurement note ties the work to Bedford commissioning requirements in Section 33 08 00."
+          "reason": "The plumbing sheet\u2019s testing and measurement note ties the work to Bedford commissioning requirements in Section 33 08 00."
         },
         {
           "linkId": "link-23-8",
@@ -1297,7 +1846,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:24",
       "discipline": "Mechanical",
       "drawingType": "General Information",
-      "populated": 0,
+      "populated": 5,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1351,7 +1900,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.88,
           "evidenceSource": "General notes",
-          "evidenceText": "The mechanical general notes list 23 08 00 – Commissioning of HVAC Systems in the project commissioning scope.",
+          "evidenceText": "The mechanical general notes list 23 08 00 \u2013 Commissioning of HVAC Systems in the project commissioning scope.",
           "reason": "The sheet directly references Bedford Section 23 08 00 as a commissioning requirement."
         },
         {
@@ -1369,7 +1918,7 @@
           "evidenceLevel": "DIRECT",
           "confidence": 0.88,
           "evidenceSource": "General notes",
-          "evidenceText": "The mechanical general notes also list 33 08 00 – Commissioning of Site Utilities in the project commissioning scope.",
+          "evidenceText": "The mechanical general notes also list 33 08 00 \u2013 Commissioning of Site Utilities in the project commissioning scope.",
           "reason": "The sheet directly references Bedford Section 33 08 00 as a commissioning requirement."
         },
         {
@@ -1387,7 +1936,7 @@
           "evidenceLevel": "SUPPORTED",
           "confidence": 0.78,
           "evidenceSource": "Parent spec related work",
-          "evidenceText": "Bedford Section 23 05 93 and the broader HVAC common-work sections explicitly reference Section 23 05 11 for common HVAC requirements, and the sheet’s commissioning/TAB notes concern HVAC system work covered by those requirements.",
+          "evidenceText": "Bedford Section 23 05 93 and the broader HVAC common-work sections explicitly reference Section 23 05 11 for common HVAC requirements, and the sheet\u2019s commissioning/TAB notes concern HVAC system work covered by those requirements.",
           "reason": "Section 23 05 11 materially applies to the mechanical commissioning and HVAC common-work scope shown on 61M-001 and is explicitly cross-referenced by the governing HVAC specifications."
         }
       ]
@@ -1397,7 +1946,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:25",
       "discipline": "Mechanical",
       "drawingType": "Plan",
-      "populated": 1,
+      "populated": 5,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1466,7 +2015,7 @@
           "evidenceLevel": "SUPPORTED",
           "confidence": 0.81,
           "evidenceSource": "General notes",
-          "evidenceText": "The same sheet’s general notes say all testing and measuring data shall be used to establish new HVAC system performance and balance data for the renovation and forwarded to the project engineer.",
+          "evidenceText": "The same sheet\u2019s general notes say all testing and measuring data shall be used to establish new HVAC system performance and balance data for the renovation and forwarded to the project engineer.",
           "reason": "The mechanical sheet ties measured performance data to Bedford commissioning requirements in Section 33 08 00."
         },
         {
@@ -1484,7 +2033,7 @@
           "evidenceLevel": "SUPPORTED",
           "confidence": 0.78,
           "evidenceSource": "Parent spec related work",
-          "evidenceText": "Bedford Section 23 05 93 and the broader HVAC common-work sections explicitly reference Section 23 05 11 for common HVAC requirements, and the sheet’s TAB and preconstruction reporting notes fall within those requirements.",
+          "evidenceText": "Bedford Section 23 05 93 and the broader HVAC common-work sections explicitly reference Section 23 05 11 for common HVAC requirements, and the sheet\u2019s TAB and preconstruction reporting notes fall within those requirements.",
           "reason": "Section 23 05 11 materially applies to the HVAC TAB and coordination scope shown on 61M-100 and is explicitly cross-referenced by the governing HVAC specifications."
         }
       ]
@@ -1494,7 +2043,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:26",
       "discipline": "Mechanical",
       "drawingType": "Plan",
-      "populated": 1,
+      "populated": 5,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1563,7 +2112,7 @@
           "evidenceLevel": "SUPPORTED",
           "confidence": 0.81,
           "evidenceSource": "General notes",
-          "evidenceText": "The same sheet’s general notes say all testing and measuring data shall be used to establish new HVAC system performance and balance data for the renovation and forwarded to the project engineer.",
+          "evidenceText": "The same sheet\u2019s general notes say all testing and measuring data shall be used to establish new HVAC system performance and balance data for the renovation and forwarded to the project engineer.",
           "reason": "The mechanical sheet ties measured performance data to Bedford commissioning requirements in Section 33 08 00."
         },
         {
@@ -1581,7 +2130,7 @@
           "evidenceLevel": "SUPPORTED",
           "confidence": 0.78,
           "evidenceSource": "Parent spec related work",
-          "evidenceText": "Bedford Section 23 05 93 and the broader HVAC common-work sections explicitly reference Section 23 05 11 for common HVAC requirements, and the sheet’s TAB and preconstruction reporting notes fall within those requirements.",
+          "evidenceText": "Bedford Section 23 05 93 and the broader HVAC common-work sections explicitly reference Section 23 05 11 for common HVAC requirements, and the sheet\u2019s TAB and preconstruction reporting notes fall within those requirements.",
           "reason": "Section 23 05 11 materially applies to the HVAC TAB and coordination scope shown on 61M-101 and is explicitly cross-referenced by the governing HVAC specifications."
         }
       ]
@@ -1591,7 +2140,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:27",
       "discipline": "Mechanical",
       "drawingType": "Plan",
-      "populated": 1,
+      "populated": 5,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1625,7 +2174,7 @@
           "evidenceLevel": "SUPPORTED",
           "confidence": 0.88,
           "evidenceSource": "Plan notes and demolition notes",
-          "evidenceText": "The sheet’s general notes call for ductwork routing coordination, diffusers, grilles, flexible duct removal, and demolition of existing duct work back to main.",
+          "evidenceText": "The sheet\u2019s general notes call for ductwork routing coordination, diffusers, grilles, flexible duct removal, and demolition of existing duct work back to main.",
           "reason": "Bedford Section 23 31 00 directly governs the ductwork and casings shown and called out on the mechanical plan sheet."
         },
         {
@@ -1689,7 +2238,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:28",
       "discipline": "Mechanical",
       "drawingType": "Plan",
-      "populated": 1,
+      "populated": 5,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1787,7 +2336,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:29",
       "discipline": "Mechanical",
       "drawingType": "Details",
-      "populated": 1,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1867,7 +2416,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:30",
       "discipline": "Mechanical",
       "drawingType": "Schedule",
-      "populated": 0,
+      "populated": 3,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1940,7 +2489,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:32",
       "discipline": "Mechanical",
       "drawingType": "Diagram",
-      "populated": 0,
+      "populated": 2,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -1976,7 +2525,7 @@
           "evidenceLevel": "SUPPORTED",
           "confidence": 0.78,
           "evidenceSource": "Parent spec related work",
-          "evidenceText": "Bedford Section 23 09 23 and the broader HVAC common-work sections explicitly reference Section 23 05 11 for common HVAC requirements, and the control diagram’s HVAC equipment scope falls within those requirements.",
+          "evidenceText": "Bedford Section 23 09 23 and the broader HVAC common-work sections explicitly reference Section 23 05 11 for common HVAC requirements, and the control diagram\u2019s HVAC equipment scope falls within those requirements.",
           "reason": "Section 23 05 11 materially applies to the HVAC control-diagram scope shown on 61M-802 and is explicitly cross-referenced by the governing HVAC specifications."
         }
       ]
@@ -1986,7 +2535,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:33",
       "discipline": "Mechanical",
       "drawingType": "Cutsheets / Basis of Design",
-      "populated": 1,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2066,7 +2615,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:34",
       "discipline": "Mechanical",
       "drawingType": "Cutsheets / Basis of Design",
-      "populated": 1,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2155,7 +2704,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:36",
       "discipline": "Electrical",
       "drawingType": "Plan",
-      "populated": 3,
+      "populated": 7,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2291,7 +2840,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:37",
       "discipline": "Electrical",
       "drawingType": "Plan",
-      "populated": 3,
+      "populated": 7,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2427,7 +2976,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:38",
       "discipline": "Electrical",
       "drawingType": "Plan",
-      "populated": 3,
+      "populated": 7,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2563,7 +3112,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:39",
       "discipline": "Electrical",
       "drawingType": "Plan",
-      "populated": 3,
+      "populated": 7,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2699,7 +3248,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:40",
       "discipline": "Electrical",
       "drawingType": "Plan",
-      "populated": 3,
+      "populated": 7,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2835,7 +3384,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:41",
       "discipline": "Electrical",
       "drawingType": "Details",
-      "populated": 2,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2913,7 +3462,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:42",
       "discipline": "Electrical",
       "drawingType": "Diagram",
-      "populated": 1,
+      "populated": 2,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -2957,7 +3506,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:43",
       "discipline": "Electrical",
       "drawingType": "Schedule",
-      "populated": 1,
+      "populated": 3,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3019,7 +3568,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:44",
       "discipline": "Electrical",
       "drawingType": "Schedule",
-      "populated": 1,
+      "populated": 3,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3081,7 +3630,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:45",
       "discipline": "Electrical",
       "drawingType": "Schedule",
-      "populated": 1,
+      "populated": 3,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3143,7 +3692,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:46",
       "discipline": "Electrical",
       "drawingType": "Cutsheets / Basis of Design",
-      "populated": 3,
+      "populated": 6,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3255,7 +3804,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:47",
       "discipline": "Telecommunication",
       "drawingType": "General Information",
-      "populated": 0,
+      "populated": 1,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3283,7 +3832,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:48",
       "discipline": "Telecommunication",
       "drawingType": "Plan",
-      "populated": 1,
+      "populated": 6,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3399,7 +3948,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:49",
       "discipline": "Telecommunication",
       "drawingType": "Plan",
-      "populated": 1,
+      "populated": 6,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3515,7 +4064,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:50",
       "discipline": "Telecommunication",
       "drawingType": "Plan",
-      "populated": 1,
+      "populated": 6,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3631,7 +4180,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:51",
       "discipline": "Telecommunication",
       "drawingType": "Plan",
-      "populated": 1,
+      "populated": 6,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3747,7 +4296,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:52",
       "discipline": "Telecommunication",
       "drawingType": "Schedule",
-      "populated": 0,
+      "populated": 1,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3775,7 +4324,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:53",
       "discipline": "Telecommunication",
       "drawingType": "Details",
-      "populated": 0,
+      "populated": 4,
       "source": "drawing-type-inference",
       "links": [
         {
@@ -3956,7 +4505,7 @@
       "pageId": "518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:65",
       "discipline": "Telecommunication",
       "drawingType": "Schedule",
-      "populated": 0,
+      "populated": 1,
       "source": "drawing-type-inference",
       "links": [
         {

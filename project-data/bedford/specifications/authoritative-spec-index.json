@@ -157,6 +157,14 @@
     "sectionTitle": "CLASS I NEGATIVE PRESSURE ENCLOSURE ASBESTOS ABATEMENT",
     "documentId": "bedford-specification-manual",
     "startPdfPage": 942,
+    "endPdfPage": 989
+  },
+  {
+    "sectionNumber": "02 82 13.13",
+    "normalizedSectionNumber": "028213.13",
+    "sectionTitle": "GLOVEBAG ASBESTOS ABATEMENT",
+    "documentId": "bedford-specification-manual",
+    "startPdfPage": 990,
     "endPdfPage": 1033
   },
   {
@@ -1218,7 +1226,7 @@
   {
     "sectionNumber": "28 08 00",
     "normalizedSectionNumber": "280800",
-    "sectionTitle": "– COMMISSIONING OF ELECTRONIC SAFETY AND SECURITY",
+    "sectionTitle": "\u2013 COMMISSIONING OF ELECTRONIC SAFETY AND SECURITY",
     "documentId": "bedford-specification-manual",
     "startPdfPage": 2122,
     "endPdfPage": 2125
