@@ -164,6 +164,7 @@ import { classifyChiefDrawingCommand, resolveChiefDrawingCommand } from './chief
 import { buildChiefDrawingCards } from './chief-drawing-cards.js';
 import { createChiefIntelligenceBridge } from './chief-intelligence-bridge.js';
 import { createChiefSpecificationSME } from './chief-specification-sme.js';
+import { createChiefPmisSME } from './chief-pmis-sme.js';
 import { building61DrawingCatalogFor } from './building-61-drawing-catalog.js';
 import { generatedDrawingCatalogFor, normalizeGeneratedDrawingCatalog } from './generated-drawing-catalogs.js';
 import { createSpecificationReverseIndex } from './specification-reverse-index.js';
@@ -186,6 +187,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
 }[c]));
 const fmt = n => new Intl.NumberFormat().format(n || 0);
 const missionPmisDashboardUrl = new URL('project-documents/bedford/PMIS/index.html?embedded=1', document.baseURI).toString();
+const missionPmisRuntimeFrameId = 'missionPmisRuntimeFrame';
 const chiefAssets = {
   idle: './src/assets/chief/chief-idle.png',
   busy: './src/assets/chief/chief-concept.png',
@@ -210,6 +212,27 @@ const chiefStateCopy = {
     detail: 'Action required'
   }
 };
+function missionPmisRuntimeWindow() {
+  return $('#' + missionPmisRuntimeFrameId)?.contentWindow || null;
+}
+function missionPmisRuntimeData() {
+  const runtimeWindow = missionPmisRuntimeWindow();
+  if (!runtimeWindow) return null;
+  try {
+    return runtimeWindow.getMissionData?.() || runtimeWindow.data || null;
+  } catch {
+    return null;
+  }
+}
+function missionPmisSelectedBuilding() {
+  const runtimeWindow = missionPmisRuntimeWindow();
+  if (!runtimeWindow) return null;
+  try {
+    return runtimeWindow.selectedBuilding?.() || null;
+  } catch {
+    return null;
+  }
+}
 
 let view = 'chat';
 let experience = 'mission-control';
@@ -392,9 +415,15 @@ const chiefSpecificationSME = createChiefSpecificationSME({
   getDrawingCatalog: () => drawingCatalog.recordsForDocument(BEDFORD_DRAWING_DOCUMENT_ID),
   reverseIndex: null
 });
+const chiefPmisSME = createChiefPmisSME({
+  projectId: BEDFORD_PROJECT_ID,
+  getRuntimeData: missionPmisRuntimeData,
+  getSelectedBuilding: missionPmisSelectedBuilding
+});
 globalThis.__specificationReverseIndex = createSpecificationReverseIndex({ drawingSpecificationLinks, projectObjectRegistry });
 chiefIntelligenceBridge.initialize({
-  specificationSME: chiefSpecificationSME
+  specificationSME: chiefSpecificationSME,
+  pmisSME: chiefPmisSME
 });
 let bedfordDrawingSpecificationLinksBootstrap = Promise.resolve({ loaded: 0, reason: 'pending' });
 const bedfordSpecificationIndexBootstrap = fetch(new URL('project-data/bedford/specifications/authoritative-spec-index.json', document.baseURI).toString())
@@ -1094,9 +1123,18 @@ app.innerHTML = `
     <button data-control-view="plans">Drawings</button>
     <span style="position:absolute;left:-9999px;clip:rect(0 0 0 0);"><button data-control-view="plans">Open Plans</button></span>
   </nav>
-  <main id="missionControlMain" tabindex="-1">
-    <div id="missionControlContent" aria-live="polite"></div>
-  </main>
+<main id="missionControlMain" tabindex="-1">
+  <div id="missionControlContent" aria-live="polite"></div>
+</main>
+<iframe
+  id="${missionPmisRuntimeFrameId}"
+  title="Mission PMIS Runtime"
+  src="${missionPmisDashboardUrl}"
+  sandbox="allow-forms allow-popups allow-scripts allow-same-origin"
+  aria-hidden="true"
+  tabindex="-1"
+  style="position:absolute;left:-9999px;top:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;"
+></iframe>
 </section>
 <div id="professionalWorkspaceShell" class="shell" hidden>
   <aside class="rail">
@@ -2550,6 +2588,77 @@ function chiefRelationshipLookupForQuestion(question = '', drawingContext = null
 }
 globalThis.__chiefRelationshipLookupForQuestion = chiefRelationshipLookupForQuestion;
 
+function chiefPmisAnswerMarkup(message) {
+  const answer = message?.pmisAnswer;
+  if (!answer) return '';
+  const building = answer.building || null;
+  const campus = answer.campus || null;
+  const focusBuildings = Array.isArray(answer.focusBuildings) ? answer.focusBuildings.slice(0, 4) : [];
+  const tradeHealth = Array.isArray(answer.tradeHealth) ? answer.tradeHealth : [];
+  const pilotGates = answer.pilotCompletion?.gates || [];
+  const shutdowns = Array.isArray(answer.shutdowns) ? answer.shutdowns.slice(0, 6) : [];
+  const buildingCards = building ? `
+    <div class="mc-chief-pmis-summary-grid">
+      <article class="mc-chief-pmis-summary-card"><span>Readiness</span><strong>${esc(building.readinessPct ?? 0)}%</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>Overall</span><strong>${esc(building.overallStatus || 'Monitor')}</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>Construction Ready</span><strong>${esc(building.constructionReady || 'No')}</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>OIT Readiness</span><strong>${esc(building.oitReadiness || 'Monitor')}</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>Open Risks</span><strong>${fmt(building.openRisks || 0)}</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>Open Questions</span><strong>${fmt(building.openQuestions || 0)}</strong></article>
+    </div>
+  ` : '';
+  const buildingTradeHealth = building?.tradeHealth?.length ? `
+    <div class="mc-chief-pmis-chip-row">${building.tradeHealth.map(item => `<span class="mc-chief-pmis-chip">${esc(item.label)} · ${esc(item.value)}${item.percent != null ? ` (${item.percent}%)` : ''}</span>`).join('')}</div>
+  ` : '';
+  const campusFocus = campus?.topAttention?.length ? `
+    <div class="mc-chief-pmis-list">
+      ${campus.topAttention.slice(0, 5).map(item => `<div class="mc-chief-pmis-list-item"><strong>${esc(item.label || `Building ${item.Building || ''}`)}</strong><span>${esc(item.readinessPct != null ? `${item.readinessPct}% readiness` : '')}${item.openRisks != null ? ` · ${fmt(item.openRisks)} risks` : ''}${item.openQuestions != null ? ` · ${fmt(item.openQuestions)} questions` : ''}</span></div>`).join('')}
+    </div>
+  ` : '';
+  return `
+    <section class="mc-chief-pmis-answer" aria-label="Chief PMIS answer">
+      <header class="mc-chief-pmis-answer-header">
+        <div>
+          <span>PMIS SME</span>
+          <strong>${esc(building ? building.label : campus ? 'Campus summary' : 'PMIS answer')}</strong>
+        </div>
+        ${chiefSectionRelationshipBadge(answer.queryType || 'PMIS')}
+      </header>
+      ${answer.answer ? `<p class="mc-chief-pmis-answer-text">${esc(answer.answer)}</p>` : ''}
+      ${answer.summary ? `<p class="mc-chief-pmis-answer-summary">${esc(answer.summary)}</p>` : ''}
+      ${building ? `
+        <div class="mc-chief-pmis-building">
+          <div class="mc-chief-pmis-building-title">${esc(building.label)}</div>
+          ${buildingCards}
+          ${buildingTradeHealth}
+          ${pilotGates.length ? `<div class="mc-chief-pmis-list">${pilotGates.map(gate => `<div class="mc-chief-pmis-list-item"><strong>${esc(gate.label)}</strong><span>${esc(gate.value)}</span></div>`).join('')}</div>` : ''}
+          ${shutdowns.length ? `<div class="mc-chief-pmis-list">${shutdowns.map(item => `<div class="mc-chief-pmis-list-item"><strong>${esc(item.ShutdownID || item['Shutdown ID'] || item.Title || item.System || 'Shutdown')}</strong><span>${esc(item.Status || 'Open')}</span></div>`).join('')}</div>` : ''}
+        </div>
+      ` : ''}
+      ${campus && !building ? `
+        <div class="mc-chief-pmis-building">
+          <div class="mc-chief-pmis-building-title">Campus Snapshot</div>
+          <div class="mc-chief-pmis-summary-grid">
+            <article class="mc-chief-pmis-summary-card"><span>Buildings tracked</span><strong>${fmt(campus.total || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Ready</span><strong>${fmt(campus.ready || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Not ready</span><strong>${fmt(campus.notReady || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Open risks</span><strong>${fmt(campus.risks || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Open questions</span><strong>${fmt(campus.questions || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Shutdowns</span><strong>${fmt(campus.activeShutdowns?.length || 0)}</strong></article>
+          </div>
+          ${campusFocus}
+        </div>
+      ` : ''}
+      ${focusBuildings.length && !building ? `
+        <div class="mc-chief-pmis-building">
+          <div class="mc-chief-pmis-building-title">Buildings needing attention</div>
+          <div class="mc-chief-pmis-list">${focusBuildings.map(item => `<div class="mc-chief-pmis-list-item"><strong>${esc(item.label || `Building ${item.Building || ''}`)}</strong><span>${esc(item.readinessPct != null ? `${item.readinessPct}% readiness` : '')}${item.openRisks != null ? ` · ${fmt(item.openRisks)} risks` : ''}${item.openQuestions != null ? ` · ${fmt(item.openQuestions)} questions` : ''}</span></div>`).join('')}</div>
+        </div>
+      ` : ''}
+    </section>
+  `;
+}
+
 function chiefSpecificationAnswerMarkup(message, question = '') {
   const sheetContext = message?.drawingContext?.sheetNumber ? {
     sheetNumber: message.drawingContext.sheetNumber,
@@ -2852,8 +2961,13 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
             ${messages.length ? (await Promise.all(messages.map(async (message, index) => {
               const previousUserQuestion = [...messages.slice(0, index)].reverse().find(item => item.role === 'user')?.content || '';
               const specificationAnswerMarkup = message.role === 'assistant' ? chiefSpecificationAnswerMarkup(message, previousUserQuestion) : '';
-              const suppressRawChiefContent = Boolean(specificationAnswerMarkup && message.role === 'assistant' && message.specificationAnswer?.specifications?.length);
-              return `<article class="mc-control-message ${message.role}" id="mc-message-${esc(message.id)}"><header><strong>${message.role === 'assistant' ? 'Chief' : 'You'}</strong>${message.role === 'assistant' ? `<span>${esc(missionControlResponseModeLabel(message.mode))}</span>` : ''}</header>${constructionWorkPackageMarkup(message)}${message.role === 'assistant' ? chiefDrawingEvidenceMarkup(message, projectDocuments, drawingAnalyses) : ''}${specificationAnswerMarkup}${!suppressRawChiefContent ? `<div class="mc-control-message-content">${esc(message.content).replace(/\n/g, '<br>')}</div>` : ''}${missionControlMessageActions(message, drawingSourceIds)}</article>`;
+              const pmisAnswerMarkup = message.role === 'assistant' ? chiefPmisAnswerMarkup(message) : '';
+              const suppressRawChiefContent = Boolean(
+                specificationAnswerMarkup && message.role === 'assistant' && message.specificationAnswer?.specifications?.length
+              ) || Boolean(
+                pmisAnswerMarkup && message.role === 'assistant' && message.mode === 'offline'
+              );
+              return `<article class="mc-control-message ${message.role}" id="mc-message-${esc(message.id)}"><header><strong>${message.role === 'assistant' ? 'Chief' : 'You'}</strong>${message.role === 'assistant' ? `<span>${esc(missionControlResponseModeLabel(message.mode))}</span>` : ''}</header>${constructionWorkPackageMarkup(message)}${message.role === 'assistant' ? chiefDrawingEvidenceMarkup(message, projectDocuments, drawingAnalyses) : ''}${pmisAnswerMarkup}${specificationAnswerMarkup}${!suppressRawChiefContent ? `<div class="mc-control-message-content">${esc(message.content).replace(/\n/g, '<br>')}</div>` : ''}${missionControlMessageActions(message, drawingSourceIds)}</article>`;
             }))).join('') : `<div class="mc-control-chat-empty"><strong>Start a conversation</strong><p>Ask about the active project or attach supported documents. Answers remain linked to exact source records.</p></div>`}
           </div>
           ${historyVisible ? `<section class="mc-chief-history" aria-labelledby="mcChiefHistoryTitle"><div class="mc-chief-history-header"><div><span>CONVERSATION HISTORY</span><h2 id="mcChiefHistoryTitle">Recent threads</h2></div></div><div class="mc-chief-history-list">${historyItems.length ? historyItems.map(item => `<button type="button" class="mc-chief-history-item" data-conversation-id="${esc(item.conversationId)}"><strong>${esc(item.title || 'Conversation')}</strong><span>${esc(item.updatedAt ? new Date(item.updatedAt).toLocaleString() : 'Not updated')}</span></button>`).join('') : '<p class="mc-chief-history-empty">No history yet.</p>'}</div></section>` : ''}

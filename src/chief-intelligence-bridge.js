@@ -12,6 +12,7 @@ class ChiefIntelligenceBridge {
     this.relationshipEngine = null;
     this.constructionGraph = null;
     this.specificationSME = null;
+    this.pmisSME = null;
     this.readyPromise = Promise.resolve();
     this.initialized = false;
   }
@@ -29,6 +30,7 @@ class ChiefIntelligenceBridge {
     reasoningEngine = null,
     projectStateService = null,
     specificationSME = null,
+    pmisSME = null,
     readyPromise = null
   } = {}) {
     this.constructionGraph = constructionGraph;
@@ -37,6 +39,7 @@ class ChiefIntelligenceBridge {
     this.reasoningEngine = reasoningEngine;
     this.projectStateService = projectStateService;
     this.specificationSME = specificationSME;
+    this.pmisSME = pmisSME;
     this.readyPromise = readyPromise || Promise.resolve();
     this.initialized = true;
   }
@@ -87,6 +90,7 @@ class ChiefIntelligenceBridge {
       projectState: null,
       reasoningResult: null,
       specificationAnswer: null,
+      pmisAnswer: null,
       facts: [],
       relationships: [],
       specifications: [],
@@ -206,6 +210,26 @@ class ChiefIntelligenceBridge {
       }
     }
 
+    if (this.pmisSME?.isPmisQuestion?.(rawQuestion)) {
+      try {
+        const pmisAnswer = this.pmisSME.answerQuestion(rawQuestion);
+        context.pmisAnswer = pmisAnswer;
+        console.log('PMIS_SME_RESULT', {
+          question: rawQuestion,
+          queryType: pmisAnswer?.queryType || '',
+          scope: pmisAnswer?.scope || '',
+          buildingKey: pmisAnswer?.building?.buildingKey || '',
+          readinessPct: pmisAnswer?.building?.readinessPct ?? null,
+          openRisks: pmisAnswer?.building?.openRisks ?? null,
+          openQuestions: pmisAnswer?.building?.openQuestions ?? null,
+          campusTotal: pmisAnswer?.campus?.total ?? null,
+          available: Boolean(pmisAnswer?.available)
+        });
+      } catch (error) {
+        context.pmisAnswer = null;
+      }
+    }
+
     return context;
   }
 
@@ -224,12 +248,60 @@ class ChiefIntelligenceBridge {
    * Generate answer from Mission Companion intelligence
    */
   generateMissionCompanionAnswer(question, context, mode = 'source') {
-    if (!context.hasContext || (!context.reasoningResult && !context.specificationAnswer)) {
+    if (!context.hasContext || (!context.reasoningResult && !context.specificationAnswer && !context.pmisAnswer)) {
       return null;
     }
 
     const specificationAnswer = context.specificationAnswer || null;
-    const answerContent = context.reasoningResult?.answer || (() => {
+    const pmisAnswer = context.pmisAnswer || null;
+    let answerContent = '';
+    if (pmisAnswer) {
+      const lines = [];
+      if (pmisAnswer.answer) lines.push(pmisAnswer.answer);
+      if (pmisAnswer.summary) {
+        lines.push('');
+        lines.push(`Summary: ${pmisAnswer.summary}`);
+      }
+      if (pmisAnswer.building) {
+        lines.push('');
+        lines.push('Building Snapshot:');
+        lines.push(`- ${pmisAnswer.building.label}`);
+        lines.push(`- Readiness: ${pmisAnswer.building.readinessPct}%`);
+        lines.push(`- Overall status: ${pmisAnswer.building.overallStatus}`);
+        lines.push(`- Construction ready: ${pmisAnswer.building.constructionReady}`);
+        lines.push(`- OIT readiness: ${pmisAnswer.building.oitReadiness}`);
+        lines.push(`- Open risks: ${pmisAnswer.building.openRisks}`);
+        lines.push(`- Open questions: ${pmisAnswer.building.openQuestions}`);
+        lines.push(`- Shutdowns: ${pmisAnswer.building.shutdownCount}`);
+        if (pmisAnswer.building.tradeHealth?.length) {
+          lines.push('- Trade health:');
+          for (const item of pmisAnswer.building.tradeHealth) {
+            lines.push(`  · ${item.label}: ${item.value} (${item.percent}%)`);
+          }
+        }
+        if (pmisAnswer.building.pilotCompletion?.gates?.length) {
+          lines.push('- Pilot completion:');
+          for (const gate of pmisAnswer.building.pilotCompletion.gates) {
+            lines.push(`  · ${gate.label}: ${gate.value}`);
+          }
+          if (pmisAnswer.building.pilotCompletion.missing.length) {
+            lines.push(`  · Missing: ${pmisAnswer.building.pilotCompletion.missing.join(', ')}`);
+          }
+        }
+      }
+      if (pmisAnswer.campus) {
+        lines.push('');
+        lines.push('Campus Snapshot:');
+        lines.push(`- Buildings tracked: ${pmisAnswer.campus.total}`);
+        lines.push(`- Ready: ${pmisAnswer.campus.ready}`);
+        lines.push(`- Not ready: ${pmisAnswer.campus.notReady}`);
+        lines.push(`- Open risks: ${Math.round(pmisAnswer.campus.risks)}`);
+        lines.push(`- Open questions: ${Math.round(pmisAnswer.campus.questions)}`);
+        lines.push(`- Active shutdowns: ${pmisAnswer.campus.activeShutdowns.length}`);
+      }
+      answerContent = lines.filter(Boolean).join('\n');
+    } else {
+      answerContent = context.reasoningResult?.answer || (() => {
       if (!specificationAnswer) return '';
       const sections = Array.isArray(specificationAnswer.specifications) ? specificationAnswer.specifications.slice(0, 6) : [];
       const drawings = Array.isArray(specificationAnswer.drawings) ? specificationAnswer.drawings.slice(0, 6) : [];
@@ -274,22 +346,28 @@ class ChiefIntelligenceBridge {
       }
       return lines.join('\n');
     })();
+    }
+
+    if (!answerContent && pmisAnswer) {
+      answerContent = pmisAnswer.answer || '';
+    }
 
     const answer = {
       source: 'mission-companion',
       question,
       answer: answerContent,
-      confidence: context.reasoningResult?.confidence || (context.specificationAnswer?.specifications?.length ? 0.9 : 0),
+      confidence: context.reasoningResult?.confidence || context.pmisAnswer?.confidence || (context.specificationAnswer?.specifications?.length ? 0.9 : 0),
       reasoningPath: context.reasoningResult?.reasoningPath || [],
       evidence: context.reasoningResult?.evidence || [],
       assumptions: context.reasoningResult?.assumptions || [],
       unresolvedQuestions: context.reasoningResult?.unresolvedQuestions || [],
       conflicts: context.reasoningResult?.conflicts || [],
       specificationAnswer: context.specificationAnswer,
+      pmisAnswer: context.pmisAnswer,
       projectState: context.projectState,
       facts: context.facts,
       relationships: context.relationships,
-      diagnostics: context.reasoningResult?.diagnostics || { source: 'specification-sme' }
+      diagnostics: context.reasoningResult?.diagnostics || (context.pmisAnswer ? { source: 'pmis-sme' } : { source: 'specification-sme' })
     };
 
     return answer;
@@ -379,6 +457,34 @@ class ChiefIntelligenceBridge {
       }
     }
 
+    if (context.pmisAnswer) {
+      parts.push('PMIS SME:');
+      if (context.pmisAnswer.answer) {
+        parts.push(context.pmisAnswer.answer);
+      }
+      if (context.pmisAnswer.summary) {
+        parts.push(`Summary: ${context.pmisAnswer.summary}`);
+      }
+      if (context.pmisAnswer.building) {
+        parts.push(`Building: ${context.pmisAnswer.building.label}`);
+        parts.push(`Readiness: ${context.pmisAnswer.building.readinessPct}%`);
+        parts.push(`Overall status: ${context.pmisAnswer.building.overallStatus}`);
+        parts.push(`Construction ready: ${context.pmisAnswer.building.constructionReady}`);
+        parts.push(`OIT readiness: ${context.pmisAnswer.building.oitReadiness}`);
+        parts.push(`Open risks: ${context.pmisAnswer.building.openRisks}`);
+        parts.push(`Open questions: ${context.pmisAnswer.building.openQuestions}`);
+        parts.push(`Shutdowns: ${context.pmisAnswer.building.shutdownCount}`);
+      }
+      if (context.pmisAnswer.campus) {
+        parts.push(`Buildings tracked: ${context.pmisAnswer.campus.total}`);
+        parts.push(`Ready: ${context.pmisAnswer.campus.ready}`);
+        parts.push(`Not ready: ${context.pmisAnswer.campus.notReady}`);
+        parts.push(`Open risks: ${Math.round(context.pmisAnswer.campus.risks)}`);
+        parts.push(`Open questions: ${Math.round(context.pmisAnswer.campus.questions)}`);
+      }
+      parts.push('');
+    }
+
     // Add facts
     if (context.facts.length > 0) {
       parts.push('RELATED FACTS:');
@@ -411,7 +517,8 @@ class ChiefIntelligenceBridge {
       (context.facts?.length || 0) +
       (context.relationships?.length || 0) +
       (context.specificationAnswer?.specifications?.length || 0) +
-      (context.specificationAnswer?.drawings?.length || 0);
+      (context.specificationAnswer?.drawings?.length || 0) +
+      (context.pmisAnswer ? 1 : 0);
     
     return evidenceCount > 0;
   }
