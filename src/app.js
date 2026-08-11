@@ -2779,10 +2779,11 @@ function chiefSpecificationAnswerMarkup(message, question = '') {
       ${drawings.length ? `<div class="mc-chief-spec-drawing-list">${drawings.slice(0, 6).map(drawing => {
         const sheet = chiefSheetForDrawingReference(drawing);
         const actionTarget = chiefDrawingCardActionForSheet(sheet, drawing);
-        if (!actionTarget) return '';
+        if (!actionTarget?.documentId || !Number(actionTarget.pageNumber)) return '';
         const title = [sheet?.sheetNumber || drawing.sheetNumber, sheet?.sheetTitle || drawing.sheetTitle].filter(Boolean).join(' — ') || drawing.pageId;
         const subtitle = [drawing.relationshipTypes?.join(', '), drawing.discipline].filter(Boolean).join(' · ');
-        return `<button type="button" class="mc-chief-spec-drawing-card" data-chief-drawing-card="true" data-chief-drawing-sheet-id="${esc(sheet?.sheetNumber || sheet?.sheetId || drawing.sheetNumber || '')}" data-chief-drawing-page-id="${esc(sheet?.pageId || drawing.pageId || '')}" data-chief-drawing-page-number="${esc(String(actionTarget.pageNumber || drawing.pageNumber || ''))}" data-chief-drawing-document-id="${esc(actionTarget.documentId || '')}" data-chief-drawing-sheet-number="${esc(sheet?.sheetNumber || drawing.sheetNumber || '')}" data-chief-drawing-thumbnail='${esc(JSON.stringify({ documentId: actionTarget.documentId, pageNumber: actionTarget.pageNumber, pageId: sheet?.pageId || drawing.pageId || '' }))}'>
+        const thumbPayload = { documentId: actionTarget.documentId, pageNumber: actionTarget.pageNumber, pageId: sheet?.pageId || drawing.pageId || '' };
+        return `<button type="button" class="mc-chief-spec-drawing-card" data-chief-drawing-card="true" data-chief-drawing-sheet-id="${esc(sheet?.sheetNumber || sheet?.sheetId || drawing.sheetNumber || '')}" data-chief-drawing-page-id="${esc(sheet?.pageId || drawing.pageId || '')}" data-chief-drawing-page-number="${esc(String(actionTarget.pageNumber || drawing.pageNumber || ''))}" data-chief-drawing-document-id="${esc(actionTarget.documentId || '')}" data-chief-drawing-sheet-number="${esc(sheet?.sheetNumber || drawing.sheetNumber || '')}" data-chief-drawing-thumbnail='${esc(JSON.stringify(thumbPayload))}'>
           <div class="mc-chief-spec-drawing-thumb" aria-hidden="true"><canvas data-chief-drawing-thumb-canvas></canvas><img data-chief-drawing-thumb-image alt="" hidden /></div>
           <div class="mc-chief-spec-drawing-card-copy">
             <strong>${esc(title)}</strong>
@@ -2802,6 +2803,17 @@ function chiefSpecificationAnswerMarkup(message, question = '') {
     sheet: sheet ? { sheetNumber: sheet.sheetNumber, sheetTitle: sheet.sheetTitle, pageId: sheet.pageId, pdfPageNumber: sheet.pdfPageNumber } : null,
     actionTarget: actionTarget ? { documentId: actionTarget.documentId, pageNumber: actionTarget.pageNumber, sheetId: actionTarget.sheetId } : null
   });
+    if (!actionTarget?.documentId || !Number(actionTarget.pageNumber)) {
+      const title = [sheet?.sheetNumber || drawing.sheetNumber || '', sheet?.sheetTitle || drawing.sheetTitle || ''].filter(Boolean).join(' — ') || drawing.pageId || 'Drawing';
+      const subtitle = [drawing.relationshipTypes?.join(', '), drawing.discipline].filter(Boolean).join(' · ');
+      return `<article class="mc-chief-spec-drawing-card is-static">
+      <div class="mc-chief-spec-drawing-card-copy">
+        <span>${esc(drawing.relationshipTypes?.[0] || 'RELATED')}</span>
+        <strong>${esc(title)}</strong>
+        ${subtitle ? `<small>${esc(subtitle)}</small>` : ''}
+      </div>
+    </article>`;
+    }
     const title = [sheet?.sheetNumber || drawing.sheetNumber || '', sheet?.sheetTitle || drawing.sheetTitle || ''].filter(Boolean).join(' — ') || drawing.pageId || 'Drawing';
     const subtitle = [drawing.relationshipTypes?.join(', '), drawing.discipline].filter(Boolean).join(' · ');
     const fallbackActionTarget = actionTarget || createActionTarget({ kind: 'drawing', projectId: state().activeProject || '', documentId: BEDFORD_DRAWING_DOCUMENT_ID, pageNumber: Number(String(drawing.pageId || '').match(/:page:(\d+)/i)?.[1] || drawing.pageNumber || 0), origin: 'chief-specification' });
@@ -3069,7 +3081,6 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
             <textarea id="missionControlPrompt" rows="3" placeholder="Ask Chief about your project…"></textarea>
             <div class="mc-chief-composer-actions">
             <div class="mc-chief-composer-tools">
-              <label class="mc-control-attach"><input id="missionControlFiles" type="file" multiple accept=".pdf,.docx,.xls,.xlsx,.txt,.md,.csv,.json,.html,.htm,.xml,.log">Attach documents</label>
                 <label class="mc-control-mode">Response mode <select id="missionControlMode"><option value="offline">Source Evidence</option><option value="assisted">Chief Analysis</option></select></label>
               </div>
               <button id="missionControlSend" type="submit">Ask Chief</button>
@@ -6749,25 +6760,46 @@ function formatMessageContent(content) {
 
 function renderAssistantCitations(message, messageIndex) {
   const hits = Array.isArray(message.hits) ? message.hits : [];
+  const uniqueHits = [...new Map(hits.map(hit => {
+    const key = [
+      hit.documentId || '',
+      hit.sectionId || '',
+      hit.sectionNumber || '',
+      hit.heading || '',
+      hit.location || '',
+      hit.sourceNumber || ''
+    ].join(':');
+    return [key, hit];
+  })).values()];
 
-  if (!hits.length) {
+  if (!uniqueHits.length) {
     return '';
   }
+
+  const visibleHits = uniqueHits.slice(0, 4);
+  const hiddenHits = uniqueHits.slice(4);
 
   return `
     <details class="mc-message-citations" id="mc-citations-${messageIndex}" open>
       <summary>
         <span>Evidence sources</span>
-        <span class="mc-message-source-count">${hits.length}</span>
+        <span class="mc-message-source-count">${uniqueHits.length}</span>
       </summary>
       <div class="mc-message-citation-list">
-        ${hits.map(hit => `
+        ${visibleHits.map(hit => `
           <div>
             <strong>[S${hit.sourceNumber}] ${esc(hit.heading)}</strong>
             <span>${esc(hit.documentName)} · ${esc(hit.location)}</span>
           </div>
         `).join('')}
+        ${hiddenHits.length ? hiddenHits.map(hit => `
+          <div class="mc-message-citation-hidden" hidden>
+            <strong>[S${hit.sourceNumber}] ${esc(hit.heading)}</strong>
+            <span>${esc(hit.documentName)} · ${esc(hit.location)}</span>
+          </div>
+        `).join('') : ''}
       </div>
+      ${hiddenHits.length ? '<button type="button" class="subtle mc-message-show-all-sources" data-show-all-sources>Show all sources</button>' : ''}
     </details>
   `;
 }
@@ -6865,21 +6897,22 @@ function revealLatestMessage(smooth = false) {
   const reduceMotion = window.matchMedia?.(
     '(prefers-reduced-motion: reduce)'
   )?.matches;
-
-  messages.scrollTo({
-    top: messages.scrollHeight,
-    behavior: smooth && !reduceMotion ? 'smooth' : 'auto'
-  });
+  const latestAssistant = [...messages.querySelectorAll('.message.assistant')].at(-1);
+  if (latestAssistant) {
+    latestAssistant.scrollIntoView({
+      block: 'start',
+      behavior: smooth && !reduceMotion ? 'smooth' : 'auto'
+    });
+  }
 }
 
 function renderMessages(
   documents = [],
   sections = [],
-  { revealLatest = true, smooth = false } = {}
+  { revealLatest = false, smooth = false } = {}
 ) {
   const chat = state().chat;
   const lineageModel = buildDocumentLineage({ documents, sections });
-  const previousScrollTop = $('#messages').scrollTop;
 
   $('#messages').innerHTML = chat.length
       ? chat.map((message, messageIndex) => `
@@ -6955,11 +6988,7 @@ function renderMessages(
       </div>
     `;
 
-  if (revealLatest) {
-    revealLatestMessage(smooth);
-  } else {
-    $('#messages').scrollTop = previousScrollTop;
-  }
+  if (revealLatest) revealLatestMessage(smooth);
 }
 
 function renderPreparingAnswer(revealLatest) {
@@ -7055,6 +7084,18 @@ $('#messages').onclick = event => {
       collapseButton.textContent = citations.open
         ? 'Collapse citations'
         : 'Expand citations';
+    }
+    return;
+  }
+
+  const showAllSourcesButton = event.target.closest('[data-show-all-sources]');
+  if (showAllSourcesButton) {
+    const citations = showAllSourcesButton.closest('.mc-message-citations');
+    if (citations) {
+      citations.querySelectorAll('.mc-message-citation-hidden').forEach(item => {
+        item.hidden = false;
+      });
+      showAllSourcesButton.remove();
     }
     return;
   }
@@ -7254,8 +7295,8 @@ async function ask() {
     resizeComposer();
 
     renderMessages(documents, sections, {
-      revealLatest: revealResponse,
-      smooth: revealResponse
+      revealLatest: true,
+      smooth: false
     });
 
     renderEvidence(
