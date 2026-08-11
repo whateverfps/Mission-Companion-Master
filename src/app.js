@@ -97,6 +97,10 @@ import {
   BEDFORD_PROJECT_ID,
   BEDFORD_PROJECT_NAME,
   BEDFORD_DRAWING_DOCUMENT_ID,
+  BEDFORD_DRAWING_DOCUMENT_ID_B62,
+  BEDFORD_DRAWING_SETS,
+  getBedfordDrawingSetByBuildingId,
+  getBedfordDrawingSetByDocumentId,
   BEDFORD_SPEC_DOCUMENT_ID,
   validateBedfordProject
 } from './bedford-project.js';
@@ -165,7 +169,7 @@ import { buildChiefDrawingCards } from './chief-drawing-cards.js';
 import { createChiefIntelligenceBridge } from './chief-intelligence-bridge.js';
 import { createChiefSpecificationSME } from './chief-specification-sme.js';
 import { createChiefPmisSME } from './chief-pmis-sme.js';
-import { building61DrawingCatalogFor } from './building-61-drawing-catalog.js';
+import { bedfordDrawingCatalogFor, building61DrawingCatalogFor } from './building-61-drawing-catalog.js';
 import { generatedDrawingCatalogFor, normalizeGeneratedDrawingCatalog } from './generated-drawing-catalogs.js';
 import { createSpecificationReverseIndex } from './specification-reverse-index.js';
 import { getPerformanceDiagnosticsState, markFirstPaint, markHydrated, performanceDiagnosticsEnabled } from './performance-diagnostics.js';
@@ -369,41 +373,49 @@ const projectRelationshipEngine = createProjectRelationshipEngine();
 const projectObjectRegistry = createProjectObjectRegistry({ persistence: engine.projectObjectPersistence(), onDiagnostic: metric => logger.debug('Project object registry performance', metric) });
 const constructionGraph = createConstructionGraph({ persistence: engine.constructionGraphPersistence(), relationshipEngine: projectRelationshipEngine, objectRegistry: projectObjectRegistry, onDiagnostic: metric => logger.debug('Construction graph performance', metric) });
 const chiefIntelligenceBridge = createChiefIntelligenceBridge();
-let bedfordRelationshipResults = null;
-const bedfordRelationshipResultsBootstrap = fetch(new URL('project-data/bedford/relationships/building-61-spec-links.json', document.baseURI).toString())
-  .then(response => response.ok ? response.json() : null)
-  .then(data => {
-    bedfordRelationshipResults = data?.results || null;
-    const totalRelationships = bedfordRelationshipResults
-      ? Object.values(bedfordRelationshipResults).reduce((sum, sheet) => sum + (Array.isArray(sheet?.links) ? sheet.links.length : 0), 0)
-      : 0;
-    if (!totalRelationships) {
-      logger.warning('Bedford relationship bootstrap returned no links', { contained: true, source: 'project-data/bedford/relationships/building-61-spec-links.json' });
-    } else {
-      logger.debug('Bedford relationship bootstrap', { source: 'project-data/bedford/relationships/building-61-spec-links.json', loaded: totalRelationships });
-    }
-    return { ok: Boolean(totalRelationships), loaded: totalRelationships };
-  })
-  .catch(error => {
-    logger.warning('Bedford relationship bootstrap failed', { contained: true, source: 'project-data/bedford/relationships/building-61-spec-links.json', message: error?.message || String(error) });
-    bedfordRelationshipResults = null;
-    return { ok: false, loaded: 0, reason: error?.message || String(error) };
-  });
+const bedfordDrawingSets = [...BEDFORD_DRAWING_SETS];
+const bedfordRelationshipResultsByDocumentId = new Map();
+const bedfordCatalogRecordsByDocumentId = new Map();
+const getBedfordDrawingCatalogRecords = () => bedfordDrawingSets.flatMap(set => bedfordCatalogRecordsByDocumentId.get(set.documentId) || drawingCatalog.recordsForDocument(set.documentId) || []);
+const getBedfordDrawingSetForDocumentId = documentId => getBedfordDrawingSetByDocumentId(documentId) || bedfordDrawingSets.find(set => set.documentId === documentId) || null;
+const getBedfordDrawingSetForSheetNumber = sheetNumber => {
+  const sheet = String(sheetNumber || '').trim().toUpperCase();
+  if (/^62/.test(sheet)) return getBedfordDrawingSetByBuildingId('62') || bedfordDrawingSets.find(set => set.buildingId === '62') || null;
+  if (/^61/.test(sheet)) return getBedfordDrawingSetByBuildingId('61') || bedfordDrawingSets.find(set => set.buildingId === '61') || null;
+  return getBedfordDrawingSetByBuildingId(activeBedfordDrawingBuildingId) || bedfordDrawingSets[0] || null;
+};
+const loadBedfordRelationshipBootstrap = async drawingSet => {
+  const relationshipsPath = drawingSet.relationshipsPath;
+  try {
+    const response = await fetch(new URL(relationshipsPath, document.baseURI).toString());
+    const data = response.ok ? await response.json() : null;
+    const results = data?.results || null;
+    bedfordRelationshipResultsByDocumentId.set(drawingSet.documentId, results);
+    const totalRelationships = results ? Object.values(results).reduce((sum, sheet) => sum + (Array.isArray(sheet?.links) ? sheet.links.length : 0), 0) : 0;
+    if (!totalRelationships) logger.warning('Bedford relationship bootstrap returned no links', { contained: true, source: relationshipsPath, drawingSetId: drawingSet.drawingSetId, documentId: drawingSet.documentId });
+    else logger.debug('Bedford relationship bootstrap', { source: relationshipsPath, drawingSetId: drawingSet.drawingSetId, documentId: drawingSet.documentId, loaded: totalRelationships });
+    return { ok: Boolean(totalRelationships), loaded: totalRelationships, documentId: drawingSet.documentId, relationshipsPath };
+  } catch (error) {
+    logger.warning('Bedford relationship bootstrap failed', { contained: true, source: relationshipsPath, drawingSetId: drawingSet.drawingSetId, documentId: drawingSet.documentId, message: error?.message || String(error) });
+    bedfordRelationshipResultsByDocumentId.set(drawingSet.documentId, null);
+    return { ok: false, loaded: 0, reason: error?.message || String(error), documentId: drawingSet.documentId, relationshipsPath };
+  }
+};
 function bedfordRelationshipLinksForSheet(sheetNumber = '') {
   const sheet = String(sheetNumber || '').trim();
-  const rawLinks = [...(bedfordRelationshipResults?.[sheet]?.links || [])];
+  const drawingSet = getBedfordDrawingSetForSheetNumber(sheet);
+  const rawLinks = [...(drawingSet ? bedfordRelationshipResultsByDocumentId.get(drawingSet.documentId)?.[sheet]?.links || [] : [])];
   if (rawLinks.length) return rawLinks.map(link => ({ ...link, sheetNumber: sheet, projectId: BEDFORD_PROJECT_ID }));
-  const canonicalSheet = chiefSpecificationSME?.getSheetForSheetNumber?.(sheet) || drawingCatalog.recordsForDocument(BEDFORD_DRAWING_DOCUMENT_ID).find(item => item.sheetNumber === sheet) || null;
+  const catalogRecords = getBedfordDrawingCatalogRecords();
+  const canonicalSheet = chiefSpecificationSME?.getSheetForSheetNumber?.(sheet) || catalogRecords.find(item => item.sheetNumber === sheet) || null;
   const pageId = canonicalSheet?.pageId || '';
   const serviceLinks = pageId ? drawingSpecificationLinks.forPage(pageId) : drawingSpecificationLinks.forProject(BEDFORD_PROJECT_ID).filter(item => String(item.sheetNumber || '').trim() === sheet);
   if (serviceLinks.length) return serviceLinks.map(link => ({ ...link, sheetNumber: sheet || link.sheetNumber || canonicalSheet?.sheetNumber || '', projectId: BEDFORD_PROJECT_ID }));
   return [];
 }
 function bedfordRelationshipLinksForProject() {
-  if (bedfordRelationshipResults) {
-    const rawLinks = Object.entries(bedfordRelationshipResults).flatMap(([sheetNumber, sheetData]) => (Array.isArray(sheetData?.links) ? sheetData.links : []).map(link => ({ ...link, sheetNumber, projectId: BEDFORD_PROJECT_ID })));
-    if (rawLinks.length) return rawLinks;
-  }
+  const rawLinks = [...bedfordRelationshipResultsByDocumentId.values()].flatMap(results => results ? Object.entries(results).flatMap(([sheetNumber, sheetData]) => (Array.isArray(sheetData?.links) ? sheetData.links : []).map(link => ({ ...link, sheetNumber, projectId: BEDFORD_PROJECT_ID }))) : []);
+  if (rawLinks.length) return rawLinks;
   const serviceLinks = drawingSpecificationLinks.forProject(BEDFORD_PROJECT_ID);
   if (serviceLinks.length) return serviceLinks.map(link => ({ ...link, projectId: BEDFORD_PROJECT_ID }));
   return [];
@@ -412,7 +424,7 @@ const chiefSpecificationSME = createChiefSpecificationSME({
   projectId: BEDFORD_PROJECT_ID,
   getAuthoritativeSections: () => specificationIndex.sections({ projectId: BEDFORD_PROJECT_ID }),
   getDrawingLinks: () => bedfordRelationshipLinksForProject(),
-  getDrawingCatalog: () => drawingCatalog.recordsForDocument(BEDFORD_DRAWING_DOCUMENT_ID),
+  getDrawingCatalog: () => getBedfordDrawingCatalogRecords(),
   reverseIndex: null
 });
 const chiefPmisSME = createChiefPmisSME({
@@ -425,6 +437,7 @@ chiefIntelligenceBridge.initialize({
   specificationSME: chiefSpecificationSME,
   pmisSME: chiefPmisSME
 });
+const bedfordRelationshipBootstrapPromises = bedfordDrawingSets.map(loadBedfordRelationshipBootstrap);
 let bedfordDrawingSpecificationLinksBootstrap = Promise.resolve({ loaded: 0, reason: 'pending' });
 const missionLandingReadiness = {
   projectSettled: false,
@@ -498,44 +511,52 @@ const bedfordSpecificationIndexBootstrap = fetch(new URL('project-data/bedford/s
     updateLandingReadiness({ specificationsSettled: true, specifications: false });
     return { ok: false, sections: 0, reason: error?.message || String(error) };
   });
-const bedfordDrawingCatalogBootstrap = fetch(new URL('project-data/bedford/drawing-catalogs/building-61.json', document.baseURI).toString())
-  .then(response => response.ok ? response.json() : null)
-  .then(data => {
+const bedfordDrawingCatalogBootstrap = Promise.all(bedfordDrawingSets.map(async drawingSet => {
+  try {
+    const response = await fetch(new URL(drawingSet.catalogPath, document.baseURI).toString());
+    const data = response.ok ? await response.json() : null;
     const sheets = Array.isArray(data?.sheets) ? data.sheets : [];
     if (sheets.length) {
       drawingCatalog.reconcile({
-        documentId: BEDFORD_DRAWING_DOCUMENT_ID,
+        documentId: drawingSet.documentId,
         documentType: 'drawing-set',
         projectId: BEDFORD_PROJECT_ID,
-        drawingSetId: data.drawingSetId || data.buildingId || '',
+        drawingSetId: data.drawingSetId || data.buildingId || drawingSet.drawingSetId || '',
         pageCount: Number(data.pageCount) || sheets.length,
         authoritativeRecords: sheets
       });
+      bedfordCatalogRecordsByDocumentId.set(drawingSet.documentId, drawingCatalog.recordsForDocument(drawingSet.documentId));
       updateLandingReadiness({ drawingsSettled: true, drawings: true });
-      return { ok: true, sheets: sheets.length };
+      return { ok: true, sheets: sheets.length, documentId: drawingSet.documentId, source: drawingSet.catalogPath };
     }
-    logger.warning('Bedford drawing catalog preload returned no sheets', { contained: true, source: 'project-data/bedford/drawing-catalogs/building-61.json' });
+    logger.warning('Bedford drawing catalog preload returned no sheets', { contained: true, source: drawingSet.catalogPath, documentId: drawingSet.documentId });
     updateLandingReadiness({ drawingsSettled: true, drawings: false });
-    return { ok: false, sheets: 0, reason: 'no sheets returned' };
-  })
-  .catch(error => {
-    logger.warning('Bedford drawing catalog preload failed', { contained: true, source: 'project-data/bedford/drawing-catalogs/building-61.json', message: error?.message || String(error) });
+    return { ok: false, sheets: 0, reason: 'no sheets returned', documentId: drawingSet.documentId, source: drawingSet.catalogPath };
+  } catch (error) {
+    logger.warning('Bedford drawing catalog preload failed', { contained: true, source: drawingSet.catalogPath, documentId: drawingSet.documentId, message: error?.message || String(error) });
     updateLandingReadiness({ drawingsSettled: true, drawings: false });
-    return { ok: false, sheets: 0, reason: error?.message || String(error) };
-  });
-const bedfordBootstrapReady = Promise.allSettled([bedfordSpecificationIndexBootstrap, bedfordDrawingCatalogBootstrap, bedfordRelationshipResultsBootstrap]);
+    return { ok: false, sheets: 0, reason: error?.message || String(error), documentId: drawingSet.documentId, source: drawingSet.catalogPath };
+  }
+}));
+const bedfordBootstrapReady = Promise.allSettled([bedfordSpecificationIndexBootstrap, bedfordDrawingCatalogBootstrap, ...bedfordRelationshipBootstrapPromises]);
 bedfordDrawingSpecificationLinksBootstrap = bedfordBootstrapReady.then(async () => {
   try {
-    const result = await loadBedfordDrawingSpecMappings({
-      drawingSpecificationLinks,
-      specificationIndex,
-      projectId: BEDFORD_PROJECT_ID,
-      drawingDocumentId: BEDFORD_SPEC_DOCUMENT_ID
-    });
-    updateLandingReadiness({ relationshipsSettled: true, relationships: Boolean(result?.loaded) });
-    return result;
+    const loadedResults = [];
+    for (const drawingSet of bedfordDrawingSets) {
+      const result = await loadBedfordDrawingSpecMappings({
+        drawingSpecificationLinks,
+        specificationIndex,
+        projectId: BEDFORD_PROJECT_ID,
+        drawingDocumentId: BEDFORD_SPEC_DOCUMENT_ID,
+        relationshipsPath: drawingSet.relationshipsPath
+      });
+      loadedResults.push({ ...result, documentId: drawingSet.documentId });
+    }
+    const loaded = loadedResults.reduce((sum, result) => sum + Number(result?.loaded || 0), 0);
+    updateLandingReadiness({ relationshipsSettled: true, relationships: Boolean(loaded) });
+    return { ok: Boolean(loaded), loaded, results: loadedResults };
   } catch (error) {
-    logger.warning('Bedford drawing specification link bootstrap failed', { contained: true, source: 'project-data/bedford/relationships/building-61-spec-links.json', message: error?.message || String(error) });
+    logger.warning('Bedford drawing specification link bootstrap failed', { contained: true, source: 'project-data/bedford/relationships', message: error?.message || String(error) });
     updateLandingReadiness({ relationshipsSettled: true, relationships: false });
     return { loaded: 0, reason: error?.message || String(error) };
   }
@@ -543,7 +564,7 @@ bedfordDrawingSpecificationLinksBootstrap = bedfordBootstrapReady.then(async () 
 const bedfordRuntimeBootstrapReady = Promise.allSettled([bedfordBootstrapReady, bedfordDrawingSpecificationLinksBootstrap]);
 globalThis.__mcBedfordBootstrapReady = bedfordRuntimeBootstrapReady;
 chiefIntelligenceBridge.readyPromise = bedfordRuntimeBootstrapReady;
-void bedfordRuntimeBootstrapReady.then(async results => {
+void bedfordRuntimeBootstrapReady.then(async () => {
   try {
     const runtimeLinks = bedfordRelationshipLinksForProject();
     const projectScopedLinks = runtimeLinks;
@@ -554,7 +575,7 @@ void bedfordRuntimeBootstrapReady.then(async results => {
       projectScopedRelationshipCount: projectScopedLinks.length,
       relationshipStoreServiceName: 'drawingSpecificationLinks',
       hydrationPromiseComplete: true,
-      firstFewRelationshipKeys: runtimeLinks.slice(0, 5).map(item => `${item.sheetNumber || ''}:${item.sectionNumber || ''}:${item.drawingPageId || ''}`),
+      firstFewRelationshipKeys: runtimeLinks.slice(0, 5).map(item => String(item.sheetNumber || '') + ':' + String(item.sectionNumber || '') + ':' + String(item.drawingPageId || '')),
       relationshipRecordsContainingSheetId: runtimeLinks.filter(item => String(item.sheetNumber || '').includes('61FX100')),
       relationshipRecordsContainingPageId: runtimeLinks.filter(item => String(item.drawingPageId || '').includes('drawing-page:bedford-b61-drawings:16'))
     });
@@ -565,34 +586,6 @@ void bedfordRuntimeBootstrapReady.then(async results => {
   } catch (error) {
     console.log('BEDFORD_RELATIONSHIP_RUNTIME_STATE', { error: error?.message || String(error) });
   }
-});
-
-void bedfordSpecificationIndexBootstrap.then(result => {
-  if (!result?.ok) return result;
-  void fetch(new URL('project-data/bedford/specifications/bedford-spec-index.json', document.baseURI).toString())
-    .then(response => response.ok ? response.json() : null)
-    .then(data => {
-      const sections = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.sections)
-          ? data.sections
-          : [];
-      if (sections.length) chiefSpecificationSME.setTextSections(sections);
-      else logger.warning('Bedford specification text preload returned no sections', { contained: true, source: 'project-data/bedford/specifications/bedford-spec-index.json' });
-    })
-    .catch(error => {
-      logger.warning('Bedford specification text preload failed', { contained: true, source: 'project-data/bedford/specifications/bedford-spec-index.json', message: error?.message || String(error) });
-    });
-  return bedfordRelationshipResultsBootstrap;
-});
-void bedfordDrawingCatalogBootstrap.then(result => {
-  if (!result?.ok) return result;
-  logger.debug('Bedford drawing catalog bootstrap', {
-    source: 'project-data/bedford/drawing-catalogs/building-61.json',
-    sheets: result?.sheets || 0,
-    reason: result?.reason || ''
-  });
-  return result;
 });
 const scheduleIdleWork = callback => {
   if (typeof globalThis.requestIdleCallback === 'function') return globalThis.requestIdleCallback(callback, { timeout: 1000 });
@@ -675,6 +668,7 @@ let drawingCoverageReviewGeneration = 0;
 let drawingViewportDocumentId = '';
 let activeDrawingPdf = null;
 let activeDrawingDocumentId = '';
+let activeBedfordDrawingBuildingId = '61';
 let activeDrawingSourceRecord = null;
 let activeDrawingRenderIdentity = null;
 let drawingWorkspaceRenderRequest = 0;
@@ -3438,7 +3432,7 @@ async function createRetainedPdfViewerAnalysis(documentRecord, source, requested
   drawingTraceSlowOperation('PDF page load', pageLoadStartedAt, { documentId: documentRecord.id, pageNumber, pageCount });
   const viewport = page.getViewport({ scale: 1, rotation: 0 });
   const generatedCatalog = await generatedDrawingCatalogFor(documentRecord,pageCount);
-  const catalogRecords = drawingCatalog.reconcile({ documentId: documentRecord.id, documentType: documentRecord.documentType, projectId: documentRecord.projectId || state().activeProject, drawingSetId: metadataAnalysis?.drawingSetId || '', pageCount, parserRecords: [...(metadataAnalysis?.sheets || []), ...(metadataAnalysis?.drawingRegistry || [])], storedMetadata: metadataAnalysis?.pageMetadata || [], authoritativeRecords:generatedCatalog.length?generatedCatalog:building61DrawingCatalogFor(documentRecord,pageCount) });
+  const catalogRecords = drawingCatalog.reconcile({ documentId: documentRecord.id, documentType: documentRecord.documentType, projectId: documentRecord.projectId || state().activeProject, drawingSetId: metadataAnalysis?.drawingSetId || '', pageCount, parserRecords: [...(metadataAnalysis?.sheets || []), ...(metadataAnalysis?.drawingRegistry || [])], storedMetadata: metadataAnalysis?.pageMetadata || [], authoritativeRecords:generatedCatalog.length ? generatedCatalog : bedfordDrawingCatalogFor(documentRecord, pageCount) });
   const analysis = createPdfPageViewerAnalysis({ documentId: documentRecord.id, documentType: documentRecord.documentType, projectId: documentRecord.projectId || state().activeProject, pageCount, selectedPage: pageNumber, pageWidth: viewport.width, pageHeight: viewport.height, rotation: page.rotate || viewport.rotation || 0, metadataAnalysis, catalogRecords });
   page.cleanup?.();
   return analysis;
@@ -4283,8 +4277,10 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
     host.innerHTML = drawingLifecycleUnavailable.length ? `<section class="mc-drawing-recovery-list"><h2>Drawing Sets</h2>${drawingLifecycleUnavailable.map(drawingRecoveryMarkup).join('')}</section>` : `<div class="mc-drawing-empty"><strong>No drawing set is available for this project.</strong><p>Import a drawing package or return to Chief to continue the project review.</p><div class="mc-drawing-empty-actions"><button type="button" data-drawing-empty-action="import">Import Drawing</button><button type="button" class="subtle" data-drawing-empty-action="chief">Return to Chief</button></div></div>`;
     return;
   }
-  const requestedDocument = drawingTarget?.documentId;
+  const requestedDocument = drawingTarget?.documentId || getBedfordDrawingSetByBuildingId(activeBedfordDrawingBuildingId)?.documentId || '';
   const selected = documents.find(item => item.id === requestedDocument) || documents.find(item => item.id === activeDrawingDocumentId) || documents.find(item => analysesByDocument.has(item.id) || retainedAnalysesByDocument.has(item.id)) || documents[0];
+  const selectedDrawingSet = getBedfordDrawingSetForDocumentId(selected.id);
+  if (selectedDrawingSet) activeBedfordDrawingBuildingId = selectedDrawingSet.buildingId;
   const persistedAnalysis = retainedAnalysesByDocument.get(selected.id) || analysesByDocument.get(selected.id) || null;
   let analysis = analysesByDocument.get(selected.id) || null;
   const source = activeDrawingSourceRecord?.documentId === selected.id && activeDrawingSourceRecord.projectId === state().activeProject
@@ -4516,10 +4512,13 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
   const chiefCards=buildChiefDrawingCards([{cardType:'Drawing Page',id:currentSheet?.pageId,title:currentSheet?.sheetNumber||`Page ${currentSheet?.pageNumber}`,subtitle:currentSheet?.sheetTitle,actions:[{actionId:'open-drawing-page',target:{documentId:selected.id,pageId:currentSheet?.pageId,pageNumber:currentSheet?.pageNumber,sheetNumber:currentSheet?.sheetNumber}}]},...(selectedDrawingObject?[{cardType:'Construction Item',id:selectedDrawingObject.objectId,title:selectedDrawingObject.label,subtitle:selectedDrawingObject.type,actions:[{actionId:'open-object',target:{objectId:selectedDrawingObject.objectId,pageId:currentSheet?.pageId}}]}]:[]),...sheetSpecificationLinks.filter(item=>item.status!=='rejected').slice(0,8).map(item=>({cardType:'Specification Section',id:item.linkId,title:item.sectionNumber,subtitle:item.sectionTitle,actions:[{actionId:'open-specification-section',target:{documentId:item.specificationDocumentId,sectionNumber:item.sectionNumber}}]}))],drawingActionRouter,{pageId:currentSheet?.pageId,objectIds:activeDrawingObjects.map(item=>item.objectId)});
   const coverageMetricMarkup=coverageReview?`<div class="mc-coverage-metrics"><span><strong>${coverageReview.metrics.overallPageCoveragePercentage}%</strong> overall</span><span><strong>${coverageReview.metrics.selectableObjectCount}</strong> selectable</span><span><strong>${coverageReview.metrics.confirmedObjectCount}</strong> confirmed</span><span><strong>${coverageReview.metrics.candidateObjectCount}</strong> candidates</span><span><strong>${coverageReview.metrics.unsupportedEvidenceCount}</strong> unsupported</span><span><strong>${coverageReview.metrics.objectsWithoutRegions}</strong> without regions</span></div>`:'';
   const coverageReviewMarkup=drawingCoverageReviewMode?`<section class="mc-drawing-coverage-review" aria-label="Drawing coverage review"><header><div><strong>Drawing Coverage Review</strong><span>Page-specific review work · ${coverageReview?.items.length||0} unresolved</span></div><button class="subtle" data-coverage-review-close>Close Review</button></header>${coverageReview?`${coverageMetricMarkup}<label>Review category<select data-coverage-review-filter><option value="all">All categories</option>${DRAWING_COVERAGE_CATEGORIES.map(category=>`<option value="${category}" ${drawingCoverageReviewFilter===category?'selected':''}>${category[0].toUpperCase()+category.slice(1)}</option>`).join('')}</select></label><div class="mc-coverage-gates">${Object.values(coverageReview.metrics.categoryCoverage).filter(item=>item.evidenceRecords||item.unresolvedReviewItems).map(item=>`<span><strong>${esc(item.category)}</strong> ${item.coveragePercentage??'—'}% · ${item.unresolvedReviewItems} open</span>`).join('')}</div><ol>${visibleReviewItems.map(item=>`<li data-review-item="${esc(item.reviewItemId)}"><div><span class="mc-ci-badge ${item.issueType}">${esc(item.issueType.replaceAll('-',' '))}</span><strong>${esc(item.proposedLabel)}</strong><small>${esc(item.reason)}</small></div><div>${item.currentRegistryMatch?'<button data-coverage-confirm>Confirm Object</button><button data-coverage-edit>Edit Identity</button>':'<button data-coverage-create>Create Object</button>'}<button data-coverage-assign>Assign Existing</button>${item.currentRegistryMatch?'<button data-coverage-draw-region>Draw / Adjust Region</button><button data-coverage-link-spec>Link Specification</button>':''}${item.issueType==='possible-duplicate'&&item.duplicateObject?'<button data-coverage-merge>Merge Duplicate</button><button data-coverage-keep>Keep Separate</button>':''}<button class="subtle" data-coverage-reject>Reject Evidence</button><button class="subtle" data-coverage-ignore>Ignore This Revision</button></div></li>`).join('')||'<li><strong>No unresolved review work in this category.</strong></li>'}</ol>`:'<p>Drawing coverage review is temporarily unavailable. Manual drawing use is unaffected.</p>'}</section>`:'';
+  const bedfordBuildingSelector = activeProjectObjectId === BEDFORD_PROJECT_ID && bedfordDrawingSets.length > 1
+    ? `<label>Building<select id="mcBedfordBuilding">${bedfordDrawingSets.map(set => `<option value="${esc(set.buildingId)}" ${set.buildingId === activeBedfordDrawingBuildingId ? 'selected' : ''}>${esc(set.buildingName)}</option>`).join('')}</select></label>`
+    : '';
   host.innerHTML = `
     <header class="mc-drawing-header" id="mc-drawing-header"><div><span>${shell === 'mission-control' ? 'CONSTRUCTION INTELLIGENCE · PLANS' : 'PROFESSIONAL WORKSPACE · DRAWING EVIDENCE'}</span><h2 title="${esc(selected.title || selected.name || 'Drawing set')}">${esc(selected.title || selected.name || 'Drawing set')}</h2><p><strong>${esc(status.label)}</strong> — ${esc(status.detail)}</p></div><div>${shell === 'professional' && persistedAnalysis ? '<button class="subtle" data-drawing-reanalyze>Reanalyze Drawing Set</button>' : ''}${returnAction ? `<button class="subtle" data-drawing-return="${esc(returnAction.kind)}">${esc(returnLabel)}</button>` : ''}</div></header>
     <div class="mc-drawing-layout ${drawingWorkspacePanels.finderHidden ? 'finder-hidden' : ''} ${drawingWorkspacePanels.evidenceHidden ? 'evidence-hidden' : ''} ${drawingWorkspacePanels.expanded ? 'drawing-expanded' : ''}">
-      <aside class="mc-drawing-index" aria-label="Find construction drawing evidence"><label>Drawing set<select id="mcDrawingDocument">${documents.map(item => `<option value="${esc(item.id)}" ${item.id === selected.id ? 'selected' : ''}>${esc(item.title || item.name || item.id)}</option>`).join('')}</select></label>${analysis ? `<label>Find a sheet, room, trade, or tag<input id="mcDrawingSearch" value="${esc(drawingFilter)}" autocomplete="off" aria-controls="mcDrawingResults" aria-describedby="mcDrawingResultStatus"></label><button class="subtle" data-drawing-clear-search ${drawingFilter ? '' : 'hidden'}>Clear search</button><div class="mc-drawing-filters"><label>Discipline<select id="mcDrawingDiscipline"><option value="all">All disciplines</option>${disciplines.map(item => `<option ${item === drawingDiscipline ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></label><label>Drawing type<select id="mcDrawingType"><option value="all">All types</option>${sheetTypes.map(item => `<option ${item === drawingType ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></label></div><p id="mcDrawingResultStatus" role="status" aria-live="polite">${esc(drawingSearchSummary(drawingFilter, shownSheets.length))}</p><ol id="mcDrawingResults" aria-label="Drawing search results">${searchResults.map((result, index) => drawingSearchResultMarkup(result, currentSheet?.sheetId, index)).join('') || '<li class="mc-drawing-no-results"><strong>No drawing evidence found.</strong><span>Try a sheet number, room, trade, equipment tag, or clear the active filters.</span></li>'}</ol>` : ''}</aside>
+      <aside class="mc-drawing-index" aria-label="Find construction drawing evidence">${bedfordBuildingSelector}<label>Drawing set<select id="mcDrawingDocument">${documents.map(item => `<option value="${esc(item.id)}" ${item.id === selected.id ? 'selected' : ''}>${esc(item.title || item.name || item.id)}</option>`).join('')}</select></label>${analysis ? `<label>Find a sheet, room, trade, or tag<input id="mcDrawingSearch" value="${esc(drawingFilter)}" autocomplete="off" aria-controls="mcDrawingResults" aria-describedby="mcDrawingResultStatus"></label><button class="subtle" data-drawing-clear-search ${drawingFilter ? '' : 'hidden'}>Clear search</button><div class="mc-drawing-filters"><label>Discipline<select id="mcDrawingDiscipline"><option value="all">All disciplines</option>${disciplines.map(item => `<option ${item === drawingDiscipline ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></label><label>Drawing type<select id="mcDrawingType"><option value="all">All types</option>${sheetTypes.map(item => `<option ${item === drawingType ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></label></div><p id="mcDrawingResultStatus" role="status" aria-live="polite">${esc(drawingSearchSummary(drawingFilter, shownSheets.length))}</p><ol id="mcDrawingResults" aria-label="Drawing search results">${searchResults.map((result, index) => drawingSearchResultMarkup(result, currentSheet?.sheetId, index)).join('') || '<li class="mc-drawing-no-results"><strong>No drawing evidence found.</strong><span>Try a sheet number, room, trade, equipment tag, or clear the active filters.</span></li>'}</ol>` : ''}</aside>
       <main class="mc-drawing-viewer"><details class="mc-construction-orientation"><summary>Work and selection context</summary><div><strong>${esc(activeWorkPackage?.workSummary?.[0]?.label || currentSheet?.sheetTitle || 'Select construction evidence')}</strong><span>${currentSheet?.building ? `Building ${esc(currentSheet.building)} · ` : ''}${esc(activeWorkPackage?.discipline || currentSheet?.discipline || 'Unknown')} · ${esc(selectionExplanation)}</span></div></details>${coverageReviewMarkup}
         ${!source ? `<div class="mc-drawing-unavailable"><strong>Original drawing unavailable — reattach PDF to view sheet.</strong><p>Reattach the exact source PDF to inspect the drawing. Indexed project text remains available.</p><label class="mc-drawing-reattach"><input id="mcDrawingReattach" type="file" accept="application/pdf,.pdf">Reattach Original PDF</label></div>` : !currentSheet ? `<div class="mc-drawing-unavailable"><strong>Drawing page unavailable.</strong><p>The retained PDF does not expose a viewable page.</p></div>` : `<header id="${focusTarget === 'mc-drawing-selected-evidence' ? 'mc-drawing-selected-evidence' : 'mc-drawing-sheet-title'}" class="mc-drawing-sheet-title" tabindex="-1" aria-live="polite" aria-label="${esc(announcementText)}"><div><span>${esc(currentSheet.sheetNumber || `Page ${currentSheet.pageNumber}`)}</span><h3>${esc(currentSheet.sheetTitle || `Page ${currentSheet.pageNumber}`)}</h3><p>${esc(selectionExplanation)}</p></div><dl><div><dt>Discipline</dt><dd>${esc(currentSheet.discipline)}</dd></div><div><dt>Type</dt><dd>${esc(currentSheet.primarySheetType || currentSheet.sheetTypes[0] || 'Unknown')}</dd></div><div><dt>Position</dt><dd>${analysis.viewerFallback ? 'Page' : 'Sheet'} ${currentSheet.pageNumber} of ${analysis.sheets.length}</dd></div><div><dt>Identity</dt><dd>${esc(currentSheet.identityStatus)}</dd></div></dl></header><div class="mc-drawing-toolbar"><div role="group" aria-label="Drawing navigation"><button data-drawing-previous ${navigationIndex <= 0 ? 'disabled' : ''}>Previous</button><button data-drawing-next ${navigationIndex < 0 || navigationIndex >= navigationSheetIds.length - 1 ? 'disabled' : ''}>Next</button><button data-drawing-layout="toggle-finder">${drawingWorkspacePanels.finderHidden ? 'Show' : 'Hide'} Sheet Finder</button></div><div role="group" aria-label="Drawing view controls"><button data-drawing-fit="page">Fit Page</button><button data-drawing-fit="width">Fit Width</button><button data-drawing-zoom="out">Zoom Out</button><button data-drawing-zoom="in">Zoom In</button><button data-drawing-rotate>Rotate</button><button data-drawing-reset-view>Reset View</button><button data-drawing-layout="${drawingWorkspacePanels.expanded ? 'restore' : 'expand'}">${drawingWorkspacePanels.expanded ? 'Restore Workspace' : 'Expand Drawing'}</button></div><div class="mc-drawing-spec-slot"><button type="button" class="mc-drawing-spec-button" data-drawing-spec-explorer>View Governing Specifications</button></div><div role="group" aria-label="Construction context actions">${analysis.viewerFallback ? '' : '<button data-drawing-ask>Ask Chief</button><button data-drawing-current-work>Add to Current Work</button><button data-drawing-inspection>Create Inspection</button>'}<button data-drawing-edit-metadata>Edit Page Metadata</button><button data-coverage-review-open>Review Drawing Coverage</button><button class="subtle" data-drawing-source>Open Source Details</button><button data-drawing-layout="toggle-evidence">${drawingWorkspacePanels.evidenceHidden ? 'Show' : 'Hide'} Construction Evidence</button></div><output aria-label="Current drawing view">${Number.isFinite(drawingZoom) ? Math.round(drawingZoom * 100) : 'Fit'}% · ${drawingRotation}°</output></div>        <div id="mcDrawingStage" class="mc-drawing-stage ${drawingCoverageRegionItemId?'is-drawing-review-region':''}"><canvas id="mcDrawingCanvas" aria-label="${esc(currentSheet.sheetNumber || `PDF page ${currentSheet.pageNumber}`)} ${esc(currentSheet.sheetTitle || 'drawing')}"></canvas><div class="mc-drawing-overlay-layer" aria-label="Drawing evidence overlays"></div></div>${drawingRotation || currentSheet.rotation ? '<p class="mc-drawing-note">Location highlights are synchronized with the rotated drawing view.</p>' : ''}`}
       </main>
@@ -4538,6 +4537,15 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
   }
   const actionBindings=[['[data-drawing-previous]','previous-page',{}],['[data-drawing-next]','next-page',{}],['[data-drawing-fit="page"]','fit-page',{}],['[data-drawing-fit="width"]','fit-width',{}],['[data-drawing-rotate]','rotate-clockwise',{}],['[data-drawing-reset-view]','reset-view',{}],['[data-drawing-spec-explorer]','open-specification-explorer',{}],['[data-drawing-ask]','ask-chief',{}],['[data-coverage-review-open]','open-coverage-review',{}],['[data-coverage-review-close]','close-coverage-review',{}],['[data-drawing-clear-object]','clear-selection',{}],['[data-drawing-object-nav="previous"]','previous-object',{}],['[data-drawing-object-nav="next"]','next-object',{}],['[data-drawing-object-nav="room"]','next-room',{}],['[data-drawing-object-nav="equipment"]','next-equipment',{}],['[data-drawing-object-nav="finish"]','next-finish',{}],['[data-drawing-object-center]','center-object',{objectId:selectedDrawingObject?.objectId,region:selectedDrawingObject?.region}],['[data-drawing-object-location]','zoom-object',{objectId:selectedDrawingObject?.objectId,region:selectedDrawingObject?.region}]];
   for(const[selector,actionId,target]of actionBindings)for(const control of host.querySelectorAll(selector)){control.dataset.drawingAction=actionId;control.dataset.drawingActionTarget=JSON.stringify(target);}
+  const buildingSelect = host.querySelector('#mcBedfordBuilding');
+  if (buildingSelect) {
+    buildingSelect.onchange = async () => {
+      activeBedfordDrawingBuildingId = buildingSelect.value || '61';
+      const drawingSet = getBedfordDrawingSetByBuildingId(activeBedfordDrawingBuildingId) || bedfordDrawingSets[0] || null;
+      if (drawingSet) drawingTarget = createDrawingTarget({ projectId: state().activeProject, documentId: drawingSet.documentId, drawingSetId: drawingSet.drawingSetId, pageNumber: 1, origin: 'bedford-building-switch' });
+      await renderDrawingWorkspace(shell);
+    };
+  }
   const governingButton = host.querySelector('[data-drawing-spec-explorer]');
   if (governingButton) {
     governingButton.onclick = event => {
@@ -4749,7 +4757,7 @@ async function renderMissionControlPlans() {
   const documentRecord = documents.find(item => item.id === analysis?.documentId) || null;
   const pageCount = Math.max(0, Number(analysis?.sheets?.length) || 0);
   const generatedCatalog = normalizeGeneratedDrawingCatalog(await generatedDrawingCatalogFor(documentRecord || {}, pageCount));
-  const authoritativeRecords = [...generatedCatalog, ...(building61DrawingCatalogFor(documentRecord || {}, pageCount) || [])];
+  const authoritativeRecords = [...generatedCatalog, ...(bedfordDrawingCatalogFor(documentRecord || {}, pageCount) || [])];
   const authoritativeByPage = new Map(authoritativeRecords.map(record => [Number(record.pdfPageNumber || record.pageNumber) || 0, record]));
   const sheets = (analysis?.sheets || []).map(sheet => {
     const authoritative = authoritativeByPage.get(Number(sheet.pageNumber) || Number(sheet.pdfPage) || 0) || {};
@@ -4776,6 +4784,7 @@ async function renderMissionControlPlans() {
     requirementsResolver: drawingRequirementsResolver,
     buildPanelModel: buildConstructionIntelligencePanelModel,
     panelMarkup: constructionIntelligencePanelMarkup,
+    bedfordDrawingSets,
     initialAnalysis: analysis ? { ...analysis, sheets } : { projectId: state().activeProject, drawingSetId: drawingTarget?.drawingSetId || '', sheets: [] },
     initialSheetId: currentSheet?.sheetId || '',
     sourceResolver: async sheet => {
@@ -13295,31 +13304,31 @@ engine.initialize()
     }
     updateLandingReadiness({ projectSettled: true, project: Boolean(state().projects.find(p => p.id === BEDFORD_PROJECT_ID)) });
     
-    // Ensure built-in Bedford documents have source files registered
+    // Ensure built-in Bedford drawing documents have source files registered
     const bedfordDocs = await engine.documents();
-    const drawingDoc = bedfordDocs.find(d => d.id === BEDFORD_DRAWING_DOCUMENT_ID);
+    const bedfordDrawingDocs = bedfordDocs.filter(d => bedfordDrawingSets.some(set => set.documentId === d.id));
     const specDoc = bedfordDocs.find(d => d.id === BEDFORD_SPEC_DOCUMENT_ID);
     
-    // Register source files for built-in documents if they don't exist
-    if (drawingDoc && drawingDoc.builtIn && drawingDoc.staticPath) {
+    // Register source files for built-in drawing documents if they don't exist
+    for (const drawingDoc of bedfordDrawingDocs) {
+      if (!drawingDoc?.builtIn || !drawingDoc.staticPath) continue;
       const existingSource = await engine.sourceFile(drawingDoc.id);
-      if (!existingSource) {
-        try {
-          const response = await fetch(drawingDoc.staticPath);
-          if (response.ok) {
-            const blob = await response.blob();
-            await engine.putMany('sourceFiles', [{
-              documentId: drawingDoc.id,
-              projectId: drawingDoc.projectId,
-              sourceBlob: blob,
-              sourcePath: drawingDoc.staticPath,
-              contentHash: ''
-            }]);
-            console.log('Bedford drawing source file registered');
-          }
-        } catch (error) {
-          console.error('Failed to register Bedford drawing source:', error);
+      if (existingSource) continue;
+      try {
+        const response = await fetch(drawingDoc.staticPath);
+        if (response.ok) {
+          const blob = await response.blob();
+          await engine.putMany('sourceFiles', [{
+            documentId: drawingDoc.id,
+            projectId: drawingDoc.projectId,
+            sourceBlob: blob,
+            sourcePath: drawingDoc.staticPath,
+            contentHash: ''
+          }]);
+          console.log('Bedford drawing source file registered', drawingDoc.id);
         }
+      } catch (error) {
+        console.error('Failed to register Bedford drawing source:', error);
       }
     }
     

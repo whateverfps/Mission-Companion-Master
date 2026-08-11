@@ -20,6 +20,7 @@ export function createPlansController({
   sourceResolver = async () => null,
   onViewSource = () => {},
   drawingSpecificationLinks = null,
+  bedfordDrawingSets = [],
   createPdfViewer = createPlansPdfViewer,
   createInspector = createPlansSheetInspector,
   renderView = renderPlansView
@@ -35,31 +36,50 @@ export function createPlansController({
     sheets: []
   });
   
-  // Load Building 61 data at initialization
-  let building61Catalog = null;
-  let building61SpecLinks = null;
-  
+  const resolveBedfordDrawingSet = value => {
+    const needle = String(value ?? '').trim();
+    return bedfordDrawingSets.find(set =>
+      set.documentId === needle ||
+      set.drawingSetId === needle ||
+      set.buildingId === needle ||
+      set.sourceFileName === needle
+    ) || null;
+  };
+
+  const fallbackBedfordDrawingSet = {
+    buildingId: '61',
+    documentId: 'bedford-b61-drawings',
+    drawingSetId: 'bedford-b61',
+    sourceFileName: '518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf',
+    catalogPath: 'project-data/bedford/drawing-catalogs/building-61.json',
+    relationshipsPath: 'project-data/bedford/relationships/building-61-spec-links.json'
+  };
+
+  let activeBedfordDrawingSet = resolveBedfordDrawingSet(initialAnalysis?.documentId) || resolveBedfordDrawingSet(initialAnalysis?.drawingSetId) || bedfordDrawingSets[0] || fallbackBedfordDrawingSet;
+  let bedfordDrawingCatalog = null;
+  let bedfordSpecLinks = null;
+
   (async () => {
     try {
-      const catalogResponse = await fetch(new URL('project-data/bedford/drawing-catalogs/building-61.json', document.baseURI).toString());
+      const catalogResponse = await fetch(new URL(activeBedfordDrawingSet.catalogPath, document.baseURI).toString());
       if (catalogResponse && catalogResponse.ok) {
-        building61Catalog = await catalogResponse.json();
+        bedfordDrawingCatalog = await catalogResponse.json();
       } else {
-        console.error('[Plans V2] Failed to load Building 61 catalog:', catalogResponse?.status);
+        console.error('[Plans V2] Failed to load Bedford catalog:', catalogResponse?.status, activeBedfordDrawingSet.catalogPath);
       }
     } catch (error) {
-      console.error('[Plans V2] Error loading Building 61 catalog:', error);
+      console.error('[Plans V2] Error loading Bedford catalog:', error);
     }
-    
+
     try {
-      const specLinksResponse = await fetch(new URL('verification/building-61-spec-links.json', document.baseURI).toString());
+      const specLinksResponse = await fetch(new URL(activeBedfordDrawingSet.relationshipsPath, document.baseURI).toString());
       if (specLinksResponse && specLinksResponse.ok) {
-        building61SpecLinks = await specLinksResponse.json();
+        bedfordSpecLinks = await specLinksResponse.json();
       } else {
-        console.error('[Plans V2] Failed to load Building 61 spec links:', specLinksResponse?.status);
+        console.error('[Plans V2] Failed to load Bedford spec links:', specLinksResponse?.status, activeBedfordDrawingSet.relationshipsPath);
       }
     } catch (error) {
-      console.error('[Plans V2] Error loading Building 61 spec links:', error);
+      console.error('[Plans V2] Error loading Bedford spec links:', error);
     }
   })();
   
@@ -170,21 +190,21 @@ export function createPlansController({
   const normalizeSheet = sheet => {
     if (!sheet) return null;
     
-    // For Building 61, use authoritative catalog data based on PDF page number
+    // Use authoritative catalog data based on PDF page number
     let building61Sheet = null;
-    if (building61Catalog && sheet.pdfPage) {
-      building61Sheet = building61Catalog.sheets.find(s => s.pdfPageNumber === sheet.pdfPage);
+    if (bedfordDrawingCatalog && sheet.pdfPage) {
+      building61Sheet = bedfordDrawingCatalog.sheets.find(s => s.pdfPageNumber === sheet.pdfPage);
     }
     
     const analysisSheet = currentAnalysis?.sheets?.find(item => item.sheetId === sheet.sheetId || Number(item.pageNumber) === Number(sheet.pageNumber) || item.pageId === sheet.pageId) || null;
     
-    // Use Building 61 catalog data if available, otherwise fallback to analysis/snapshot
+    // Use Bedford catalog data if available, otherwise fallback to analysis/snapshot
     const canonicalPageId = building61Sheet?.pageId || sheet.pageId || analysisSheet?.pageId || '';
     const sheetNumber = building61Sheet?.sheetNumber || sheet.sheetNumber || analysisSheet?.sheetNumber || '';
     const sheetTitle = building61Sheet?.sheetTitle || sheet.sheetTitle || analysisSheet?.sheetTitle || '';
     const discipline = building61Sheet?.discipline || sheet.discipline || analysisSheet?.discipline || '';
     const drawingType = building61Sheet?.drawingType || sheet.drawingType || sheet.primarySheetType || analysisSheet?.drawingType || analysisSheet?.primarySheetType || '';
-    const building = building61Catalog?.building || building61Sheet?.building || sheet.building || analysisSheet?.building || '';
+    const building = bedfordDrawingCatalog?.building || building61Sheet?.building || sheet.building || analysisSheet?.building || '';
     
     const normalized = {
       projectId: sheet.projectId || analysisSheet?.projectId || currentAnalysis?.projectId || store.getState().projectId || '',
@@ -266,7 +286,7 @@ export function createPlansController({
 
   async function selectSheet(sheet) {
     if (!sheet || destroyed) return { committed: false };
-    // Normalize sheet to get authoritative Building 61 data instead of stale incoming data
+    // Normalize sheet to get authoritative Bedford drawing set data instead of stale incoming data
     const normalizedSheet = normalizeSheet(sheet);
     const snapshot = clone(normalizedSheet);
     const generation = ++activeGeneration;
@@ -291,12 +311,12 @@ export function createPlansController({
     const canonicalPageId = snapshot.pageId || '';
     let specificationLinksFromDb = [];
     
-    // For Building 61, use pre-populated spec links by sheet number
-    if (building61SpecLinks && snapshot.sheetNumber) {
-      const sheetResult = building61SpecLinks.results?.[snapshot.sheetNumber];
+    // Use pre-populated spec links by sheet number
+    if (bedfordSpecLinks && snapshot.sheetNumber) {
+      const sheetResult = bedfordSpecLinks.results?.[snapshot.sheetNumber];
       if (sheetResult && sheetResult.success && sheetResult.pageId === canonicalPageId) {
         specificationLinksFromDb = sheetResult.links || [];
-        console.log('[Plans V2] Using Building 61 pre-populated spec links:', specificationLinksFromDb.length, 'for', snapshot.sheetNumber);
+        console.log('[Plans V2] Using Bedford pre-populated spec links:', specificationLinksFromDb.length, 'for', snapshot.sheetNumber);
       }
     }
     
@@ -308,7 +328,7 @@ export function createPlansController({
     // Fallback: load from pre-populated JSON file if database is empty
     if (specificationLinksFromDb.length === 0) {
       try {
-        const specLinksPath = './verification/building-61-spec-links.json';
+        const specLinksPath = activeBedfordDrawingSet.relationshipsPath;
         const response = await fetch(specLinksPath);
         if (response && response.ok) {
           const specLinksData = await response.json();
@@ -331,7 +351,7 @@ export function createPlansController({
       hasPageId: Boolean(canonicalPageId)
     };
     
-    // For Building 61, bypass requirementsResolver and create requirements directly from spec links
+    // For Bedford drawings with spec links, bypass requirementsResolver and create requirements directly from spec links
     let requirementsResult = {};
     if (specificationLinksFromDb.length > 0) {
       requirementsResult = {
@@ -348,7 +368,7 @@ export function createPlansController({
       specLinksDiagnostic.rejectedCount = requirementsResult.rejectedCount;
       console.log('[Plans V2] Direct rendering of spec links:', specificationLinksFromDb.length, 'records');
     } else {
-      // Use requirementsResolver for non-Building 61 or empty spec links
+      // Use requirementsResolver for drawings without spec links
       const requirementInput = {
         projectId: snapshot.projectId || currentAnalysis?.projectId || '',
         pageEntityId: `drawing-page:${canonicalPageId}`,

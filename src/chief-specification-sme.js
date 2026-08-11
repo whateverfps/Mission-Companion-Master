@@ -46,6 +46,11 @@ function relationshipType(link) {
   return text(link.relationshipType || link.status || 'RELATED');
 }
 
+function buildingLabelForSheet(sheetNumber = '') {
+  const match = String(sheetNumber || '').trim().match(/^(\d{2})/);
+  return match ? `Building ${match[1]}` : 'Bedford';
+}
+
 export function createChiefSpecificationSME({
   projectId = 'bedford',
   getAuthoritativeSections = () => [],
@@ -252,7 +257,7 @@ export function createChiefSpecificationSME({
       queryType = 'drawing';
       specifications = sectionsForSheet(sheetNumber || activeSheet?.sheetNumber || '', resolvedDrawingLinks);
       drawings = specifications.flatMap(item => drawingsForSection(item.sectionNumber, resolvedDrawingLinks));
-      const header = sheetNumber ? `Building 61 Drawing ${sheetNumber}` : 'Current drawing';
+      const header = sheetNumber ? `${buildingLabelForSheet(sheetNumber)} Drawing ${sheetNumber}` : 'Current drawing';
       answer = [header, ...specifications.slice(0, Math.max(1, limit)).map(item => `- ${item.sectionNumber} — ${item.sectionTitle} (${item.relationshipType})`)].join('\n');
     } else if ((asksDrawings || explicitSection) && explicitSection?.[1]) {
       queryType = 'specification';
@@ -265,7 +270,7 @@ export function createChiefSpecificationSME({
         answer = [
           `${section.sectionNumber} — ${section.sectionTitle}`,
           summarizeSection(section),
-          drawings.length ? 'Related Building 61 drawings:' : 'No related Building 61 drawings were found in the validated relationship graph.',
+          drawings.length ? `Related ${buildingLabelForSheet(sheetNumber || pageId)} drawings:` : `No related ${buildingLabelForSheet(sheetNumber || pageId)} drawings were found in the validated relationship graph.`,
           ...drawings.slice(0, Math.max(1, limit)).map(item => `- ${item.sheetNumber || item.pageId}${item.sheetTitle ? ` — ${item.sheetTitle}` : ''} (${item.relationshipTypes.join(', ')})`)
         ].join('\n');
       }
@@ -274,12 +279,12 @@ export function createChiefSpecificationSME({
       specifications = findSectionsByDiscipline(questionText, resolvedDrawingLinks);
       drawings = [...new Map(specifications.flatMap(item => item.drawings || []).map(item => [item.sheetNumber || item.pageId, item])).values()];
       const disciplineLabel = DISCIPLINE_KEYWORDS.find(rule => rule.terms.some(term => questionText.includes(term)))?.label || 'this discipline';
-      answer = [`Building 61 sections related to ${disciplineLabel}:`, ...specifications.slice(0, Math.max(1, limit)).map(item => `- ${item.sectionNumber} — ${item.sectionTitle}`)].join('\n');
+      answer = [`Bedford sections related to ${disciplineLabel}:`, ...specifications.slice(0, Math.max(1, limit)).map(item => `- ${item.sectionNumber} — ${item.sectionTitle}`)].join('\n');
     } else if (sheetNumber || pageId) {
       queryType = 'drawing';
       specifications = sectionsForSheet(sheetNumber || activeSheet?.sheetNumber || '', resolvedDrawingLinks);
       drawings = specifications.flatMap(item => drawingsForSection(item.sectionNumber, resolvedDrawingLinks));
-      answer = [`Building 61 drawing ${sheetNumber || pageId} is associated with ${specifications.length} specification section${specifications.length === 1 ? '' : 's'}.`, ...specifications.slice(0, Math.max(1, limit)).map(item => `- ${item.sectionNumber} — ${item.sectionTitle} (${item.relationshipType})`)].join('\n');
+      answer = [`${buildingLabelForSheet(sheetNumber || pageId)} drawing ${sheetNumber || pageId} is associated with ${specifications.length} specification section${specifications.length === 1 ? '' : 's'}.`, ...specifications.slice(0, Math.max(1, limit)).map(item => `- ${item.sectionNumber} — ${item.sectionTitle} (${item.relationshipType})`)].join('\n');
     } else {
       specifications = findSectionsForQuery(questionText, { limit });
       drawings = [...new Map(specifications.flatMap(item => item.drawings || []).map(item => [item.sheetNumber || item.pageId, item])).values()];

@@ -11,7 +11,9 @@ const readJson = relativePath => JSON.parse(fs.readFileSync(path.join(root, rela
 const authoritativeSections = readJson('project-data/bedford/specifications/authoritative-spec-index.json');
 const bedfordSpecificationSections = readJson('project-data/bedford/specifications/bedford-spec-index.json');
 const relationshipData = readJson('project-data/bedford/relationships/building-61-spec-links.json');
+const relationshipDataB62 = readJson('project-data/bedford/relationships/building-62-spec-links.json');
 const drawingCatalog = readJson('project-data/bedford/drawing-catalogs/building-61.json');
+const drawingCatalogB62 = readJson('project-data/bedford/drawing-catalogs/building-62.json');
 
 const { createSpecificationIndex } = await import('../src/specification-index.js');
 const { createDrawingCatalog } = await import('../src/drawing-catalog.js');
@@ -129,4 +131,64 @@ test('Bedford drawing catalog bootstrap seeds the authoritative sheet map and st
 
   assert.equal(second.length, 70);
   assert.equal(catalog.recordsForDocument(document.id).length, 70);
+});
+
+test('Bedford startup registers source files for every built-in drawing set', async () => {
+  const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
+  assert.match(app, /const bedfordDrawingDocs = bedfordDocs\.filter\(d => bedfordDrawingSets\.some\(set => set\.documentId === d\.id\)\);/);
+  assert.match(app, /for \(const drawingDoc of bedfordDrawingDocs\) \{/);
+  assert.match(app, /console\.log\('Bedford drawing source file registered', drawingDoc\.id\);/);
+  assert.doesNotMatch(app, /const drawingDoc = bedfordDocs\.find\(d => d\.id === BEDFORD_DRAWING_DOCUMENT_ID\);/);
+});
+
+test('Bedford B62 catalog and relationships load through the same shared pipeline', async () => {
+  const specificationIndex = createSpecificationIndex();
+  const drawingSpecificationLinks = createDrawingSpecificationLinkService({
+    index: specificationIndex,
+    persistence: null
+  });
+  specificationIndex.index({
+    document: {
+      id: 'bedford-specifications',
+      projectId: 'bedford',
+      name: 'Bedford Specification Manual',
+      title: 'Bedford Specification Manual'
+    },
+    sourceSections: authoritativeSections.map(section => ({
+      ...section,
+      pageStart: section.pageStart || section.startPdfPage || section.startPage || null,
+      pageEnd: section.pageEnd || section.endPdfPage || section.endPage || section.startPdfPage || section.startPage || null
+    }))
+  });
+
+  const loadResult = await loadBedfordDrawingSpecMappings({
+    drawingSpecificationLinks,
+    specificationIndex,
+    projectId: 'bedford',
+    drawingDocumentId: 'bedford-specifications',
+    relationshipsPath: 'project-data/bedford/relationships/building-62-spec-links.json',
+    baseUri: 'http://example.test/',
+    fetcher: async url => ({
+      ok: true,
+      url,
+      async json() {
+        return relationshipDataB62;
+      }
+    })
+  });
+
+  assert.equal(loadResult.loaded, 216);
+  const records = drawingSpecificationLinks.forProject('bedford');
+  assert.equal(records.length, 216);
+
+  const sheetNumbers = [...new Set(Object.keys(relationshipDataB62.results || {}))];
+  assert.equal(sheetNumbers.length, 68);
+  const fireSheet = relationshipDataB62.results['62FX100'];
+  assert.ok(fireSheet);
+  assert.equal(fireSheet.links.length, 6);
+
+  const firePageId = fireSheet.pageId;
+  const fireRecords = records.filter(item => item.drawingPageId === firePageId);
+  assert.equal(fireRecords.length, 6);
+  assert.equal(drawingCatalogB62.sheets.some(item => item.sheetNumber === '62FX100'), true);
 });
