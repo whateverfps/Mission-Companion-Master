@@ -7,7 +7,35 @@ html.embedded-mode .shell{width:100%;max-width:none;padding:10px 10px 12px;overf
 html.embedded-mode .layout{grid-template-columns:minmax(0,1.35fr) minmax(0,.85fr)!important;gap:18px!important;align-items:start}
 html.embedded-mode .panel{min-width:0}
 html.embedded-mode .campus-panel,html.embedded-mode .detail-panel{min-width:0!important}
-html.embedded-mode .campus-map-wrap,html.embedded-mode .campus-map{min-width:0!important;max-width:100%!important}
+html.embedded-mode .campus-map-wrap{
+  position:relative;
+  display:block;
+  width:100%;
+  height:auto;
+  min-height:0!important;
+  max-width:100%!important;
+  padding:0;
+  overflow:visible;
+}
+html.embedded-mode .campus-map{
+  display:block;
+  width:100%;
+  height:auto;
+  min-width:0!important;
+  max-width:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  object-fit:contain!important;
+}
+html.embedded-mode #campusHotspots{
+  position:absolute;
+  inset:0;
+  display:none!important;
+  pointer-events:none!important;
+}
+html.embedded-mode .source-status.bad{
+  display:none!important;
+}
 html.embedded-mode .detail-panel{width:100%}
 html.embedded-mode .launch-overlay,html.embedded-mode .product-gate,html.embedded-mode .file-loader,html.embedded-mode .drop-zone{display:none!important}
 .file-loader,.drop-zone{display:block}
