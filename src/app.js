@@ -2976,12 +2976,28 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
         </div>
         <div class="mc-chief-workspace-questions" aria-label="Suggested construction questions">
           <span>Suggested questions</span>
-          <div class="mc-chief-question-list">
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs apply to 61FX100?">What specs apply to 61FX100?</button>
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="What drawings relate to 28 31 00?">What drawings relate to 28 31 00?</button>
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs cover HVAC and what drawings relate?">What specs cover HVAC and what drawings relate?</button>
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="How long after NTP until a schedule is required according to the specifications?">How long after NTP until a schedule is required according to the specifications?</button>
-            <button type="button" class="mc-chief-question-chip" data-control-prompt="What specifications govern 61H-101?">What specifications govern 61H-101?</button>
+          <div class="mc-chief-question-group">
+            <strong>Project Intelligence</strong>
+            <div class="mc-chief-question-list">
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What is the status of Building 61?">What is the status of Building 61?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What is holding Building 61 back?">What is holding Building 61 back?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What trades need attention in Building 61?">What trades need attention in Building 61?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What is the OIT readiness for Building 61?">What is the OIT readiness for Building 61?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="Is Building 61 ready for pilot completion?">Is Building 61 ready for pilot completion?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="Which building needs the most attention?">Which building needs the most attention?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="Give me a PMIS project summary.">Give me a PMIS project summary.</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What should I focus on today?">What should I focus on today?</button>
+            </div>
+          </div>
+          <div class="mc-chief-question-group">
+            <strong>Specifications &amp; Drawings</strong>
+            <div class="mc-chief-question-list">
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs apply to 61FX100?">What specs apply to 61FX100?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What drawings relate to 28 31 00?">What drawings relate to 28 31 00?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs cover HVAC and what drawings relate?">What specs cover HVAC and what drawings relate?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="How long after NTP until a schedule is required according to the specifications?">How long after NTP until a schedule is required according to the specifications?</button>
+              <button type="button" class="mc-chief-question-chip" data-control-prompt="What specifications govern 61H-101?">What specifications govern 61H-101?</button>
+            </div>
           </div>
         </div>
       </header>
@@ -3029,7 +3045,7 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
           </form>
         </section>
         <aside class="mc-chief-side-panel" aria-label="Chief project context">
-          ${project ? `<section class="mc-chief-context-card"><div><span>ACTIVE PROJECT</span><h2>${esc(project.name)}</h2><p>${esc(project.description || 'Project details and analysis stay available here while you work.')}</p></div><div class="mc-chief-context-actions"><button type="button" data-control-view="plans">Open Drawings</button><button type="button" data-control-view="library">Project Library</button></div></section>` : `<section class="mc-chief-context-card mc-chief-context-card-empty"><div><span>MISSION COMPANION</span><h2>Start with a project</h2><p>Select or create a project to begin construction analysis.</p></div><div class="mc-chief-context-actions"><button type="button" data-control-action="create-project">Create Project</button><button type="button" class="subtle" data-control-action="import-project">Import Project</button></div></section>`}
+          ${project ? '' : `<section class="mc-chief-context-card mc-chief-context-card-empty"><div><span>MISSION COMPANION</span><h2>Start with a project</h2><p>Select or create a project to begin construction analysis.</p></div><div class="mc-chief-context-actions"><button type="button" data-control-action="create-project">Create Project</button><button type="button" class="subtle" data-control-action="import-project">Import Project</button></div></section>`}
           ${activeWorkPackage ? `<section class="mc-chief-analysis-card"><div><span>COMMAND DESK ANALYSIS</span><h3>Construction work package</h3><p>${esc(activeWorkPackage.summary || 'A work package is available for review.')}</p></div></section>` : ''}
           ${renderChiefEvidence()}
         </aside>
@@ -6850,7 +6866,7 @@ function renderMessages(
           <div>
             <div class="message-meta">
               ${message.role === 'user' ? 'You' : 'Chief · Mission Companion'}
-              ${message.mode ? ` · ${modeLabel(message.mode)}` : ''}
+              ${message.mode ? ` · ${missionControlResponseModeLabel(message.mode)}` : ''}
             </div>
             <div class="message-text ${message.role === 'assistant' ? 'mc-message-card' : ''}">
               <div class="mc-message-content">
@@ -7356,7 +7372,7 @@ function renderEvidenceExplorer() {
       <div><dt>Retrieved</dt><dd>${esc(timestampLabel)}</dd></div>
       <div><dt>Project</dt><dd>${esc(session.project.name)}</dd></div>
       <div><dt>Library context</dt><dd>${esc(session.library.name)}</dd></div>
-      <div><dt>Mode</dt><dd>${esc(modeLabel(session.mode))}</dd></div>
+      <div><dt>Mode</dt><dd>${esc(missionControlResponseModeLabel(session.mode))}</dd></div>
       <div><dt>Retrieval version</dt><dd>${session.retrievalMeta.retrievalVersion ? esc(session.retrievalMeta.retrievalVersion) : 'Unavailable'}</dd></div>
       <div><dt>Citations returned</dt><dd>${session.citationsReturned.length ? session.citationsReturned.map(item => `[S${fmt(item)}]`).join(', ') : 'None'}</dd></div>
     </dl>
