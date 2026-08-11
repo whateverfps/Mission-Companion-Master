@@ -302,7 +302,7 @@ test('Phase 24A.2 exposes a full-scale stable viewer and verified construction o
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
   assert.match(app, /Analyze Page Objects/);
-  assert.match(app, /data-drawing-overlay/);
+  assert.doesNotMatch(app, /data-drawing-overlay/);
   assert.match(app, /Expand Drawing/);
   assert.match(app, /calculateDrawingFit/);
   assert.match(app, /Candidate occurrence/);
