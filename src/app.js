@@ -447,12 +447,16 @@ function landingEnvironmentReady() {
 function landingEntryReady() {
   return landingCoreReady();
 }
+function updateMissionControlNavigationVisibility() {
+  const nav = $('.mc-control-nav');
+  if (nav) nav.hidden = missionControlView === 'landing';
+}
 function landingStatusLabel() {
-  if (!landingEntryReady()) return 'INITIALIZING PROJECT ENVIRONMENT';
+  if (!landingEntryReady()) return 'PREPARING PROJECT ENVIRONMENT';
   return landingEnvironmentReady() ? 'PROJECT ENVIRONMENT READY' : 'PROJECT ENVIRONMENT DEGRADED';
 }
 function landingStatusDetail() {
-  if (!landingEntryReady()) return 'Preparing project workspace...';
+  if (!landingEntryReady()) return 'Preparing the Bedford workspace...';
   return landingEnvironmentReady()
     ? 'The Bedford workspace is ready.'
     : 'A noncritical resource is still unavailable. Continue into Mission Companion when ready.';
@@ -3068,7 +3072,7 @@ function renderConversationHistory() {
 }
 
 async function renderMissionControlLanding() {
-  const project = missionControlProject();
+  const landingReady = landingEntryReady();
   $('#missionControlContent').innerHTML = `
     <section class="mc-control-landing" aria-labelledby="missionControlTitle">
       <div class="mc-control-landing-hero">
@@ -3081,7 +3085,7 @@ async function renderMissionControlLanding() {
         <div class="mc-control-landing-status">
           <span>${landingStatusLabel()}</span>
           <strong>${landingStatusDetail()}</strong>
-          <small>${missionLandingReadiness.specifications ? 'Preparing specifications' : 'Loading project data'} · ${missionLandingReadiness.drawings ? 'Indexing drawing relationships' : 'Indexing drawing relationships'} · ${missionLandingReadiness.pmisFailed ? 'PMIS runtime unavailable' : missionLandingReadiness.pmis ? 'Starting PMIS' : 'Starting PMIS'}</small>
+          ${landingReady ? '' : `<small>${missionLandingReadiness.projectSettled ? 'Project data loaded' : 'Loading project data'} · ${missionLandingReadiness.specificationsSettled ? (missionLandingReadiness.specifications ? 'Specifications indexed' : 'Specifications unavailable') : 'Preparing specifications'} · ${missionLandingReadiness.drawingsSettled ? (missionLandingReadiness.drawings ? 'Drawing relationships indexed' : 'Drawing relationships unavailable') : 'Indexing drawing relationships'} · ${missionLandingReadiness.relationshipsSettled ? (missionLandingReadiness.relationships ? 'Relationship graph ready' : 'Relationship graph unavailable') : 'Starting relationship graph'} · ${missionLandingReadiness.pmisFailed ? 'PMIS runtime unavailable' : missionLandingReadiness.pmis ? 'PMIS runtime ready' : 'Starting PMIS'}</small>`}
         </div>
         <div class="mc-control-landing-progress" aria-hidden="true">
           <span class="${missionLandingReadiness.project ? 'done' : 'active'}"></span>
@@ -3095,22 +3099,9 @@ async function renderMissionControlLanding() {
         <button type="button" class="mc-control-landing-primary" data-control-action="enter-mission-control" ${landingEntryReady() ? '' : 'disabled'}>Enter Mission Companion</button>
       </div>
       <p class="mc-control-landing-secondary">Specifications · Drawings · Project Intelligence · Chief</p>
-      <section class="mc-control-landing-context" aria-label="Project context">
-        <div>
-          <span>PROJECT</span>
-          <strong>${esc('518-22-700')}</strong>
-        </div>
-        <div>
-          <span>SITE</span>
-          <strong>Bedford Veterans Affairs Hospital</strong>
-        </div>
-        <div>
-          <span>MISSION</span>
-          <strong>EHRM Infrastructure Modernization</strong>
-        </div>
-      </section>
-      ${project ? `<p class="mc-control-landing-note">Current project: ${esc(project.name)}</p>` : ''}
+      <p class="mc-control-landing-contextline">PROJECT 518-22-700 · EHRM INFRASTRUCTURE MODERNIZATION</p>
     </section>`;
+  updateMissionControlNavigationVisibility();
 }
 
 async function renderMissionControlLibrary() {
@@ -4826,8 +4817,10 @@ async function renderMissionControlPlans() {
 async function renderMissionControl(prefetchedDocuments = null, prefetchedSections = null) {
   if (missionControlView === 'landing') {
     await renderMissionControlLanding();
+    updateMissionControlNavigationVisibility();
     return;
   }
+  updateMissionControlNavigationVisibility();
   if (missionControlView === 'projects') {
     renderMyProjects();
     return;
@@ -4860,6 +4853,7 @@ missionControlIdentity?.addEventListener('keydown', event => {
 function showMissionControlView(name = 'home') {
   if (!['plans', 'dashboard', 'home', 'history'].includes(name)) releaseDrawingSource();
   missionControlView = ['projects', 'chat', 'history', 'library', 'inspections', 'plans', 'dashboard', 'home', 'landing'].includes(name) ? name : 'home';
+  updateMissionControlNavigationVisibility();
   const homeButton = $('[data-control-home]');
   homeButton?.toggleAttribute('aria-current', missionControlView === 'home');
   $$('.mc-control-nav button[data-control-view]').forEach(button => {
