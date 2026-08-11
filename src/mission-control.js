@@ -14,11 +14,9 @@ export function normalizeStartupExperience(value) {
 
 export function missionControlResponseModeLabel(value) {
   return ({
-    offline: 'Source-only evidence',
-    source: 'Source-only AI',
-    assisted: 'Expert-assisted AI',
-    general: 'General assistant AI'
-  })[text(value)] || 'Response mode unavailable';
+    offline: 'Source Evidence',
+    assisted: 'Chief Analysis'
+  })[text(value)] || 'Chief Analysis';
 }
 
 export function separateMissionControlProjects(projects = [], demonstrationProjectId = '') {

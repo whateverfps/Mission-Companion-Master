@@ -1,5 +1,5 @@
 import { engine } from './engine.js';
-import { normalizeChiefResponseMode, missionControlResponseModeLabel, resolveChiefResponseModeSelection } from './chief-response-mode.js';
+import { normalizeChiefResponseMode, missionControlResponseModeLabel, missionControlVisibleResponseMode, resolveChiefResponseModeSelection } from './chief-response-mode.js';
 import { resolveChiefSpecificationAnswerPresentation } from './chief-specification-answer-rendering.js';
 import { createIdentifier } from './identifiers.js';
 import { conversationPreview } from './conversations.js';
@@ -1255,10 +1255,8 @@ app.innerHTML = `
         <button id="returnMissionControl" class="subtle mc-control-return">Return to Chief</button>
         <label>ANSWER MODE</label>
         <select id="mode">
-          <option value="offline">Offline evidence</option>
-          <option value="source">Source-only AI</option>
-          <option value="assisted">Expert-assisted AI</option>
-          <option value="general">General assistant AI</option>
+          <option value="offline">Source Evidence</option>
+          <option value="assisted">Chief Analysis</option>
         </select>
       </div>
     </header>
@@ -1350,7 +1348,7 @@ app.innerHTML = `
         </article>
         <article>
           <span>ANSWER STANDARD</span>
-          <strong id="kMode">Offline evidence</strong>
+          <strong id="kMode">Chief Analysis</strong>
         </article>
         <article>
           <span>AI</span>
@@ -3040,9 +3038,9 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
             <label for="missionControlPrompt">Your question</label>
             <textarea id="missionControlPrompt" rows="3" placeholder="Ask Chief about your project…"></textarea>
             <div class="mc-chief-composer-actions">
-              <div class="mc-chief-composer-tools">
-                <label class="mc-control-attach"><input id="missionControlFiles" type="file" multiple accept=".pdf,.docx,.xls,.xlsx,.txt,.md,.csv,.json,.html,.htm,.xml,.log">Attach documents</label>
-                <label class="mc-control-mode">Response mode <select id="missionControlMode"><option value="offline">Source-only evidence</option><option value="source">Source-only AI</option><option value="assisted">Expert-assisted AI</option><option value="general">General assistant AI</option></select></label>
+            <div class="mc-chief-composer-tools">
+              <label class="mc-control-attach"><input id="missionControlFiles" type="file" multiple accept=".pdf,.docx,.xls,.xlsx,.txt,.md,.csv,.json,.html,.htm,.xml,.log">Attach documents</label>
+                <label class="mc-control-mode">Response mode <select id="missionControlMode"><option value="offline">Source Evidence</option><option value="assisted">Chief Analysis</option></select></label>
               </div>
               <button id="missionControlSend" type="submit">Ask Chief</button>
             </div>
@@ -3055,7 +3053,7 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
         </aside>
       </div>
     </section>`;
-  $('#missionControlMode').value = state().settings.mode;
+  $('#missionControlMode').value = missionControlVisibleResponseMode(state().settings.mode);
   if ($('#chiefStatusImage')) setChiefState($('#chiefStatus')?.dataset.chiefState || 'idle');
   if (experience === 'mission-control') void renderChiefDrawingThumbnails();
   if ($('#missionInlineDrawingViewer') && activeWorkPackage?.presentation?.primaryDrawing) await renderDrawingWorkspace('mission-control');

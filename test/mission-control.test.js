@@ -30,10 +30,10 @@ test('startup experience defaults and invalid values normalize to Mission Contro
 });
 
 test('Mission Control labels each response mode without combining answer surfaces', () => {
-  assert.equal(missionControlResponseModeLabel('offline'), 'Source-only evidence');
-  assert.equal(missionControlResponseModeLabel('source'), 'Source-only AI');
-  assert.equal(missionControlResponseModeLabel('assisted'), 'Expert-assisted AI');
-  assert.equal(missionControlResponseModeLabel('general'), 'General assistant AI');
+  assert.equal(missionControlResponseModeLabel('offline'), 'Source Evidence');
+  assert.equal(missionControlResponseModeLabel('source'), 'Chief Analysis');
+  assert.equal(missionControlResponseModeLabel('assisted'), 'Chief Analysis');
+  assert.equal(missionControlResponseModeLabel('general'), 'Chief Analysis');
 });
 
 test('priorities use the approved practical urgency order', () => {
@@ -160,46 +160,46 @@ test('Mission Control retains the shared dark visual system without white surfac
   assert.doesNotMatch(refinement, /background(?:-color)?:#fff(?:fff)?(?:[;}]|$)/i);
 });
 
-test('Mission Control uses Dashboard, Chief, Drawings, and Professional Workspace as the primary shell navigation', () => {
+test('Mission Control uses Dashboard, Chief, and Drawings as the primary shell navigation', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /data-control-view="dashboard">Dashboard<\/button>/);
   assert.match(app, /data-control-home[^>]*>Chief<\/button>/);
   assert.match(app, /data-control-view="plans">Drawings<\/button>/);
-  assert.match(app, /data-control-experience="professional-workspace">Professional Workspace<\/button>/);
+  assert.doesNotMatch(app, /data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /data-control-more-tools/);
   assert.doesNotMatch(app, /aria-label="More Tools"/);
+  assert.match(app, /id="openProfessionalWorkspace"[^>]*aria-label="Open Professional Workspace"/);
 });
 
-test('Professional Workspace exposes compact workspace tools and returns to Chief without a drawing viewer button', () => {
+test('Professional Workspace remains available through the gear launcher without a visible top-nav entry', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  const tools = app.slice(app.indexOf('id="professionalWorkspaceTools"'), app.indexOf('<h3>Administration<\/h3>'));
-  assert.match(tools, /<h3>Drawing \/ Engineering<\/h3>/);
-  assert.doesNotMatch(tools, /data-view="drawings">Drawing Set Inspector<\/button>/);
-  assert.match(tools, /data-view="engineering">Engineering Workspace/);
-  assert.doesNotMatch(tools, /position:absolute;left:-9999px/);
-  assert.match(app, /Project Workspace/);
-  assert.match(app, /Knowledge Workspace/);
-  assert.match(app, /Inspection Records/);
-  assert.match(app, /Settings/);
-  assert.match(app, /Diagnostics/);
-  assert.match(app, /data-drawing-return/);
-  assert.match(app, /returnLabel = shell === 'professional'[\s\S]*'Return to Chief'/);
+  assert.match(app, /id="professionalWorkspaceShell"/);
+  assert.match(app, /data-view="project">Project Workspace/);
+  assert.match(app, /data-view="chat">Command Desk/);
+  assert.match(app, /data-view="knowledge">Knowledge Workspace/);
+  assert.match(app, /data-view="sources">Source Inspector/);
+  assert.match(app, /data-view="engineering">Engineering Workspace/);
+  assert.match(app, /data-view="workflow">Workflow Workspace/);
+  assert.match(app, /data-view="relationships">Relationship Explorer/);
+  assert.match(app, /data-view="versions">Version Explorer/);
+  assert.match(app, /data-view="evaluate">Knowledge Validation/);
+  assert.match(app, /data-view="settings">Settings/);
+  assert.match(app, /data-view="diagnostics">Diagnostics/);
   assert.match(app, /showMissionControlView\('home'\)/);
-  assert.match(app, /<section id="drawings" class="view">[\s\S]*id="drawingInspector" class="mc-drawing-workspace"/);
-  assert.doesNotMatch(app, /renderDrawingWorkspace\('professional'\)/);
+  assert.match(app, /id="openProfessionalWorkspace"/);
+  assert.doesNotMatch(app, /data-control-experience="professional-workspace"/);
 });
 
 test('Mission Control embeds the hosted PMIS dashboard with dedicated actions and a safe iframe', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /missionPmisDashboardUrl/);
-  assert.match(app, /https:\/\/whateverfps.github.io\/Mission-PMIS\//);
+  assert.match(app, /project-documents\/bedford\/PMIS\/index\.html\?embedded=1/);
   assert.match(app, /renderMissionControlDashboard/);
   assert.match(app, /title="Mission PMIS Dashboard"/);
   assert.match(app, /sandbox="allow-forms allow-popups allow-scripts allow-same-origin"/);
   assert.match(app, /data-control-action="refresh-dashboard"/);
-  assert.match(app, /data-control-action="open-dashboard-window"/);
   assert.match(app, /window\.open\(missionPmisDashboardUrl/);
-  assert.match(app, /Loading Mission PMIS/);
+  assert.match(app, /Mission PMIS ready|Loading Mission PMIS/);
 });
 
 test('Mission Control uses a single Chief workspace for heading, composer, messages, and evidence', () => {
@@ -333,7 +333,7 @@ test('Mission Control hides built-in demo entry points and opens to Chief by def
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /data-control-home[^>]*>Chief<\/button>/);
   assert.match(app, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
-  assert.match(app, /<button[^>]*data-control-experience="professional-workspace">Professional Workspace<\/button>/);
+  assert.doesNotMatch(app, /<button[^>]*data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /Explore Demonstration Project/);
   assert.doesNotMatch(app, /Load Demonstration Project/);
   assert.doesNotMatch(app, /Open Demonstration Project/);
@@ -341,12 +341,12 @@ test('Mission Control hides built-in demo entry points and opens to Chief by def
   assert.doesNotMatch(app, /Reset Demonstration Project/);
 });
 
-test('Mission Control uses a four-item primary navigation without the compatibility drawer', () => {
+test('Mission Control uses the compact primary navigation without the compatibility drawer', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /data-control-view="dashboard">Dashboard<\/button>/);
   assert.match(app, /data-control-home[^>]*>Chief<\/button>/);
   assert.match(app, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
-  assert.match(app, /<button[^>]*data-control-experience="professional-workspace">Professional Workspace<\/button>/);
+  assert.doesNotMatch(app, /<button[^>]*data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /<button[^>]*data-control-more-tools[^>]*>More Tools<\/button>/);
   assert.doesNotMatch(app, /aria-label="More Tools"/);
 });
@@ -445,7 +445,7 @@ test('Chief exact drawing navigation delegates page selection to the Drawing Wor
 test('Drawing Workspace context panel is page-scoped and exposes honest empty sections', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /drawingWorkspace\.setPages\(\(analysis\?\.sheets \|\| \[\]\)\.map/);
-  assert.match(app, /drawingWorkspace\.getContext\(sheet \?/);
+  assert.match(app, /drawingWorkspace\.getContext\(currentSheet \?/);
   for (const heading of ['Summary', 'Specifications', 'Related Drawings', 'Inspection Items', 'Equipment', 'Rooms', 'Photos', 'Documents', 'Issues', 'History']) assert.match(app, new RegExp(`<h3>${heading}<\\/h3>`));
   assert.match(app, /No linked data\./);
 });
