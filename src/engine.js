@@ -106,6 +106,12 @@ export function resolveActiveConversationTarget(conversations = [], activeConver
   return selectActiveConversation(normalizedConversations, activeConversationId);
 }
 
+function conversationResponseMode(conversation = null) {
+  const messages = Array.isArray(conversation?.messages) ? conversation.messages : [];
+  const latestMode = [...messages].reverse().find(item => String(item?.mode || '').trim())?.mode;
+  return String(latestMode || '').trim() || 'offline';
+}
+
 function invalidateProjectKnowledgeCaches(projectIds, { documents = true, sections = true } = {}) {
   for (const projectId of normalizeProjectIds(projectIds)) {
     if (sections) sectionCache.invalidateProject(projectId);
@@ -196,6 +202,7 @@ function loadState() {
     loaded.conversations = migrated.conversations;
     loaded.activeConversationId = migrated.activeConversationId;
     loaded.chat = selectActiveConversation(loaded.conversations, loaded.activeConversationId)?.messages || [];
+    loaded.settings.mode = conversationResponseMode(selectActiveConversation(loaded.conversations, loaded.activeConversationId)) || loaded.settings.mode || 'offline';
 
     loaded.evaluations = Array.isArray(loaded.evaluations)
       ? loaded.evaluations
@@ -679,6 +686,7 @@ export const engine = {
     state.conversations.push(conversation);
     state.activeConversationId = conversation.conversationId;
     state.chat = conversation.messages;
+    state.settings.mode = 'offline';
     save();
     return structuredClone(conversation);
   },
@@ -688,6 +696,7 @@ export const engine = {
     if (!conversation) throw new Error('Conversation not found.');
     state.activeConversationId = conversationId;
     state.chat = conversation.messages;
+    state.settings.mode = conversationResponseMode(conversation);
     save();
     return structuredClone(conversation);
   },

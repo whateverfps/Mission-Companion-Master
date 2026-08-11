@@ -24,7 +24,9 @@ test('Chief conversation lifecycle resolves a fallback conversation and accepts 
   ], 'missing-conversation-id');
   assert.equal(fallback?.conversationId, 'conversation-a');
 
+  engine.saveSettings({ mode: 'assisted' });
   const created = engine.createConversation({ projectId: engine.state().activeProject });
+  assert.equal(engine.state().settings.mode, 'offline');
   const appended = engine.appendConversationMessage({ role: 'user', content: 'Lifecycle probe message' }, 'missing-conversation-id');
   assert.equal(appended.content, 'Lifecycle probe message');
   assert.equal(engine.activeConversation()?.conversationId, created.conversationId);
@@ -32,8 +34,13 @@ test('Chief conversation lifecycle resolves a fallback conversation and accepts 
   engine.appendConversationMessage({ role: 'assistant', content: 'Lifecycle probe reply' });
   assert.ok(engine.activeConversation()?.messages.some(message => message.content === 'Lifecycle probe reply'));
 
+  engine.appendConversationMessage({ role: 'assistant', mode: 'assisted', content: 'Legacy assisted reply' }, created.conversationId);
   const nextConversation = engine.createConversation({ projectId: engine.state().activeProject });
+  assert.equal(engine.state().settings.mode, 'offline');
   assert.notEqual(nextConversation.conversationId, created.conversationId);
   assert.equal(engine.activeConversation()?.conversationId, nextConversation.conversationId);
   assert.equal(engine.activeConversation()?.messages.length, 0);
+
+  engine.activateConversation(created.conversationId);
+  assert.equal(engine.state().settings.mode, 'assisted');
 });
