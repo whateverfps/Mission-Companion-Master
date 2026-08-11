@@ -100,6 +100,7 @@ class ChiefIntelligenceBridge {
     const rawQuestion = String(question || '').trim();
     const sheetMatch = this.resolveQuestionSheet(rawQuestion);
     const normalizedSheetId = sheetMatch ? sheetMatch.replace(/\s+/g, '').toUpperCase() : '';
+    const explicitBuildingIntent = rawQuestion.match(/\bbuilding\s*(\d{2})\b/i)?.[1] || '';
     const resolvedSheet = drawingContext?.identity?.sheetNumber
       ? { sheetNumber: drawingContext.identity.sheetNumber, pageId: drawingContext.identity.pageId, documentId: drawingContext.identity.documentId }
       : (this.specificationSME?.getSheetFromQuestion ? this.specificationSME.getSheetFromQuestion(rawQuestion) : null)
@@ -170,6 +171,9 @@ class ChiefIntelligenceBridge {
     if (this.specificationSME) {
       try {
         const relationshipLookup = globalThis.__chiefRelationshipLookupForQuestion?.(rawQuestion, drawingContext) || [];
+        const scopedRelationshipLookup = explicitBuildingIntent
+          ? (globalThis.__mcBedfordRelationshipLinksForBuilding?.(explicitBuildingIntent) || relationshipLookup)
+          : relationshipLookup;
         console.log('CHIEF_61FX100_RELATIONSHIP_LOOKUP', {
           lookupKey: {
             question: rawQuestion,
@@ -178,7 +182,7 @@ class ChiefIntelligenceBridge {
             drawingPageId: resolvedSheet?.pageId || drawingContext?.identity?.pageId || '',
             projectId: this.specificationSME?.projectId || ''
           },
-          returnedRelationships: relationshipLookup.map(item => ({
+          returnedRelationships: scopedRelationshipLookup.map(item => ({
             sheetNumber: item.sheetNumber,
             sectionNumber: item.sectionNumber,
             sectionTitle: item.sectionTitle,
@@ -191,7 +195,8 @@ class ChiefIntelligenceBridge {
         const specificationAnswer = this.specificationSME.answerQuestion(question, {
           activeSheet: resolvedSheet,
           drawingContext,
-          drawingLinks: relationshipLookup
+          drawingLinks: scopedRelationshipLookup,
+          buildingId: explicitBuildingIntent || ''
         });
         console.log('SME_DRAWING_IDENTITY_LOOKUP', {
           inputSheetId: normalizedSheetId || '',

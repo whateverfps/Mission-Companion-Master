@@ -101,6 +101,7 @@ import {
   BEDFORD_DRAWING_SETS,
   getBedfordDrawingSetByBuildingId,
   getBedfordDrawingSetByDocumentId,
+  getBedfordDrawingSetForReference,
   BEDFORD_SPEC_DOCUMENT_ID,
   validateBedfordProject
 } from './bedford-project.js';
@@ -376,6 +377,11 @@ const chiefIntelligenceBridge = createChiefIntelligenceBridge();
 const bedfordDrawingSets = [...BEDFORD_DRAWING_SETS];
 const bedfordRelationshipResultsByDocumentId = new Map();
 const bedfordCatalogRecordsByDocumentId = new Map();
+globalThis.__mcBedfordDrawingSetsSnapshot = () => bedfordDrawingSets.map(set => ({
+  buildingId: set.buildingId,
+  documentId: set.documentId,
+  relationshipCount: Object.values(bedfordRelationshipResultsByDocumentId.get(set.documentId) || {}).reduce((sum, sheet) => sum + (Array.isArray(sheet?.links) ? sheet.links.length : 0), 0)
+}));
 const getBedfordDrawingCatalogRecords = () => bedfordDrawingSets.flatMap(set => bedfordCatalogRecordsByDocumentId.get(set.documentId) || drawingCatalog.recordsForDocument(set.documentId) || []);
 const getBedfordDrawingSetForDocumentId = documentId => getBedfordDrawingSetByDocumentId(documentId) || bedfordDrawingSets.find(set => set.documentId === documentId) || null;
 const getBedfordDrawingSetForSheetNumber = sheetNumber => {
@@ -413,6 +419,17 @@ function bedfordRelationshipLinksForSheet(sheetNumber = '') {
   if (serviceLinks.length) return serviceLinks.map(link => ({ ...link, sheetNumber: sheet || link.sheetNumber || canonicalSheet?.sheetNumber || '', projectId: BEDFORD_PROJECT_ID }));
   return [];
 }
+function bedfordRelationshipLinksForBuilding(buildingId = '') {
+  const drawingSet = getBedfordDrawingSetByBuildingId(buildingId);
+  if (!drawingSet) return [];
+  const results = bedfordRelationshipResultsByDocumentId.get(drawingSet.documentId) || null;
+  const rawLinks = results ? Object.entries(results).flatMap(([sheetNumber, sheetData]) => (Array.isArray(sheetData?.links) ? sheetData.links : []).map(link => ({ ...link, sheetNumber, projectId: BEDFORD_PROJECT_ID }))) : [];
+  if (rawLinks.length) return rawLinks;
+  const catalogRecords = getBedfordDrawingCatalogRecords().filter(item => item.documentId === drawingSet.documentId);
+  const serviceLinks = drawingSpecificationLinks.forProject(BEDFORD_PROJECT_ID).filter(link => catalogRecords.some(record => record.pageId === link.drawingPageId || record.sheetNumber === link.sheetNumber));
+  return serviceLinks.map(link => ({ ...link, projectId: BEDFORD_PROJECT_ID, sheetNumber: link.sheetNumber || link.drawingPageId || '' }));
+}
+globalThis.__mcBedfordRelationshipLinksForBuilding = bedfordRelationshipLinksForBuilding;
 function bedfordRelationshipLinksForProject() {
   const rawLinks = [...bedfordRelationshipResultsByDocumentId.values()].flatMap(results => results ? Object.entries(results).flatMap(([sheetNumber, sheetData]) => (Array.isArray(sheetData?.links) ? sheetData.links : []).map(link => ({ ...link, sheetNumber, projectId: BEDFORD_PROJECT_ID }))) : []);
   if (rawLinks.length) return rawLinks;
@@ -2429,20 +2446,33 @@ function chiefSheetForDrawingPage(pageId) {
 }
 
 function chiefSheetForDrawingReference(drawing = {}) {
-  const direct = chiefSheetForDrawingPage(drawing.pageId);
-  if (direct) return direct;
-  const pageNumber = Number(String(drawing.pageId || '').match(/:page:(\d+)/i)?.[1] || drawing.pageNumber || 0);
+  const drawingSet = getBedfordDrawingSetForReference(drawing);
+  const referenceCatalog = drawingSet
+    ? (bedfordCatalogRecordsByDocumentId.get(drawingSet.documentId) || drawingCatalog.recordsForDocument(drawingSet.documentId) || [])
+    : getBedfordDrawingCatalogRecords();
+  const directPageId = String(drawing.pageId || drawing.drawingPageId || '').trim();
+  const direct = directPageId ? referenceCatalog.find(item => String(item.pageId || '').trim() === directPageId) : null;
+  if (direct) return { ...direct, documentId: direct.documentId || drawingSet?.documentId || '', pageNumber: Number(direct.pageNumber || direct.pdfPageNumber) || Number(drawing.pageNumber || drawing.pdfPageNumber) || 0, sheetId: direct.sheetId || direct.sheetNumber || direct.pageId || '', drawingSetId: direct.drawingSetId || drawingSet?.drawingSetId || '', sheetNumber: direct.sheetNumber || drawing.sheetNumber || '', sheetTitle: direct.sheetTitle || drawing.sheetTitle || '' };
+  const sheetMatch = String(drawing.sheetNumber || drawing.sheetId || '').trim().toUpperCase();
+  const exactSheet = sheetMatch ? referenceCatalog.find(item => String(item.sheetNumber || item.sheetId || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === sheetMatch.replace(/[^A-Z0-9]/g, '')) : null;
+  if (exactSheet) return { ...exactSheet, documentId: exactSheet.documentId || drawingSet?.documentId || '', pageNumber: Number(exactSheet.pageNumber || exactSheet.pdfPageNumber) || Number(drawing.pageNumber || drawing.pdfPageNumber) || 0, sheetId: exactSheet.sheetId || exactSheet.sheetNumber || exactSheet.pageId || '', drawingSetId: exactSheet.drawingSetId || drawingSet?.drawingSetId || '', sheetNumber: exactSheet.sheetNumber || drawing.sheetNumber || '', sheetTitle: exactSheet.sheetTitle || drawing.sheetTitle || '' };
+  const pageNumber = Number(String(drawing.pageId || drawing.drawingPageId || '').match(/:page:(\d+)/i)?.[1] || drawing.pageNumber || drawing.pdfPageNumber || 0);
   if (!pageNumber) return null;
-  const record = drawingCatalog.recordsForDocument(BEDFORD_DRAWING_DOCUMENT_ID).find(item => Number(item.pdfPageNumber) === pageNumber);
+  const record = referenceCatalog.find(item => Number(item.pdfPageNumber || item.pageNumber) === pageNumber) || getBedfordDrawingCatalogRecords().find(item => Number(item.pdfPageNumber || item.pageNumber) === pageNumber);
   return record ? {
     ...record,
-    documentId: record.documentId || BEDFORD_DRAWING_DOCUMENT_ID,
+    documentId: record.documentId || drawingSet?.documentId || '',
     pageNumber: Number(record.pageNumber || record.pdfPageNumber) || pageNumber,
     sheetId: record.sheetId || record.sheetNumber || record.pageId || '',
-    drawingSetId: record.drawingSetId || '',
+    drawingSetId: record.drawingSetId || drawingSet?.drawingSetId || '',
     sheetNumber: record.sheetNumber || drawing.sheetNumber || '',
     sheetTitle: record.sheetTitle || drawing.sheetTitle || ''
   } : null;
+}
+
+function chiefQuestionBuildingId(question = '') {
+  const match = String(question || '').trim().match(/\bbuilding\s*(\d{2})\b/i);
+  return match ? match[1] : '';
 }
 
 function chiefDrawingCardActionForSheet(sheet = null, drawing = null) {
@@ -2601,11 +2631,16 @@ function chiefRelationshipLookupForQuestion(question = '', drawingContext = null
   const rawQuestion = String(question || '').trim();
   const sheetMatch = chiefIntelligenceBridge.resolveQuestionSheet(rawQuestion);
   const normalizedSheetId = sheetMatch ? sheetMatch.replace(/\s+/g, '').toUpperCase() : '';
+  const explicitBuildingId = chiefQuestionBuildingId(rawQuestion) || chiefQuestionBuildingId(drawingContext?.identity?.building || '');
   const explicitSheet = normalizedSheetId ? chiefSpecificationSME?.getSheetFromQuestion?.(rawQuestion) || null : null;
   const sheetFromNumber = normalizedSheetId ? chiefSpecificationSME?.getSheetForSheetNumber?.(normalizedSheetId) || null : null;
   const resolvedSheet = explicitSheet || sheetFromNumber || null;
   const drawingPageId = resolvedSheet?.pageId || drawingContext?.identity?.pageId || '';
-  const runtimeLinks = bedfordRelationshipLinksForSheet(normalizedSheetId) || (drawingPageId ? drawingSpecificationLinks.forPage(drawingPageId) : drawingSpecificationLinks.forProject(BEDFORD_PROJECT_ID));
+  const runtimeLinks = normalizedSheetId
+    ? bedfordRelationshipLinksForSheet(normalizedSheetId)
+    : explicitBuildingId
+      ? bedfordRelationshipLinksForBuilding(explicitBuildingId)
+      : (drawingPageId ? drawingSpecificationLinks.forPage(drawingPageId) : drawingSpecificationLinks.forProject(BEDFORD_PROJECT_ID));
   const projectScopedLinks = runtimeLinks;
   const matches = runtimeLinks.filter(item => item.drawingPageId === drawingPageId || item.sheetNumber === normalizedSheetId || item.sheetId === normalizedSheetId);
   console.log('CHIEF_61FX100_RELATIONSHIP_LOOKUP', {
@@ -2613,6 +2648,7 @@ function chiefRelationshipLookupForQuestion(question = '', drawingContext = null
       question: rawQuestion,
       sheetMatch,
       normalizedSheetId,
+      explicitBuildingId,
       drawingPageId,
       projectId: BEDFORD_PROJECT_ID
     },
@@ -2759,13 +2795,13 @@ function chiefSpecificationAnswerMarkup(message, question = '') {
   };
 
   const drawingCard = drawing => {
-    const sheet = chiefSheetForDrawingReference(drawing);
-    const actionTarget = chiefDrawingCardActionForSheet(sheet, drawing);
-    console.log('DRAWING_METADATA_RESOLVED', {
-      pageId: drawing.pageId,
-      sheet: sheet ? { sheetNumber: sheet.sheetNumber, sheetTitle: sheet.sheetTitle, pageId: sheet.pageId, pdfPageNumber: sheet.pdfPageNumber } : null,
-      actionTarget: actionTarget ? { documentId: actionTarget.documentId, pageNumber: actionTarget.pageNumber, sheetId: actionTarget.sheetId } : null
-    });
+  const sheet = chiefSheetForDrawingReference(drawing);
+  const actionTarget = chiefDrawingCardActionForSheet(sheet, drawing);
+  console.log('DRAWING_METADATA_RESOLVED', {
+    pageId: drawing.pageId,
+    sheet: sheet ? { sheetNumber: sheet.sheetNumber, sheetTitle: sheet.sheetTitle, pageId: sheet.pageId, pdfPageNumber: sheet.pdfPageNumber } : null,
+    actionTarget: actionTarget ? { documentId: actionTarget.documentId, pageNumber: actionTarget.pageNumber, sheetId: actionTarget.sheetId } : null
+  });
     const title = [sheet?.sheetNumber || drawing.sheetNumber || '', sheet?.sheetTitle || drawing.sheetTitle || ''].filter(Boolean).join(' — ') || drawing.pageId || 'Drawing';
     const subtitle = [drawing.relationshipTypes?.join(', '), drawing.discipline].filter(Boolean).join(' · ');
     const fallbackActionTarget = actionTarget || createActionTarget({ kind: 'drawing', projectId: state().activeProject || '', documentId: BEDFORD_DRAWING_DOCUMENT_ID, pageNumber: Number(String(drawing.pageId || '').match(/:page:(\d+)/i)?.[1] || drawing.pageNumber || 0), origin: 'chief-specification' });

@@ -35,6 +35,16 @@ export function getBedfordDrawingSetByDocumentId(documentId = '') {
   return BEDFORD_DRAWING_SETS.find(set => set.documentId === needle) || null;
 }
 
+export function getBedfordDrawingSetForReference(reference = {}) {
+  const documentId = String(reference?.documentId || reference?.drawingDocumentId || reference?.sourceDocumentId || '').trim();
+  if (documentId) return getBedfordDrawingSetByDocumentId(documentId);
+  const pageId = String(reference?.pageId || reference?.drawingPageId || reference?.sourcePageId || '').trim();
+  const pageBuilding = pageId.match(/\.B(61|62)\./i)?.[1] || pageId.match(/\bB(61|62)\b/i)?.[1] || '';
+  const sheetNumber = String(reference?.sheetNumber || reference?.sheetId || '').trim().toUpperCase();
+  const sheetBuilding = sheetNumber.match(/^(\d{2})/)?.[1] || '';
+  return getBedfordDrawingSetByBuildingId(pageBuilding || sheetBuilding) || null;
+}
+
 const dates = Object.freeze({ importedAt: '2026-01-06T14:00:00.000Z', indexedAt: '2026-01-06T14:05:00.000Z', lastModified: '2026-01-05T17:00:00.000Z' });
 
 const fixture = {

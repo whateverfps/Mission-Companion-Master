@@ -21,6 +21,7 @@ const { createDrawingSpecificationLinkService } = await import('../src/drawing-s
 const { loadBedfordDrawingSpecMappings } = await import('../src/specification-knowledge.js');
 const { createChiefSpecificationSME } = await import('../src/chief-specification-sme.js');
 const { createChiefIntelligenceBridge } = await import('../src/chief-intelligence-bridge.js');
+const { getBedfordDrawingSetForReference } = await import('../src/bedford-project.js');
 
 test('Bedford bootstrap loads the authoritative relationship graph before Chief asks questions', async () => {
   const specificationIndex = createSpecificationIndex();
@@ -139,6 +140,39 @@ test('Bedford startup registers source files for every built-in drawing set', as
   assert.match(app, /for \(const drawingDoc of bedfordDrawingDocs\) \{/);
   assert.match(app, /console\.log\('Bedford drawing source file registered', drawingDoc\.id\);/);
   assert.doesNotMatch(app, /const drawingDoc = bedfordDocs\.find\(d => d\.id === BEDFORD_DRAWING_DOCUMENT_ID\);/);
+});
+
+test('Chief drawing-query lookup prefers explicit Bedford building intent before active drawing context', async () => {
+  const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
+  assert.match(app, /const explicitBuildingId = chiefQuestionBuildingId\(rawQuestion\) \|\| chiefQuestionBuildingId\(drawingContext\?\.identity\?\.building \|\| ''\);/);
+  assert.match(app, /explicitBuildingId\s*\?\s*bedfordRelationshipLinksForBuilding\(explicitBuildingId\)/);
+  assert.match(app, /function bedfordRelationshipLinksForBuilding\(buildingId = ''\)/);
+});
+
+test('Chief drawing reference lookup falls back across Bedford drawing catalogs instead of hardcoding Building 61', async () => {
+  const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
+  assert.match(app, /const drawingSet = getBedfordDrawingSetForReference\(drawing\);/);
+  assert.match(app, /const referenceCatalog = drawingSet/);
+  assert.doesNotMatch(app, /drawingCatalog\.recordsForDocument\(BEDFORD_DRAWING_DOCUMENT_ID\)/);
+});
+
+test('Bedford drawing reference identity maps to the correct building set before catalog resolution', async () => {
+  const b62Reference = {
+    sheetNumber: '62E-702',
+    pageId: '518-22-700.Bedford.EHRM.IFC.B62.20260316.pdf:page:44',
+    drawingPageId: '518-22-700.Bedford.EHRM.IFC.B62.20260316.pdf:page:44'
+  };
+  const b61Reference = {
+    sheetNumber: '61E-702',
+    pageId: '518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:44',
+    drawingPageId: '518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf:page:44'
+  };
+
+  const b62Set = getBedfordDrawingSetForReference(b62Reference);
+  const b61Set = getBedfordDrawingSetForReference(b61Reference);
+
+  assert.equal(b62Set?.documentId, 'bedford-b62-drawings');
+  assert.equal(b61Set?.documentId, 'bedford-b61-drawings');
 });
 
 test('Bedford B62 catalog and relationships load through the same shared pipeline', async () => {

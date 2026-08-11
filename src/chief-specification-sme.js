@@ -51,6 +51,13 @@ function buildingLabelForSheet(sheetNumber = '') {
   return match ? `Building ${match[1]}` : 'Bedford';
 }
 
+function buildingIdForQuestion(questionText = '', activeSheet = null, drawingContext = null) {
+  const explicit = text(questionText).match(/\bbuilding\s*(\d{2})\b/i)?.[1] || '';
+  if (explicit) return explicit;
+  const activeSheetNumber = normalizeSheetNumber(activeSheet?.sheetNumber || drawingContext?.identity?.sheetNumber || drawingContext?.sheetNumber);
+  return activeSheetNumber.match(/^(\d{2})/)?.[1] || text(drawingContext?.identity?.building || drawingContext?.building).match(/\b(\d{2})\b/)?.[1] || '';
+}
+
 export function createChiefSpecificationSME({
   projectId = 'bedford',
   getAuthoritativeSections = () => [],
@@ -73,7 +80,7 @@ export function createChiefSpecificationSME({
     return list(typeof getAuthoritativeSections === 'function' ? getAuthoritativeSections() : getAuthoritativeSections);
   }
 
-  function drawingLinks() {
+  function projectDrawingLinks() {
     return list(typeof getDrawingLinks === 'function' ? getDrawingLinks() : getDrawingLinks)
       .filter(item => text(item.projectId || projectId) === text(projectId) || !text(item.projectId));
   }
@@ -119,7 +126,7 @@ export function createChiefSpecificationSME({
   function drawingsForSection(sectionNumber, drawingLinksOverride = null) {
     const number = normalizeSectionNumber(sectionNumber);
     const sheets = new Map();
-    for (const link of list(drawingLinksOverride).length ? list(drawingLinksOverride) : drawingLinks()) {
+    for (const link of list(drawingLinksOverride).length ? list(drawingLinksOverride) : projectDrawingLinks()) {
       if (normalizeSectionNumber(link.sectionNumber) !== number) continue;
       const sheet = sheetForPageId(link.drawingPageId);
       const sheetNumber = text(sheet?.sheetNumber) || text(link.sheetNumber) || text(link.drawingPageId);
@@ -152,7 +159,7 @@ export function createChiefSpecificationSME({
   function sectionsForSheet(sheetNumber, drawingLinksOverride = null) {
     const sheet = normalizeSheetNumber(sheetNumber);
     const result = [];
-    for (const link of list(drawingLinksOverride).length ? list(drawingLinksOverride) : drawingLinks()) {
+    for (const link of list(drawingLinksOverride).length ? list(drawingLinksOverride) : projectDrawingLinks()) {
       const page = sheetForPageId(link.drawingPageId);
       if (normalizeSheetNumber(page?.sheetNumber || link.sheetNumber) !== sheet) continue;
       result.push({
@@ -236,18 +243,23 @@ export function createChiefSpecificationSME({
     return matches.sort((a, b) => b.confidence - a.confidence || a.sectionNumber.localeCompare(b.sectionNumber)).slice(0, 12);
   }
 
-  function answerQuestion(question = '', { activeSheet = null, drawingContext = null, limit = 8, drawingLinks = null } = {}) {
+  function answerQuestion(question = '', { activeSheet = null, drawingContext = null, limit = 8, drawingLinks = null, buildingId = '' } = {}) {
     const questionText = normalizeQuery(question);
     const questionSheet = sheetFromQuestion(questionText);
     const resolvedActiveSheet = activeSheet || questionSheet;
     const sheetNumber = normalizeSheetNumber(resolvedActiveSheet?.sheetNumber || drawingContext?.identity?.sheetNumber || drawingContext?.sheetNumber);
     const pageId = text(resolvedActiveSheet?.pageId || drawingContext?.identity?.pageId || drawingContext?.pageId);
+    const resolvedBuildingId = text(buildingId) || buildingIdForQuestion(questionText, resolvedActiveSheet, drawingContext);
     const explicitSection = questionText.match(/\b(\d{2}\s?\d{2}\s?\d{2}(?:\.\d+)?)\b/);
     const scheduleIntent = questionText.includes('schedule') || questionText.includes('notice to proceed') || questionText.includes('ntp') || questionText.includes('posting');
     const asksSheet = /what specs apply to this drawing|what specifications apply to this drawing|what specs affect this drawing|what specs are on this drawing|what specifications are on this drawing|what specs apply to this sheet|what specifications apply to this sheet|what should i inspect in the field for this specification/i.test(questionText) || (sheetNumber && /what specs apply|what specs cover|what specifications apply|what requirements affect/i.test(questionText));
     const asksDrawings = /what drawings relate to|where is .* used|show me the drawings associated with this specification|what drawings should i review/i.test(questionText);
     const asksDiscipline = DISCIPLINE_KEYWORDS.some(rule => rule.terms.some(term => questionText.includes(term)));
     const resolvedDrawingLinks = list(drawingLinks).length ? list(drawingLinks) : null;
+    const allDrawingLinks = resolvedDrawingLinks || projectDrawingLinks();
+    const scopedDrawingLinks = resolvedBuildingId
+      ? allDrawingLinks.filter(link => String(link.sheetNumber || '').trim().startsWith(resolvedBuildingId))
+      : resolvedDrawingLinks;
     let specifications = [];
     let drawings = [];
     let answer = '';
@@ -255,8 +267,8 @@ export function createChiefSpecificationSME({
 
     if (asksSheet && (sheetNumber || pageId)) {
       queryType = 'drawing';
-      specifications = sectionsForSheet(sheetNumber || activeSheet?.sheetNumber || '', resolvedDrawingLinks);
-      drawings = specifications.flatMap(item => drawingsForSection(item.sectionNumber, resolvedDrawingLinks));
+      specifications = sectionsForSheet(sheetNumber || activeSheet?.sheetNumber || '', scopedDrawingLinks);
+      drawings = specifications.flatMap(item => drawingsForSection(item.sectionNumber, scopedDrawingLinks));
       const header = sheetNumber ? `${buildingLabelForSheet(sheetNumber)} Drawing ${sheetNumber}` : 'Current drawing';
       answer = [header, ...specifications.slice(0, Math.max(1, limit)).map(item => `- ${item.sectionNumber} — ${item.sectionTitle} (${item.relationshipType})`)].join('\n');
     } else if ((asksDrawings || explicitSection) && explicitSection?.[1]) {
@@ -264,7 +276,7 @@ export function createChiefSpecificationSME({
       const sectionNumber = normalizeSectionNumber(explicitSection[1]);
       const section = sectionRecord(sectionNumber);
       if (section) {
-        drawings = drawingsForSection(sectionNumber, resolvedDrawingLinks);
+        drawings = drawingsForSection(sectionNumber, scopedDrawingLinks);
         const usage = sectionUsage(sectionNumber);
         specifications = [{ ...section, usage, drawings, summary: summarizeSection(section) }];
         answer = [
@@ -276,14 +288,14 @@ export function createChiefSpecificationSME({
       }
     } else if (asksDiscipline) {
       queryType = 'discipline';
-      specifications = findSectionsByDiscipline(questionText, resolvedDrawingLinks);
+      specifications = findSectionsByDiscipline(questionText, scopedDrawingLinks);
       drawings = [...new Map(specifications.flatMap(item => item.drawings || []).map(item => [item.sheetNumber || item.pageId, item])).values()];
       const disciplineLabel = DISCIPLINE_KEYWORDS.find(rule => rule.terms.some(term => questionText.includes(term)))?.label || 'this discipline';
       answer = [`Bedford sections related to ${disciplineLabel}:`, ...specifications.slice(0, Math.max(1, limit)).map(item => `- ${item.sectionNumber} — ${item.sectionTitle}`)].join('\n');
     } else if (sheetNumber || pageId) {
       queryType = 'drawing';
-      specifications = sectionsForSheet(sheetNumber || activeSheet?.sheetNumber || '', resolvedDrawingLinks);
-      drawings = specifications.flatMap(item => drawingsForSection(item.sectionNumber, resolvedDrawingLinks));
+      specifications = sectionsForSheet(sheetNumber || activeSheet?.sheetNumber || '', scopedDrawingLinks);
+      drawings = specifications.flatMap(item => drawingsForSection(item.sectionNumber, scopedDrawingLinks));
       answer = [`${buildingLabelForSheet(sheetNumber || pageId)} drawing ${sheetNumber || pageId} is associated with ${specifications.length} specification section${specifications.length === 1 ? '' : 's'}.`, ...specifications.slice(0, Math.max(1, limit)).map(item => `- ${item.sectionNumber} — ${item.sectionTitle} (${item.relationshipType})`)].join('\n');
     } else {
       specifications = findSectionsForQuery(questionText, { limit });
