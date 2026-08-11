@@ -37,8 +37,8 @@ test('trackpad pinch and modified wheel zoom within the existing scale bounds', 
   assert.equal(zoomIn.recognized, true);
   assert.ok(zoomIn.zoom > 1);
   assert.ok(zoomOut.zoom < 1);
-  assert.equal(drawingWheelZoom({ ctrlKey: true, deltaY: -100000, zoom: 1 }).zoom, 3);
-  assert.equal(drawingWheelZoom({ ctrlKey: true, deltaY: 100000, zoom: 1 }).zoom, .35);
+  assert.equal(drawingWheelZoom({ ctrlKey: true, deltaY: -100000, zoom: 1 }).zoom, 8);
+  assert.equal(drawingWheelZoom({ ctrlKey: true, deltaY: 100000, zoom: 1 }).zoom, .25);
 });
 
 test('drawing gesture zoom keeps the same drawing point under the cursor', () => {
@@ -193,7 +193,7 @@ test('rapid page selections allow only the newest PDF render to commit', () => {
 
 test('drawing workspace uses retained PDF pages when analysis is missing or stale', () => {
   const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  assert.match(app, /const announcementText = sheet \? drawingAnnouncementText/);
+  assert.match(app, /const announcementText = currentSheet \? drawingAnnouncementText\(\{ sheet: currentSheet, observation: effectiveObservation, planObject: effectivePlanObject, region: effectiveRegion \}\) : 'No drawing selected';/);
   assert.match(app, /createRetainedPdfViewerAnalysis\(selected, source/);
   assert.match(app, /activeDrawingViewerAnalysis/);
   assert.match(app, /analysis\?\.viewerFallback \|\| sheet\?\.viewerFallback\s*\? analysis\.sheets\.map/);

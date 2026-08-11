@@ -42,7 +42,7 @@ export function createDrawingRenderCache({ maxEntries = 6, onMetric = () => {}, 
   };
 }
 
-export function createDrawingViewerEngine({ viewportStore = new Map(), minZoom = .35, maxZoom = 3, clock = () => performance.now(), onMetric = () => {} } = {}) {
+export function createDrawingViewerEngine({ viewportStore = new Map(), minZoom = .25, maxZoom = 8, clock = () => performance.now(), onMetric = () => {} } = {}) {
   let documentId = '';
   let pageCount = 0;
   let selectedPage = 0;
