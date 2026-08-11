@@ -60,7 +60,7 @@ const defaults = {
     openaiModel: 'gpt-4.1-mini',
     openaiKey: '',
     timeout: 180000,
-    mode: 'offline',
+    mode: 'assisted',
     topK: 10,
     startupExperience: 'mission-control'
   },

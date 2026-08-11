@@ -11,13 +11,15 @@ export function normalizeChiefResponseMode(value) {
   return 'offline';
 }
 
+export function missionControlVisibleResponseMode(mode) {
+  return normalizeChiefResponseMode(mode) === 'offline' ? 'offline' : 'assisted';
+}
+
 export function missionControlResponseModeLabel(mode) {
   return {
-    offline: 'Offline evidence',
-    source: 'Source-only AI',
-    assisted: 'Expert-assisted AI',
-    general: 'General assistant AI'
-  }[normalizeChiefResponseMode(mode)] || 'Offline evidence';
+    offline: 'Source Evidence',
+    assisted: 'Chief Analysis'
+  }[missionControlVisibleResponseMode(mode)] || 'Source Evidence';
 }
 
 export function resolveChiefResponseModeSelection({
