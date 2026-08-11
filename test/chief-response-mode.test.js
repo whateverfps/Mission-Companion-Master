@@ -20,10 +20,18 @@ test('Mission Control response modes normalize to canonical engine values', () =
 test('Mission Control response mode selection maps UI labels to engine modes', () => {
   const offline = resolveChiefResponseModeSelection({ selectedOptionText: 'Source Evidence', selectedOptionValue: 'offline', uiStateMode: 'offline' });
   const assisted = resolveChiefResponseModeSelection({ selectedOptionText: 'Chief Analysis', selectedOptionValue: 'assisted', uiStateMode: 'offline' });
+  const fallback = resolveChiefResponseModeSelection({ selectedOptionText: '', selectedOptionValue: '', uiStateMode: '' });
 
   assert.deepEqual(offline, {
     selectedOptionText: 'Source Evidence',
     selectedOptionValue: 'offline',
+    uiStateMode: 'offline',
+    normalizedMode: 'offline',
+    modePassedToEngine: 'offline'
+  });
+  assert.deepEqual(fallback, {
+    selectedOptionText: '',
+    selectedOptionValue: '',
     uiStateMode: 'offline',
     normalizedMode: 'offline',
     modePassedToEngine: 'offline'

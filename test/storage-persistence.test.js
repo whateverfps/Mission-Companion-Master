@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { COMPACT_STATE_MAX_BYTES, compactApplicationState, compactStateCategorySizes, safeWriteCompactState, serializeCompactState } from '../src/compact-state.js';
 import { loadDrawingWorkspaceProviders } from '../src/drawing-workspace-providers.js';
 
+test('fresh compacted state defaults Mission Companion to offline source evidence', () => {
+  const compact = compactApplicationState({});
+  assert.equal(compact.settings.mode, 'offline');
+});
+
 const largeState = () => ({
   settings: { startupExperience: 'professional-workspace', mode: 'offline' },
   projects: [{ id: 'general', name: 'General' }], activeProject: 'general',

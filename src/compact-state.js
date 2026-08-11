@@ -10,7 +10,7 @@ export function compactApplicationState(state = {}) {
     compactStateVersion: 1,
     settings: {
       openaiUrl: text(settings.openaiUrl), openaiModel: text(settings.openaiModel), openaiKey: text(settings.openaiKey),
-      timeout: Number(settings.timeout) || 180000, mode: text(settings.mode) || 'assisted', topK: Number(settings.topK) || 10,
+      timeout: Number(settings.timeout) || 180000, mode: text(settings.mode) || 'offline', topK: Number(settings.topK) || 10,
       startupExperience: text(settings.startupExperience) || 'mission-control'
     },
     projects: (Array.isArray(state.projects) ? state.projects : []).map(item => ({ id: text(item.id), name: text(item.name) })).filter(item => item.id),
