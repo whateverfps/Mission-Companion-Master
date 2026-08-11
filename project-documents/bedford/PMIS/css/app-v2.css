@@ -140,3 +140,97 @@ body.no-workbook .product-gate{display:grid}
 
 /* 2.0.3 purpose-built report previews */
 .report-current-title{display:flex;align-items:baseline;gap:10px;margin:8px 0 12px;color:#6d8195}.report-current-title span{text-transform:uppercase;font-size:10px;letter-spacing:.12em}.report-current-title strong{font-size:18px;color:#eef5fc}.report-context-list{list-style:none;margin:0;padding:0}.report-context-list li{padding:10px 0;border-bottom:1px solid rgba(160,185,210,.18)}.report-context-list li:last-child{border-bottom:0}.report-context-list b,.report-context-list span{display:block}.report-context-list b{color:#eef5fc}.report-context-list span{margin-top:3px;color:#b9c9d9;font-size:12px;line-height:1.4}
+
+/* Interaction polish for embedded PMIS */
+html.embedded-mode .workspace-tab,
+html.embedded-mode .report-launch-card,
+html.embedded-mode .health-card,
+html.embedded-mode .global-command button,
+html.embedded-mode .load-primary,
+html.embedded-mode .workspace-close,
+html.embedded-mode .workspace-card button,
+html.embedded-mode .workspace-empty button,
+html.embedded-mode .workspace-body button,
+html.embedded-mode .health-grid button,
+html.embedded-mode .report-launch-card button,
+html.embedded-mode .product-gate button,
+html.embedded-mode .search-result,
+html.embedded-mode .source-doc,
+html.embedded-mode .queue-actions button{
+  transition:background-color .14s ease,border-color .14s ease,color .14s ease,box-shadow .14s ease,transform .14s ease,opacity .14s ease;
+}
+html.embedded-mode .workspace-tab:hover,
+html.embedded-mode .report-launch-card:hover,
+html.embedded-mode .health-card:hover,
+html.embedded-mode .global-command button:hover,
+html.embedded-mode .load-primary:hover,
+html.embedded-mode .workspace-close:hover,
+html.embedded-mode .workspace-card button:hover,
+html.embedded-mode .workspace-empty button:hover,
+html.embedded-mode .workspace-body button:hover,
+html.embedded-mode .health-grid button:hover,
+html.embedded-mode .report-launch-card button:hover,
+html.embedded-mode .product-gate button:hover,
+html.embedded-mode .search-result:hover,
+html.embedded-mode .source-doc:hover,
+html.embedded-mode .queue-actions button:hover{
+  filter:brightness(1.05);
+  box-shadow:0 10px 18px rgba(14,45,75,.12);
+  transform:translateY(-1px);
+}
+html.embedded-mode .workspace-tab:active,
+html.embedded-mode .report-launch-card:active,
+html.embedded-mode .health-card:active,
+html.embedded-mode .global-command button:active,
+html.embedded-mode .load-primary:active,
+html.embedded-mode .workspace-close:active,
+html.embedded-mode .workspace-card button:active,
+html.embedded-mode .workspace-empty button:active,
+html.embedded-mode .workspace-body button:active,
+html.embedded-mode .health-grid button:active,
+html.embedded-mode .report-launch-card button:active,
+html.embedded-mode .product-gate button:active,
+html.embedded-mode .search-result:active,
+html.embedded-mode .source-doc:active,
+html.embedded-mode .queue-actions button:active{
+  transform:translateY(1px) scale(.992);
+  box-shadow:0 6px 12px rgba(14,45,75,.08);
+}
+html.embedded-mode .workspace-tab:focus-visible,
+html.embedded-mode .report-launch-card:focus-visible,
+html.embedded-mode .health-card:focus-visible,
+html.embedded-mode .global-command button:focus-visible,
+html.embedded-mode .load-primary:focus-visible,
+html.embedded-mode .workspace-close:focus-visible,
+html.embedded-mode .workspace-card button:focus-visible,
+html.embedded-mode .workspace-empty button:focus-visible,
+html.embedded-mode .workspace-body button:focus-visible,
+html.embedded-mode .health-grid button:focus-visible,
+html.embedded-mode .report-launch-card button:focus-visible,
+html.embedded-mode .product-gate button:focus-visible,
+html.embedded-mode .search-result:focus-visible,
+html.embedded-mode .source-doc:focus-visible,
+html.embedded-mode .queue-actions button:focus-visible{
+  outline:2px solid #55b8d9;
+  outline-offset:2px;
+}
+html.embedded-mode .workspace-tab:disabled,
+html.embedded-mode .report-launch-card:disabled,
+html.embedded-mode .health-card:disabled,
+html.embedded-mode .global-command button:disabled,
+html.embedded-mode .load-primary:disabled,
+html.embedded-mode .workspace-close:disabled,
+html.embedded-mode .workspace-card button:disabled,
+html.embedded-mode .workspace-empty button:disabled,
+html.embedded-mode .workspace-body button:disabled,
+html.embedded-mode .health-grid button:disabled,
+html.embedded-mode .report-launch-card button:disabled,
+html.embedded-mode .product-gate button:disabled,
+html.embedded-mode .search-result:disabled,
+html.embedded-mode .source-doc:disabled,
+html.embedded-mode .queue-actions button:disabled{
+  opacity:.58;
+  cursor:not-allowed;
+  transform:none;
+  box-shadow:none;
+}

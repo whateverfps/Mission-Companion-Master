@@ -216,8 +216,8 @@ export function drawingWheelZoom({
   scrollTop = 0,
   pointerX = 0,
   pointerY = 0,
-  minZoom = .35,
-  maxZoom = 3,
+  minZoom = .25,
+  maxZoom = 8,
   sensitivity = .002
 } = {}) {
   const recognized = Boolean(ctrlKey || metaKey);

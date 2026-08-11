@@ -5623,7 +5623,7 @@ app.addEventListener('click', async event => {
     const selectedSheet = activeDrawingViewerAnalysis?.sheets.find(item => item.pageNumber === drawingTarget?.pageNumber);
     drawingLocationReturnViewport = { ...defaultDrawingViewport(), ...drawingViewerEngine.getViewport(drawingTarget?.pageNumber), scrollLeft: stage?.scrollLeft || 0, scrollTop: stage?.scrollTop || 0 };
     const region = selectedDrawingObject.region;
-    const targetZoom = Math.max(.35, Math.min(3, Math.min((stage?.clientWidth || 1) / Math.max(1, (selectedSheet?.pageWidth || 1) * region.width * 1.8), (stage?.clientHeight || 1) / Math.max(1, (selectedSheet?.pageHeight || 1) * region.height * 1.8))));
+    const targetZoom = Math.max(.25, Math.min(8, Math.min((stage?.clientWidth || 1) / Math.max(1, (selectedSheet?.pageWidth || 1) * region.width * 1.8), (stage?.clientHeight || 1) / Math.max(1, (selectedSheet?.pageHeight || 1) * region.height * 1.8))));
     drawingZoom = targetZoom;
     captureDrawingViewport({ mode: 'custom', zoom: targetZoom, scrollLeft: Math.max(0, region.x * (selectedSheet?.pageWidth || 0) * targetZoom - (stage?.clientWidth || 0) / 2), scrollTop: Math.max(0, region.y * (selectedSheet?.pageHeight || 0) * targetZoom - (stage?.clientHeight || 0) / 2), highlightedRegion: region, contextSource: selectedDrawingObject.type === 'room' ? 'room-selection' : 'object-selection' });
     await repaintCurrentSheet({ preserveSidebarScroll: true }); return;
@@ -5837,7 +5837,7 @@ app.addEventListener('click', async event => {
     return;
   }
   if (button.dataset.drawingZoom) {
-    drawingZoom = Math.max(.35, Math.min(3, drawingZoom + (button.dataset.drawingZoom === 'in' ? .2 : -.2)));
+    drawingZoom = Math.max(.25, Math.min(8, drawingZoom + (button.dataset.drawingZoom === 'in' ? .2 : -.2)));
     captureDrawingViewport({ mode: 'custom', zoom: drawingZoom });
     await repaintCurrentSheet({ preserveSidebarScroll: true }); return;
   }
