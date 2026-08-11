@@ -1745,6 +1745,9 @@ export const engine = {
     const hasBridgeEvidence = Boolean(
       bridgeContext?.specificationAnswer &&
       bridge?.hasSufficientEvidence?.(bridgeContext)
+    ) || Boolean(
+      bridgeContext?.pmisAnswer &&
+      bridge?.hasSufficientEvidence?.(bridgeContext)
     );
     const bridgeSpecificationCount = bridgeContext?.specificationAnswer?.specifications?.length || 0;
     console.log('CHIEF_ASK_ROUTE', {
@@ -1769,10 +1772,11 @@ export const engine = {
         drawingCount: bridgeContext.specificationAnswer?.drawings?.length || 0
       });
       const answer = {
-        content: bridgeAnswer?.answer || bridgeContext.specificationAnswer.answer || '',
+        content: bridgeAnswer?.answer || bridgeContext.pmisAnswer?.answer || bridgeContext.specificationAnswer?.answer || '',
         citations: [],
         source: 'mission-companion',
         specificationAnswer: bridgeAnswer?.specificationAnswer || bridgeContext.specificationAnswer,
+        pmisAnswer: bridgeAnswer?.pmisAnswer || bridgeContext.pmisAnswer || null,
         reasoningPath: bridgeAnswer?.reasoningPath || [],
         evidence: bridgeAnswer?.evidence || [],
         assumptions: bridgeAnswer?.assumptions || [],
@@ -1792,7 +1796,8 @@ export const engine = {
         createdAt: new Date().toISOString(),
         mode: normalizedMode,
         requestId,
-        specificationAnswer: answer.specificationAnswer
+        specificationAnswer: answer.specificationAnswer,
+        pmisAnswer: answer.pmisAnswer
       };
       const activeConversation = this.ensureActiveConversation({ projectId: state.activeProject });
       const activeConversationId = activeConversation.conversation.conversationId;
@@ -2026,6 +2031,7 @@ export const engine = {
       mode: normalizedMode,
       requestId,
       specificationAnswer: bridgeContext?.specificationAnswer || null,
+      pmisAnswer: bridgeContext?.pmisAnswer || null,
       drawingContext: options.drawingContext ? {
         projectId: String(options.drawingContext.projectId || ''), documentId: String(options.drawingContext.documentId || ''),
         drawingSetId: String(options.drawingContext.drawingSetId || ''), sheetId: String(options.drawingContext.sheetId || ''),

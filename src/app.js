@@ -164,6 +164,7 @@ import { classifyChiefDrawingCommand, resolveChiefDrawingCommand } from './chief
 import { buildChiefDrawingCards } from './chief-drawing-cards.js';
 import { createChiefIntelligenceBridge } from './chief-intelligence-bridge.js';
 import { createChiefSpecificationSME } from './chief-specification-sme.js';
+import { createChiefPmisSME } from './chief-pmis-sme.js';
 import { building61DrawingCatalogFor } from './building-61-drawing-catalog.js';
 import { generatedDrawingCatalogFor, normalizeGeneratedDrawingCatalog } from './generated-drawing-catalogs.js';
 import { createSpecificationReverseIndex } from './specification-reverse-index.js';
@@ -186,6 +187,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
 }[c]));
 const fmt = n => new Intl.NumberFormat().format(n || 0);
 const missionPmisDashboardUrl = new URL('project-documents/bedford/PMIS/index.html?embedded=1', document.baseURI).toString();
+const missionPmisRuntimeFrameId = 'missionPmisRuntimeFrame';
 const chiefAssets = {
   idle: './src/assets/chief/chief-idle.png',
   busy: './src/assets/chief/chief-concept.png',
@@ -210,11 +212,32 @@ const chiefStateCopy = {
     detail: 'Action required'
   }
 };
+function missionPmisRuntimeWindow() {
+  return $('#' + missionPmisRuntimeFrameId)?.contentWindow || null;
+}
+function missionPmisRuntimeData() {
+  const runtimeWindow = missionPmisRuntimeWindow();
+  if (!runtimeWindow) return null;
+  try {
+    return runtimeWindow.getMissionData?.() || runtimeWindow.data || null;
+  } catch {
+    return null;
+  }
+}
+function missionPmisSelectedBuilding() {
+  const runtimeWindow = missionPmisRuntimeWindow();
+  if (!runtimeWindow) return null;
+  try {
+    return runtimeWindow.selectedBuilding?.() || null;
+  } catch {
+    return null;
+  }
+}
 
 let view = 'chat';
 let experience = 'mission-control';
 let lastProfessionalView = '';
-let missionControlView = 'home';
+let missionControlView = 'landing';
 let missionControlAttachments = [];
 let chiefHistoryVisible = false;
 let previousUserProjectId = null;
@@ -392,11 +415,55 @@ const chiefSpecificationSME = createChiefSpecificationSME({
   getDrawingCatalog: () => drawingCatalog.recordsForDocument(BEDFORD_DRAWING_DOCUMENT_ID),
   reverseIndex: null
 });
+const chiefPmisSME = createChiefPmisSME({
+  projectId: BEDFORD_PROJECT_ID,
+  getRuntimeData: missionPmisRuntimeData,
+  getSelectedBuilding: missionPmisSelectedBuilding
+});
 globalThis.__specificationReverseIndex = createSpecificationReverseIndex({ drawingSpecificationLinks, projectObjectRegistry });
 chiefIntelligenceBridge.initialize({
-  specificationSME: chiefSpecificationSME
+  specificationSME: chiefSpecificationSME,
+  pmisSME: chiefPmisSME
 });
 let bedfordDrawingSpecificationLinksBootstrap = Promise.resolve({ loaded: 0, reason: 'pending' });
+const missionLandingReadiness = {
+  projectSettled: false,
+  project: false,
+  specificationsSettled: false,
+  specifications: false,
+  drawingsSettled: false,
+  drawings: false,
+  relationshipsSettled: false,
+  relationships: false,
+  pmis: false,
+  pmisFailed: false
+};
+function landingCoreReady() {
+  return missionLandingReadiness.projectSettled && missionLandingReadiness.specificationsSettled && missionLandingReadiness.drawingsSettled && missionLandingReadiness.relationshipsSettled;
+}
+function landingEnvironmentReady() {
+  return missionLandingReadiness.project && missionLandingReadiness.specifications && missionLandingReadiness.drawings && missionLandingReadiness.relationships;
+}
+function landingEntryReady() {
+  return landingCoreReady();
+}
+function landingStatusLabel() {
+  if (!landingEntryReady()) return 'INITIALIZING PROJECT ENVIRONMENT';
+  return landingEnvironmentReady() ? 'PROJECT ENVIRONMENT READY' : 'PROJECT ENVIRONMENT DEGRADED';
+}
+function landingStatusDetail() {
+  if (!landingEntryReady()) return 'Preparing project workspace...';
+  return landingEnvironmentReady()
+    ? 'The Bedford workspace is ready.'
+    : 'A noncritical resource is still unavailable. Continue into Mission Companion when ready.';
+}
+function refreshLandingIfVisible() {
+  if (missionControlView === 'landing') void renderMissionControlLanding();
+}
+function updateLandingReadiness(patch = {}) {
+  Object.assign(missionLandingReadiness, patch);
+  refreshLandingIfVisible();
+}
 const bedfordSpecificationIndexBootstrap = fetch(new URL('project-data/bedford/specifications/authoritative-spec-index.json', document.baseURI).toString())
   .then(response => response.ok ? response.json() : null)
   .then(data => {
@@ -415,13 +482,16 @@ const bedfordSpecificationIndexBootstrap = fetch(new URL('project-data/bedford/s
           pageEnd: section.pageEnd || section.endPdfPage || section.endPage || section.startPdfPage || section.startPage || null
         }))
       });
+      updateLandingReadiness({ specificationsSettled: true, specifications: true });
       return { ok: true, sections: sections.length };
     }
     logger.warning('Bedford authoritative specification index preload returned no sections', { contained: true, source: 'project-data/bedford/specifications/authoritative-spec-index.json' });
+    updateLandingReadiness({ specificationsSettled: true, specifications: false });
     return { ok: false, sections: 0, reason: 'no sections returned' };
   })
   .catch(error => {
     logger.warning('Bedford authoritative specification index preload failed', { contained: true, source: 'project-data/bedford/specifications/authoritative-spec-index.json', message: error?.message || String(error) });
+    updateLandingReadiness({ specificationsSettled: true, specifications: false });
     return { ok: false, sections: 0, reason: error?.message || String(error) };
   });
 const bedfordDrawingCatalogBootstrap = fetch(new URL('project-data/bedford/drawing-catalogs/building-61.json', document.baseURI).toString())
@@ -437,26 +507,32 @@ const bedfordDrawingCatalogBootstrap = fetch(new URL('project-data/bedford/drawi
         pageCount: Number(data.pageCount) || sheets.length,
         authoritativeRecords: sheets
       });
+      updateLandingReadiness({ drawingsSettled: true, drawings: true });
       return { ok: true, sheets: sheets.length };
     }
     logger.warning('Bedford drawing catalog preload returned no sheets', { contained: true, source: 'project-data/bedford/drawing-catalogs/building-61.json' });
+    updateLandingReadiness({ drawingsSettled: true, drawings: false });
     return { ok: false, sheets: 0, reason: 'no sheets returned' };
   })
   .catch(error => {
     logger.warning('Bedford drawing catalog preload failed', { contained: true, source: 'project-data/bedford/drawing-catalogs/building-61.json', message: error?.message || String(error) });
+    updateLandingReadiness({ drawingsSettled: true, drawings: false });
     return { ok: false, sheets: 0, reason: error?.message || String(error) };
   });
 const bedfordBootstrapReady = Promise.allSettled([bedfordSpecificationIndexBootstrap, bedfordDrawingCatalogBootstrap, bedfordRelationshipResultsBootstrap]);
 bedfordDrawingSpecificationLinksBootstrap = bedfordBootstrapReady.then(async () => {
   try {
-    return await loadBedfordDrawingSpecMappings({
+    const result = await loadBedfordDrawingSpecMappings({
       drawingSpecificationLinks,
       specificationIndex,
       projectId: BEDFORD_PROJECT_ID,
       drawingDocumentId: BEDFORD_SPEC_DOCUMENT_ID
     });
+    updateLandingReadiness({ relationshipsSettled: true, relationships: Boolean(result?.loaded) });
+    return result;
   } catch (error) {
     logger.warning('Bedford drawing specification link bootstrap failed', { contained: true, source: 'project-data/bedford/relationships/building-61-spec-links.json', message: error?.message || String(error) });
+    updateLandingReadiness({ relationshipsSettled: true, relationships: false });
     return { loaded: 0, reason: error?.message || String(error) };
   }
 });
@@ -1094,9 +1170,18 @@ app.innerHTML = `
     <button data-control-view="plans">Drawings</button>
     <span style="position:absolute;left:-9999px;clip:rect(0 0 0 0);"><button data-control-view="plans">Open Plans</button></span>
   </nav>
-  <main id="missionControlMain" tabindex="-1">
-    <div id="missionControlContent" aria-live="polite"></div>
-  </main>
+<main id="missionControlMain" tabindex="-1">
+  <div id="missionControlContent" aria-live="polite"></div>
+</main>
+<iframe
+  id="${missionPmisRuntimeFrameId}"
+  title="Mission PMIS Runtime"
+  src="${missionPmisDashboardUrl}"
+  sandbox="allow-forms allow-popups allow-scripts allow-same-origin"
+  aria-hidden="true"
+  tabindex="-1"
+  style="position:absolute;left:-9999px;top:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;"
+></iframe>
 </section>
 <div id="professionalWorkspaceShell" class="shell" hidden>
   <aside class="rail">
@@ -2550,6 +2635,77 @@ function chiefRelationshipLookupForQuestion(question = '', drawingContext = null
 }
 globalThis.__chiefRelationshipLookupForQuestion = chiefRelationshipLookupForQuestion;
 
+function chiefPmisAnswerMarkup(message) {
+  const answer = message?.pmisAnswer;
+  if (!answer) return '';
+  const building = answer.building || null;
+  const campus = answer.campus || null;
+  const focusBuildings = Array.isArray(answer.focusBuildings) ? answer.focusBuildings.slice(0, 4) : [];
+  const tradeHealth = Array.isArray(answer.tradeHealth) ? answer.tradeHealth : [];
+  const pilotGates = answer.pilotCompletion?.gates || [];
+  const shutdowns = Array.isArray(answer.shutdowns) ? answer.shutdowns.slice(0, 6) : [];
+  const buildingCards = building ? `
+    <div class="mc-chief-pmis-summary-grid">
+      <article class="mc-chief-pmis-summary-card"><span>Readiness</span><strong>${esc(building.readinessPct ?? 0)}%</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>Overall</span><strong>${esc(building.overallStatus || 'Monitor')}</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>Construction Ready</span><strong>${esc(building.constructionReady || 'No')}</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>OIT Readiness</span><strong>${esc(building.oitReadiness || 'Monitor')}</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>Open Risks</span><strong>${fmt(building.openRisks || 0)}</strong></article>
+      <article class="mc-chief-pmis-summary-card"><span>Open Questions</span><strong>${fmt(building.openQuestions || 0)}</strong></article>
+    </div>
+  ` : '';
+  const buildingTradeHealth = building?.tradeHealth?.length ? `
+    <div class="mc-chief-pmis-chip-row">${building.tradeHealth.map(item => `<span class="mc-chief-pmis-chip">${esc(item.label)} · ${esc(item.value)}${item.percent != null ? ` (${item.percent}%)` : ''}</span>`).join('')}</div>
+  ` : '';
+  const campusFocus = campus?.topAttention?.length ? `
+    <div class="mc-chief-pmis-list">
+      ${campus.topAttention.slice(0, 5).map(item => `<div class="mc-chief-pmis-list-item"><strong>${esc(item.label || `Building ${item.Building || ''}`)}</strong><span>${esc(item.readinessPct != null ? `${item.readinessPct}% readiness` : '')}${item.openRisks != null ? ` · ${fmt(item.openRisks)} risks` : ''}${item.openQuestions != null ? ` · ${fmt(item.openQuestions)} questions` : ''}</span></div>`).join('')}
+    </div>
+  ` : '';
+  return `
+    <section class="mc-chief-pmis-answer" aria-label="Chief PMIS answer">
+      <header class="mc-chief-pmis-answer-header">
+        <div>
+          <span>PMIS SME</span>
+          <strong>${esc(building ? building.label : campus ? 'Campus summary' : 'PMIS answer')}</strong>
+        </div>
+        ${chiefSectionRelationshipBadge(answer.queryType || 'PMIS')}
+      </header>
+      ${answer.answer ? `<p class="mc-chief-pmis-answer-text">${esc(answer.answer)}</p>` : ''}
+      ${answer.summary ? `<p class="mc-chief-pmis-answer-summary">${esc(answer.summary)}</p>` : ''}
+      ${building ? `
+        <div class="mc-chief-pmis-building">
+          <div class="mc-chief-pmis-building-title">${esc(building.label)}</div>
+          ${buildingCards}
+          ${buildingTradeHealth}
+          ${pilotGates.length ? `<div class="mc-chief-pmis-list">${pilotGates.map(gate => `<div class="mc-chief-pmis-list-item"><strong>${esc(gate.label)}</strong><span>${esc(gate.value)}</span></div>`).join('')}</div>` : ''}
+          ${shutdowns.length ? `<div class="mc-chief-pmis-list">${shutdowns.map(item => `<div class="mc-chief-pmis-list-item"><strong>${esc(item.ShutdownID || item['Shutdown ID'] || item.Title || item.System || 'Shutdown')}</strong><span>${esc(item.Status || 'Open')}</span></div>`).join('')}</div>` : ''}
+        </div>
+      ` : ''}
+      ${campus && !building ? `
+        <div class="mc-chief-pmis-building">
+          <div class="mc-chief-pmis-building-title">Campus Snapshot</div>
+          <div class="mc-chief-pmis-summary-grid">
+            <article class="mc-chief-pmis-summary-card"><span>Buildings tracked</span><strong>${fmt(campus.total || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Ready</span><strong>${fmt(campus.ready || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Not ready</span><strong>${fmt(campus.notReady || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Open risks</span><strong>${fmt(campus.risks || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Open questions</span><strong>${fmt(campus.questions || 0)}</strong></article>
+            <article class="mc-chief-pmis-summary-card"><span>Shutdowns</span><strong>${fmt(campus.activeShutdowns?.length || 0)}</strong></article>
+          </div>
+          ${campusFocus}
+        </div>
+      ` : ''}
+      ${focusBuildings.length && !building ? `
+        <div class="mc-chief-pmis-building">
+          <div class="mc-chief-pmis-building-title">Buildings needing attention</div>
+          <div class="mc-chief-pmis-list">${focusBuildings.map(item => `<div class="mc-chief-pmis-list-item"><strong>${esc(item.label || `Building ${item.Building || ''}`)}</strong><span>${esc(item.readinessPct != null ? `${item.readinessPct}% readiness` : '')}${item.openRisks != null ? ` · ${fmt(item.openRisks)} risks` : ''}${item.openQuestions != null ? ` · ${fmt(item.openQuestions)} questions` : ''}</span></div>`).join('')}</div>
+        </div>
+      ` : ''}
+    </section>
+  `;
+}
+
 function chiefSpecificationAnswerMarkup(message, question = '') {
   const sheetContext = message?.drawingContext?.sheetNumber ? {
     sheetNumber: message.drawingContext.sheetNumber,
@@ -2812,9 +2968,6 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
     <section class="mc-chief-workspace" aria-labelledby="missionControlTitle">
       <header class="mc-chief-workspace-header">
         <div class="mc-chief-workspace-intro">
-          <div class="mc-chief-workspace-portrait">
-            <img class="mc-chief-status-image" data-chief-image src="${chiefAssets.idle}" alt="Chief, the Mission Companion engineer" />
-          </div>
           <div class="mc-chief-workspace-copy">
             <span>CHIEF · ENGINEERING ADVISOR</span>
             <h1 id="missionControlTitle" tabindex="-1">${project ? `Ask Chief about ${esc(project.name)}` : 'Mission Companion'}</h1>
@@ -2852,8 +3005,13 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
             ${messages.length ? (await Promise.all(messages.map(async (message, index) => {
               const previousUserQuestion = [...messages.slice(0, index)].reverse().find(item => item.role === 'user')?.content || '';
               const specificationAnswerMarkup = message.role === 'assistant' ? chiefSpecificationAnswerMarkup(message, previousUserQuestion) : '';
-              const suppressRawChiefContent = Boolean(specificationAnswerMarkup && message.role === 'assistant' && message.specificationAnswer?.specifications?.length);
-              return `<article class="mc-control-message ${message.role}" id="mc-message-${esc(message.id)}"><header><strong>${message.role === 'assistant' ? 'Chief' : 'You'}</strong>${message.role === 'assistant' ? `<span>${esc(missionControlResponseModeLabel(message.mode))}</span>` : ''}</header>${constructionWorkPackageMarkup(message)}${message.role === 'assistant' ? chiefDrawingEvidenceMarkup(message, projectDocuments, drawingAnalyses) : ''}${specificationAnswerMarkup}${!suppressRawChiefContent ? `<div class="mc-control-message-content">${esc(message.content).replace(/\n/g, '<br>')}</div>` : ''}${missionControlMessageActions(message, drawingSourceIds)}</article>`;
+              const pmisAnswerMarkup = message.role === 'assistant' ? chiefPmisAnswerMarkup(message) : '';
+              const suppressRawChiefContent = Boolean(
+                specificationAnswerMarkup && message.role === 'assistant' && message.specificationAnswer?.specifications?.length
+              ) || Boolean(
+                pmisAnswerMarkup && message.role === 'assistant' && message.mode === 'offline'
+              );
+              return `<article class="mc-control-message ${message.role}" id="mc-message-${esc(message.id)}"><header><strong>${message.role === 'assistant' ? 'Chief' : 'You'}</strong>${message.role === 'assistant' ? `<span>${esc(missionControlResponseModeLabel(message.mode))}</span>` : ''}</header>${constructionWorkPackageMarkup(message)}${message.role === 'assistant' ? chiefDrawingEvidenceMarkup(message, projectDocuments, drawingAnalyses) : ''}${pmisAnswerMarkup}${specificationAnswerMarkup}${!suppressRawChiefContent ? `<div class="mc-control-message-content">${esc(message.content).replace(/\n/g, '<br>')}</div>` : ''}${missionControlMessageActions(message, drawingSourceIds)}</article>`;
             }))).join('') : `<div class="mc-control-chat-empty"><strong>Start a conversation</strong><p>Ask about the active project or attach supported documents. Answers remain linked to exact source records.</p></div>`}
           </div>
           ${historyVisible ? `<section class="mc-chief-history" aria-labelledby="mcChiefHistoryTitle"><div class="mc-chief-history-header"><div><span>CONVERSATION HISTORY</span><h2 id="mcChiefHistoryTitle">Recent threads</h2></div></div><div class="mc-chief-history-list">${historyItems.length ? historyItems.map(item => `<button type="button" class="mc-chief-history-item" data-conversation-id="${esc(item.conversationId)}"><strong>${esc(item.title || 'Conversation')}</strong><span>${esc(item.updatedAt ? new Date(item.updatedAt).toLocaleString() : 'Not updated')}</span></button>`).join('') : '<p class="mc-chief-history-empty">No history yet.</p>'}</div></section>` : ''}
@@ -2891,6 +3049,52 @@ function renderConversationHistory() {
   const projects = new Map(state().projects.map(project => [project.id, project.name]));
   const conversations = engine.conversations();
   $('#missionControlContent').innerHTML = `<section class="mc-control-history" aria-labelledby="missionControlTitle"><header><div><span>CONVERSATION HISTORY</span><h1 id="missionControlTitle" tabindex="-1">Your conversations</h1><p>Open a previous thread or begin a new one. History remains in this browser.</p></div><button data-control-action="new-conversation">New Conversation</button></header>${conversations.length ? `<ol>${conversations.map(conversation => `<li><article><button class="mc-control-history-open" data-conversation-id="${esc(conversation.conversationId)}"><strong>${esc(conversation.title)}</strong><span>${esc(projects.get(conversation.projectId) || 'No project associated')}</span><small>${esc(conversationPreview(conversation))}</small><time datetime="${esc(conversation.updatedAt)}">${conversation.updatedAt ? esc(new Date(conversation.updatedAt).toLocaleString()) : 'Not yet updated'}</time></button><button class="subtle" data-rename-conversation="${esc(conversation.conversationId)}">Rename</button></article></li>`).join('')}</ol>` : missionControlEmpty('No conversation history', 'Start a conversation and it will appear here.')}</section>`;
+}
+
+async function renderMissionControlLanding() {
+  const project = missionControlProject();
+  $('#missionControlContent').innerHTML = `
+    <section class="mc-control-landing" aria-labelledby="missionControlTitle">
+      <div class="mc-control-landing-hero">
+        <span>MISSION COMPANION</span>
+        <h1 id="missionControlTitle" tabindex="-1">Mission Companion</h1>
+        <p>Bedford Veterans Affairs Hospital</p>
+        <strong>Project intelligence, construction evidence, specifications, drawings, and PMIS in one workspace.</strong>
+      </div>
+      <section class="mc-control-landing-state" aria-label="Project initialization">
+        <div class="mc-control-landing-status">
+          <span>${landingStatusLabel()}</span>
+          <strong>${landingStatusDetail()}</strong>
+          <small>${missionLandingReadiness.specifications ? 'Preparing specifications' : 'Loading project data'} · ${missionLandingReadiness.drawings ? 'Indexing drawing relationships' : 'Indexing drawing relationships'} · ${missionLandingReadiness.pmisFailed ? 'PMIS runtime unavailable' : missionLandingReadiness.pmis ? 'Starting PMIS' : 'Starting PMIS'}</small>
+        </div>
+        <div class="mc-control-landing-progress" aria-hidden="true">
+          <span class="${missionLandingReadiness.project ? 'done' : 'active'}"></span>
+          <span class="${missionLandingReadiness.specifications ? 'done' : 'active'}"></span>
+          <span class="${missionLandingReadiness.drawings ? 'done' : 'active'}"></span>
+          <span class="${missionLandingReadiness.relationships ? 'done' : 'active'}"></span>
+          <span class="${missionLandingReadiness.pmis ? 'done' : 'active'}"></span>
+        </div>
+      </section>
+      <div class="mc-control-landing-actions">
+        <button type="button" class="mc-control-landing-primary" data-control-action="enter-mission-control" ${landingEntryReady() ? '' : 'disabled'}>Enter Mission Companion</button>
+      </div>
+      <p class="mc-control-landing-secondary">Specifications · Drawings · Project Intelligence · Chief</p>
+      <section class="mc-control-landing-context" aria-label="Project context">
+        <div>
+          <span>PROJECT</span>
+          <strong>${esc('518-22-700')}</strong>
+        </div>
+        <div>
+          <span>SITE</span>
+          <strong>Bedford Veterans Affairs Hospital</strong>
+        </div>
+        <div>
+          <span>MISSION</span>
+          <strong>EHRM Infrastructure Modernization</strong>
+        </div>
+      </section>
+      ${project ? `<p class="mc-control-landing-note">Current project: ${esc(project.name)}</p>` : ''}
+    </section>`;
 }
 
 async function renderMissionControlLibrary() {
@@ -4312,7 +4516,7 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
     <div class="mc-drawing-layout ${drawingWorkspacePanels.finderHidden ? 'finder-hidden' : ''} ${drawingWorkspacePanels.evidenceHidden ? 'evidence-hidden' : ''} ${drawingWorkspacePanels.expanded ? 'drawing-expanded' : ''}">
       <aside class="mc-drawing-index" aria-label="Find construction drawing evidence"><label>Drawing set<select id="mcDrawingDocument">${documents.map(item => `<option value="${esc(item.id)}" ${item.id === selected.id ? 'selected' : ''}>${esc(item.title || item.name || item.id)}</option>`).join('')}</select></label>${analysis ? `<label>Find a sheet, room, trade, or tag<input id="mcDrawingSearch" value="${esc(drawingFilter)}" autocomplete="off" aria-controls="mcDrawingResults" aria-describedby="mcDrawingResultStatus"></label><button class="subtle" data-drawing-clear-search ${drawingFilter ? '' : 'hidden'}>Clear search</button><div class="mc-drawing-filters"><label>Discipline<select id="mcDrawingDiscipline"><option value="all">All disciplines</option>${disciplines.map(item => `<option ${item === drawingDiscipline ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></label><label>Drawing type<select id="mcDrawingType"><option value="all">All types</option>${sheetTypes.map(item => `<option ${item === drawingType ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></label></div><p id="mcDrawingResultStatus" role="status" aria-live="polite">${esc(drawingSearchSummary(drawingFilter, shownSheets.length))}</p><ol id="mcDrawingResults" aria-label="Drawing search results">${searchResults.map((result, index) => drawingSearchResultMarkup(result, currentSheet?.sheetId, index)).join('') || '<li class="mc-drawing-no-results"><strong>No drawing evidence found.</strong><span>Try a sheet number, room, trade, equipment tag, or clear the active filters.</span></li>'}</ol>` : ''}</aside>
       <main class="mc-drawing-viewer"><details class="mc-construction-orientation"><summary>Work and selection context</summary><div><strong>${esc(activeWorkPackage?.workSummary?.[0]?.label || currentSheet?.sheetTitle || 'Select construction evidence')}</strong><span>${currentSheet?.building ? `Building ${esc(currentSheet.building)} · ` : ''}${esc(activeWorkPackage?.discipline || currentSheet?.discipline || 'Unknown')} · ${esc(selectionExplanation)}</span></div></details>${coverageReviewMarkup}
-        ${!source ? `<div class="mc-drawing-unavailable"><strong>Original drawing unavailable — reattach PDF to view sheet.</strong><p>Reattach the exact source PDF to inspect the drawing. Indexed project text remains available.</p><label class="mc-drawing-reattach"><input id="mcDrawingReattach" type="file" accept="application/pdf,.pdf">Reattach Original PDF</label></div>` : !currentSheet ? `<div class="mc-drawing-unavailable"><strong>Drawing page unavailable.</strong><p>The retained PDF does not expose a viewable page.</p></div>` : `<header id="${focusTarget === 'mc-drawing-selected-evidence' ? 'mc-drawing-selected-evidence' : 'mc-drawing-sheet-title'}" class="mc-drawing-sheet-title" tabindex="-1" aria-live="polite" aria-label="${esc(announcementText)}"><div><span>${esc(currentSheet.sheetNumber || `Page ${currentSheet.pageNumber}`)}</span><h3>${esc(currentSheet.sheetTitle || `Page ${currentSheet.pageNumber}`)}</h3><p>${esc(selectionExplanation)}</p></div><dl><div><dt>Discipline</dt><dd>${esc(currentSheet.discipline)}</dd></div><div><dt>Type</dt><dd>${esc(currentSheet.primarySheetType || currentSheet.sheetTypes[0] || 'Unknown')}</dd></div><div><dt>Position</dt><dd>${analysis.viewerFallback ? 'Page' : 'Sheet'} ${currentSheet.pageNumber} of ${analysis.sheets.length}</dd></div><div><dt>Identity</dt><dd>${esc(currentSheet.identityStatus)}</dd></div></dl></header><div class="mc-drawing-toolbar"><div role="group" aria-label="Drawing navigation"><button data-drawing-previous ${navigationIndex <= 0 ? 'disabled' : ''}>Previous</button><button data-drawing-next ${navigationIndex < 0 || navigationIndex >= navigationSheetIds.length - 1 ? 'disabled' : ''}>Next</button><button data-drawing-layout="toggle-finder">${drawingWorkspacePanels.finderHidden ? 'Show' : 'Hide'} Sheet Finder</button></div><div role="group" aria-label="Drawing view controls"><button data-drawing-fit="page">Fit Page</button><button data-drawing-fit="width">Fit Width</button><button data-drawing-spec-explorer>View Governing Specifications</button><button data-drawing-zoom="out">Zoom Out</button><button data-drawing-zoom="in">Zoom In</button><button data-drawing-rotate>Rotate</button><button data-drawing-reset-view>Reset View</button><button data-drawing-layout="${drawingWorkspacePanels.expanded ? 'restore' : 'expand'}">${drawingWorkspacePanels.expanded ? 'Restore Workspace' : 'Expand Drawing'}</button></div><div role="group" aria-label="Construction context actions">${analysis.viewerFallback ? '' : '<button data-drawing-ask>Ask Chief</button><button data-drawing-current-work>Add to Current Work</button><button data-drawing-inspection>Create Inspection</button>'}<button data-drawing-edit-metadata>Edit Page Metadata</button><button data-coverage-review-open>Review Drawing Coverage</button><button class="subtle" data-drawing-source>Open Source Details</button><button data-drawing-layout="toggle-evidence">${drawingWorkspacePanels.evidenceHidden ? 'Show' : 'Hide'} Construction Evidence</button></div><output aria-label="Current drawing view">${Number.isFinite(drawingZoom) ? Math.round(drawingZoom * 100) : 'Fit'}% · ${drawingRotation}°</output></div>${analysis.viewerFallback && !analysis.metadataAvailable ? '' : `<fieldset class="mc-drawing-overlay-controls"><legend>Drawing overlays</legend>${Object.entries({ rooms: 'Room Labels', confirmed: 'Confirmed Objects', candidates: 'Candidate Objects', equipment: 'Equipment Tags', keyedNotes: 'Keyed Notes', callouts: 'Callouts', scheduleLinks: 'Schedule Links', warnings: 'Warnings' }).map(([key,label]) => `<label><input type="checkbox" data-drawing-overlay="${key}" ${viewport.overlays?.[key] === false ? '' : 'checked'}>${label}</label>`).join('')}</fieldset>`}<div id="mcDrawingStage" class="mc-drawing-stage ${drawingCoverageRegionItemId?'is-drawing-review-region':''}"><canvas id="mcDrawingCanvas" aria-label="${esc(currentSheet.sheetNumber || `PDF page ${currentSheet.pageNumber}`)} ${esc(currentSheet.sheetTitle || 'drawing')}"></canvas><div class="mc-drawing-overlay-layer" aria-label="Drawing evidence overlays"></div></div>${drawingRotation || currentSheet.rotation ? '<p class="mc-drawing-note">Location highlights are synchronized with the rotated drawing view.</p>' : ''}`}
+        ${!source ? `<div class="mc-drawing-unavailable"><strong>Original drawing unavailable — reattach PDF to view sheet.</strong><p>Reattach the exact source PDF to inspect the drawing. Indexed project text remains available.</p><label class="mc-drawing-reattach"><input id="mcDrawingReattach" type="file" accept="application/pdf,.pdf">Reattach Original PDF</label></div>` : !currentSheet ? `<div class="mc-drawing-unavailable"><strong>Drawing page unavailable.</strong><p>The retained PDF does not expose a viewable page.</p></div>` : `<header id="${focusTarget === 'mc-drawing-selected-evidence' ? 'mc-drawing-selected-evidence' : 'mc-drawing-sheet-title'}" class="mc-drawing-sheet-title" tabindex="-1" aria-live="polite" aria-label="${esc(announcementText)}"><div><span>${esc(currentSheet.sheetNumber || `Page ${currentSheet.pageNumber}`)}</span><h3>${esc(currentSheet.sheetTitle || `Page ${currentSheet.pageNumber}`)}</h3><p>${esc(selectionExplanation)}</p></div><dl><div><dt>Discipline</dt><dd>${esc(currentSheet.discipline)}</dd></div><div><dt>Type</dt><dd>${esc(currentSheet.primarySheetType || currentSheet.sheetTypes[0] || 'Unknown')}</dd></div><div><dt>Position</dt><dd>${analysis.viewerFallback ? 'Page' : 'Sheet'} ${currentSheet.pageNumber} of ${analysis.sheets.length}</dd></div><div><dt>Identity</dt><dd>${esc(currentSheet.identityStatus)}</dd></div></dl></header><div class="mc-drawing-toolbar"><div role="group" aria-label="Drawing navigation"><button data-drawing-previous ${navigationIndex <= 0 ? 'disabled' : ''}>Previous</button><button data-drawing-next ${navigationIndex < 0 || navigationIndex >= navigationSheetIds.length - 1 ? 'disabled' : ''}>Next</button><button data-drawing-layout="toggle-finder">${drawingWorkspacePanels.finderHidden ? 'Show' : 'Hide'} Sheet Finder</button></div><div role="group" aria-label="Drawing view controls"><button data-drawing-fit="page">Fit Page</button><button data-drawing-fit="width">Fit Width</button><button data-drawing-zoom="out">Zoom Out</button><button data-drawing-zoom="in">Zoom In</button><button data-drawing-rotate>Rotate</button><button data-drawing-reset-view>Reset View</button><button data-drawing-layout="${drawingWorkspacePanels.expanded ? 'restore' : 'expand'}">${drawingWorkspacePanels.expanded ? 'Restore Workspace' : 'Expand Drawing'}</button></div><div class="mc-drawing-spec-slot"><button type="button" class="mc-drawing-spec-button" data-drawing-spec-explorer>View Governing Specifications</button></div><div role="group" aria-label="Construction context actions">${analysis.viewerFallback ? '' : '<button data-drawing-ask>Ask Chief</button><button data-drawing-current-work>Add to Current Work</button><button data-drawing-inspection>Create Inspection</button>'}<button data-drawing-edit-metadata>Edit Page Metadata</button><button data-coverage-review-open>Review Drawing Coverage</button><button class="subtle" data-drawing-source>Open Source Details</button><button data-drawing-layout="toggle-evidence">${drawingWorkspacePanels.evidenceHidden ? 'Show' : 'Hide'} Construction Evidence</button></div><output aria-label="Current drawing view">${Number.isFinite(drawingZoom) ? Math.round(drawingZoom * 100) : 'Fit'}% · ${drawingRotation}°</output></div>${analysis.viewerFallback && !analysis.metadataAvailable ? '' : `<fieldset class="mc-drawing-overlay-controls"><legend>Drawing overlays</legend>${Object.entries({ rooms: 'Room Labels', confirmed: 'Confirmed Objects', candidates: 'Candidate Objects', equipment: 'Equipment Tags', keyedNotes: 'Keyed Notes', callouts: 'Callouts', scheduleLinks: 'Schedule Links', warnings: 'Warnings' }).map(([key,label]) => `<label><input type="checkbox" data-drawing-overlay="${key}" ${viewport.overlays?.[key] === false ? '' : 'checked'}>${label}</label>`).join('')}</fieldset>`}<div id="mcDrawingStage" class="mc-drawing-stage ${drawingCoverageRegionItemId?'is-drawing-review-region':''}"><canvas id="mcDrawingCanvas" aria-label="${esc(currentSheet.sheetNumber || `PDF page ${currentSheet.pageNumber}`)} ${esc(currentSheet.sheetTitle || 'drawing')}"></canvas><div class="mc-drawing-overlay-layer" aria-label="Drawing evidence overlays"></div></div>${drawingRotation || currentSheet.rotation ? '<p class="mc-drawing-note">Location highlights are synchronized with the rotated drawing view.</p>' : ''}`}
       </main>
       <aside id="${shell === 'mission-control' ? 'missionPlansSheetInspector' : 'drawingSheetInspector'}" class="mc-drawing-evidence" aria-label="Construction Intelligence">${constructionIntelligencePanelMarkup(constructionIntelligencePanel)}</aside>${chiefDrawingDockMarkup(chiefCards)}
     </div>${drawingLifecycleUnavailable.length ? `<section class="mc-drawing-recovery-list" aria-label="Unavailable drawing lifecycle records"><h2>Drawing records requiring attention</h2>${drawingLifecycleUnavailable.map(drawingRecoveryMarkup).join('')}</section>` : ''}`;
@@ -4604,6 +4808,10 @@ async function renderMissionControlPlans() {
 }
 
 async function renderMissionControl(prefetchedDocuments = null, prefetchedSections = null) {
+  if (missionControlView === 'landing') {
+    await renderMissionControlLanding();
+    return;
+  }
   if (missionControlView === 'projects') {
     renderMyProjects();
     return;
@@ -4621,10 +4829,21 @@ async function renderMissionControl(prefetchedDocuments = null, prefetchedSectio
 
 $('#openProfessionalWorkspace').onclick = () => switchExperience('professional-workspace', { destination: view });
 $('#returnMissionControl').onclick = () => switchExperience('mission-control');
+const missionControlIdentity = $('.mc-control-identity');
+missionControlIdentity?.setAttribute('role', 'button');
+missionControlIdentity?.setAttribute('tabindex', '0');
+missionControlIdentity?.setAttribute('aria-label', 'Return to landing page');
+missionControlIdentity?.addEventListener('click', () => showMissionControlView('landing'));
+missionControlIdentity?.addEventListener('keydown', event => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    showMissionControlView('landing');
+  }
+});
 
 function showMissionControlView(name = 'home') {
   if (!['plans', 'dashboard', 'home', 'history'].includes(name)) releaseDrawingSource();
-  missionControlView = ['projects', 'chat', 'history', 'library', 'inspections', 'plans', 'dashboard', 'home'].includes(name) ? name : 'home';
+  missionControlView = ['projects', 'chat', 'history', 'library', 'inspections', 'plans', 'dashboard', 'home', 'landing'].includes(name) ? name : 'home';
   const homeButton = $('[data-control-home]');
   homeButton?.toggleAttribute('aria-current', missionControlView === 'home');
   $$('.mc-control-nav button[data-control-view]').forEach(button => {
@@ -4638,6 +4857,21 @@ $$('[data-control-view]').forEach(button => button.onclick = () => showMissionCo
 $('#missionControlContent').onclick = async event => {
   const button = event.target.closest('button');
   if (!button) return;
+  if (button.dataset.controlAction === 'enter-mission-control') {
+    return showMissionControlView('home');
+  }
+  if (button.dataset.controlAction === 'open-chief') {
+    return showMissionControlView('home');
+  }
+  if (button.dataset.controlAction === 'open-project-intelligence') {
+    return showMissionControlView('dashboard');
+  }
+  if (button.dataset.controlAction === 'open-drawings') {
+    return showMissionControlView('plans');
+  }
+  if (button.dataset.controlAction === 'open-specifications') {
+    return showMissionControlView('library');
+  }
   if (button.dataset.chiefDrawingCard) {
     console.log('CHIEF_DRAWING_DELEGATED_HANDLER', {
       clickedElement: button.outerHTML,
@@ -13023,6 +13257,20 @@ function verifyStartup() {
   );
 }
 
+void renderMissionControlLanding();
+const missionPmisRuntimeFrame = $('#' + missionPmisRuntimeFrameId);
+if (missionPmisRuntimeFrame && !missionPmisRuntimeFrame.dataset.landingReadyHooked) {
+  missionPmisRuntimeFrame.dataset.landingReadyHooked = 'true';
+  const markPmisReady = () => updateLandingReadiness({ pmis: true });
+  missionPmisRuntimeFrame.addEventListener('load', markPmisReady, { once: true });
+  missionPmisRuntimeFrame.addEventListener('error', () => updateLandingReadiness({ pmisFailed: true }), { once: true });
+  try {
+    if (missionPmisRuntimeFrame.contentWindow?.document?.readyState === 'complete') markPmisReady();
+  } catch (error) {
+    updateLandingReadiness({ pmisFailed: true });
+  }
+}
+
 engine.initialize()
   .then(async () => {
     await Promise.allSettled([bedfordSpecificationIndexBootstrap, bedfordDrawingCatalogBootstrap]);
@@ -13037,6 +13285,7 @@ engine.initialize()
         console.log('Built-in Bedford project registered');
       }
     }
+    updateLandingReadiness({ projectSettled: true, project: Boolean(state().projects.find(p => p.id === BEDFORD_PROJECT_ID)) });
     
     // Ensure built-in Bedford documents have source files registered
     const bedfordDocs = await engine.documents();
@@ -13095,7 +13344,7 @@ engine.initialize()
     return refresh();
   })
   .then(() => {
-    return switchExperience(state().settings.startupExperience, { force: true, focus: false });
+    return switchExperience('mission-control', { force: true, focus: false });
   })
   .then(() => {
     verifyStartup();

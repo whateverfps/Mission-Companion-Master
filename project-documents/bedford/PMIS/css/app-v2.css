@@ -4,7 +4,7 @@ body.no-workbook .shell,body.no-workbook .app-rail,body.no-workbook .mode-stack{
 html.embedded-mode body.no-workbook .shell,html.embedded-mode body.no-workbook .app-rail,html.embedded-mode body.no-workbook .mode-stack{filter:none;pointer-events:auto;user-select:auto}
 html.embedded-mode body{overflow-x:hidden}
 html.embedded-mode .shell{width:100%;max-width:none;padding:10px 10px 12px;overflow-x:hidden}
-html.embedded-mode .layout{grid-template-columns:minmax(0,.95fr) minmax(0,1.15fr)!important;gap:14px!important;align-items:start}
+html.embedded-mode .layout{grid-template-columns:minmax(0,1.35fr) minmax(0,.85fr)!important;gap:18px!important;align-items:start}
 html.embedded-mode .panel{min-width:0}
 html.embedded-mode .campus-panel,html.embedded-mode .detail-panel{min-width:0!important}
 html.embedded-mode .campus-map-wrap,html.embedded-mode .campus-map{min-width:0!important;max-width:100%!important}
