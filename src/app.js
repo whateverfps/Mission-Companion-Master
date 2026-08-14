@@ -113,6 +113,7 @@ import {
 import { buildWorkspaceDocumentsModel, workspaceDrawingDocumentIdForPage } from './workspace-documents.js';
 import { buildWorkspaceIssuesModel, issueFilterMatches } from './workspace-issues.js';
 import { buildWorkspaceChecklistModel, checklistFilterMatches } from './workspace-checklist.js';
+import { buildWorkspaceTimelineModel, timelineFilterMatches } from './workspace-timeline.js';
 import {
   BEDFORD_NTP_SOURCE_DOCUMENT,
   buildBedfordProjectMilestoneContext
@@ -271,6 +272,16 @@ function workspaceChecklistStateFor(workspaceId = '') {
   }
   if (!(state.verifiedIds instanceof Set)) state.verifiedIds = new Set(list(state.verifiedIds));
   return state;
+}
+
+function workspaceTimelineStateFor(workspaceId = '') {
+  if (!workspaceTimelineSessionState.has(workspaceId)) {
+    workspaceTimelineSessionState.set(workspaceId, {
+      filter: 'all',
+      selectedItemId: ''
+    });
+  }
+  return workspaceTimelineSessionState.get(workspaceId);
 }
 
 function workspaceNotesStateFor(workspaceId = '') {
@@ -661,6 +672,159 @@ function renderWorkspaceChecklistView(checklistModel = {}, activeWorkspace = nul
     </section>`;
 }
 
+function renderWorkspaceTimelineSourceRefs(item = {}) {
+  const refs = Array.isArray(item.sourceRefs) ? item.sourceRefs : [];
+  if (!refs.length) return '<div class="mc-ws-empty-inline">No supporting source references recorded.</div>';
+  return `<div class="mc-ws-timeline-sources">${refs.map(ref => {
+    if (ref.kind === 'document' && ref.documentId) {
+      return `<button type="button" data-ws-project-document="${esc(ref.documentId)}" aria-label="Open document ${esc(ref.label || ref.title || ref.documentId)}"><strong>${esc(ref.label || ref.title || ref.documentId)}</strong><span>${esc(ref.detail || ref.relationship || 'Project document')}</span><small>${esc(ref.relationship || 'Source document')}</small></button>`;
+    }
+    if (ref.kind === 'issue' && ref.id) {
+      return `<button type="button" data-ws-issue-id="${esc(ref.id)}" aria-label="Open issue ${esc(ref.label || ref.id)}"><strong>${esc(ref.label || ref.id)}</strong><span>${esc(ref.detail || ref.relationship || 'Related issue')}</span><small>${esc(ref.relationship || 'Issue')}</small></button>`;
+    }
+    if (ref.kind === 'milestone' && ref.id) {
+      return `<div class="mc-ws-timeline-ref"><strong>${esc(ref.label || ref.id)}</strong><span>${esc(ref.detail || ref.dueDateLabel || ref.status || '')}</span><small>${esc(ref.relationship || 'Milestone')}</small></div>`;
+    }
+    if (ref.kind === 'checklist' && ref.id) {
+      return `<div class="mc-ws-timeline-ref"><strong>${esc(ref.label || ref.id)}</strong><span>${esc(ref.detail || ref.status || '')}</span><small>${esc(ref.relationship || 'Checklist')}</small></div>`;
+    }
+    if (ref.kind === 'drawing' && ref.sheetNumber) {
+      return `<button type="button" data-ws-drawing-sheet="${esc(ref.sheetNumber)}" aria-label="Open drawing ${esc(ref.sheetNumber)}"><strong>${esc(ref.sheetNumber)}</strong><span>${esc(ref.title || ref.label || 'Source drawing')}</span><small>${esc(ref.relationship || 'Drawing')}</small></button>`;
+    }
+    if (ref.kind === 'specification' && ref.sectionNumber) {
+      return `<button type="button" data-ws-spec-section="${esc(ref.sectionNumber)}" aria-label="Open specification ${esc(ref.sectionNumber)}"><strong>${esc(ref.sectionNumber)}</strong><span>${esc(ref.title || ref.label || 'Applicable specification')}</span><small>${esc(ref.relationship || 'Specification')}</small></button>`;
+    }
+    return `<div class="mc-ws-timeline-ref"><strong>${esc(ref.label || ref.title || ref.id || 'Reference')}</strong><span>${esc(ref.detail || ref.relationship || ref.status || '')}</span><small>${esc(ref.relationship || ref.kind || 'Reference')}</small></div>`;
+  }).join('')}</div>`;
+}
+
+function renderWorkspaceTimelineItem(item = {}, { selected = false } = {}) {
+  const dateLabel = item.date ? item.dateLabel || item.date : item.status === 'PENDING_DATE' ? 'TBD' : item.status === 'AWAITING_SOURCE' ? 'Awaiting source' : item.status;
+  return `
+    <li class="mc-ws-timeline-item ${selected ? 'active' : ''}" data-ws-timeline-id="${esc(item.id)}">
+      <button type="button" class="mc-ws-timeline-row" data-ws-timeline-id="${esc(item.id)}">
+        <span>${esc(item.bucket || 'pending')}</span>
+        <strong>${esc(item.title || 'Timeline item')}</strong>
+        <small>${esc(dateLabel || item.status || 'Pending')}</small>
+        <em class="${item.status === 'COMPLETE' ? 'done' : item.status === 'OVERDUE' ? 'danger' : item.status === 'DUE' ? 'watch' : 'low'}">${esc(item.status || 'UNKNOWN')}</em>
+      </button>
+    </li>`;
+}
+
+function renderWorkspaceTimelineDetail(item = {}) {
+  const sourceDocuments = Array.isArray(item.sourceRefs) ? item.sourceRefs.filter(ref => ref.kind === 'document' && ref.documentId) : [];
+  const relatedIssues = Array.isArray(item.relatedIssues) ? item.relatedIssues : [];
+  const relatedChecklistItems = Array.isArray(item.relatedChecklistItems) ? item.relatedChecklistItems : [];
+  return `
+    <section class="mc-ws-timeline-detail" aria-label="Timeline detail">
+      <header>
+        <div>
+          <span>${esc(item.category || 'TIMELINE')}</span>
+          <strong>${esc(item.title || 'Selected milestone')}</strong>
+          <small>${esc(item.scope || 'PROJECT')} · ${esc(item.status || 'UNKNOWN')} · ${esc(item.dateType || 'UNKNOWN')}</small>
+        </div>
+        <div class="mc-ws-timeline-state ${item.status === 'COMPLETE' ? 'complete' : item.status === 'OVERDUE' ? 'danger' : item.status === 'PENDING_DATE' || item.status === 'AWAITING_SOURCE' ? 'pending' : 'watch'}">
+          <strong>${esc(item.status || 'UNKNOWN')}</strong>
+          <span>${item.authoritative ? 'Authoritative project record' : 'Contextual project marker'}</span>
+        </div>
+      </header>
+      <p>${esc(item.description || item.workspaceImpact || 'No description recorded.')}</p>
+      <section class="mc-ws-timeline-panel">
+        <header><strong>DATE / SOURCE</strong><small>${esc(item.authoritative ? 'Authoritative' : 'Contextual')}</small></header>
+        <div class="mc-ws-timeline-meta">
+          <div><b>Date</b><span>${esc(item.date ? item.dateLabel || item.date : item.status === 'PENDING_DATE' ? 'Pending date' : item.status === 'AWAITING_SOURCE' ? 'Awaiting contractor schedule' : 'No specific date recorded')}</span></div>
+          <div><b>Scope</b><span>${esc(item.scope || 'PROJECT')}</span></div>
+          <div><b>Category</b><span>${esc(item.category || 'CONTRACT')}</span></div>
+          <div><b>Source</b><span>${esc(item.sourceType || 'Project milestone model')}</span></div>
+        </div>
+        ${renderWorkspaceTimelineSourceRefs(item)}
+      </section>
+      <section class="mc-ws-timeline-panel">
+        <header><strong>WHY IT MATTERS</strong><small>Workspace impact</small></header>
+        <div class="mc-ws-empty-inline">${esc(item.workspaceImpact || item.description || 'This milestone is part of the project chronology.')}</div>
+      </section>
+      <section class="mc-ws-timeline-panel">
+        <header><strong>RELATED ISSUES</strong><small>${relatedIssues.length}</small></header>
+        ${relatedIssues.length ? `<div class="mc-ws-timeline-items">${relatedIssues.map(issue => `<button type="button" data-ws-issue-id="${esc(issue.id)}"><strong>${esc(issue.title || issue.id)}</strong><span>${esc(issue.severity || issue.status || '')}</span><small>${esc(issue.scope || issue.type || 'Issue')}</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related issues recorded.</div>'}
+      </section>
+      <section class="mc-ws-timeline-panel">
+        <header><strong>RELATED CHECKLIST ITEMS</strong><small>${relatedChecklistItems.length}</small></header>
+        ${relatedChecklistItems.length ? `<div class="mc-ws-timeline-items">${relatedChecklistItems.map(checklist => `<button type="button" data-ws-checklist-id="${esc(checklist.id)}"><strong>${esc(checklist.title || checklist.id)}</strong><span>${esc(checklist.status || checklist.verificationState || '')}</span><small>${esc(checklist.category || 'Checklist')}</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related checklist items recorded.</div>'}
+      </section>
+      <section class="mc-ws-timeline-panel">
+        <header><strong>NEXT STEP</strong><small>${esc(item.nextStep ? 'Actionable' : 'Informational')}</small></header>
+        <div class="mc-ws-empty-inline">${esc(item.nextStep || 'No next step recorded.')}</div>
+      </section>
+      <section class="mc-ws-timeline-panel">
+        <header><strong>RELATED DOCUMENTS</strong><small>${sourceDocuments.length}</small></header>
+        ${sourceDocuments.length ? `<div class="mc-ws-timeline-items">${sourceDocuments.map(doc => `<button type="button" data-ws-project-document="${esc(doc.documentId)}"><strong>${esc(doc.label || doc.title || doc.documentId)}</strong><span>${esc(doc.detail || doc.relationship || 'Project document')}</span><small>${esc(doc.relationship || 'Source document')}</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related documents recorded.</div>'}
+      </section>
+    </section>`;
+}
+
+function renderWorkspaceTimelineView(timelineModel = {}, activeWorkspace = null, projectMilestoneContext = null, selectedFilter = 'all', selectedItemId = '', sessionState = null) {
+  const filters = Array.isArray(timelineModel.filters) && timelineModel.filters.length ? timelineModel.filters : [];
+  const allItems = Array.isArray(timelineModel.items) ? timelineModel.items : [];
+  const filteredItems = allItems.filter(item => timelineFilterMatches(item, selectedFilter));
+  const selected = filteredItems.find(item => item.id === selectedItemId) || filteredItems.find(item => item.status === 'UPCOMING') || filteredItems[0] || null;
+  const groups = [
+    { id: 'past', label: 'PAST', items: filteredItems.filter(item => item.bucket === 'past') },
+    { id: 'current', label: 'TODAY / CURRENT PHASE', items: filteredItems.filter(item => item.bucket === 'current') },
+    { id: 'upcoming', label: 'UPCOMING', items: filteredItems.filter(item => item.bucket === 'upcoming') },
+    { id: 'pending', label: 'UNKNOWN / PENDING', items: filteredItems.filter(item => item.bucket === 'pending') }
+  ].filter(group => group.items.length);
+  const summary = timelineModel.summary || {};
+  const summaryNextMilestone = summary.nextContractualMilestone || null;
+  const summaryContractCompletion = summary.contractCompletion || null;
+  return `
+    <section class="mc-ws-timeline-view" aria-label="Workspace Timeline">
+      <header class="mc-ws-timeline-header">
+        <div>
+          <span class="mc-ws-back">← Bedford Workspaces</span>
+          <h1 id="missionControlTitle" tabindex="-1">Timeline</h1>
+          <p>${esc(activeWorkspace ? `B${activeWorkspace.building || '61'} — ${activeWorkspace.room || 'Workspace'} · ${activeWorkspace.name || 'Workspace'}` : 'Select a workspace to review chronology.')}</p>
+        </div>
+        <div class="mc-ws-timeline-summary">
+          <article><span>Project Phase</span><strong>${esc(summary.projectPhase || projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong><small>${esc(summary.currentPhaseLabel || projectMilestoneContext?.currentProjectStatus || '')}</small></article>
+          <article><span>Next Contractual Milestone</span><strong>${esc(summaryNextMilestone?.title || 'Pending')}</strong><small>${esc(summaryNextMilestone?.dateLabel || 'Pending date')}</small></article>
+          <article><span>Contract Completion</span><strong>${esc(summaryContractCompletion?.dateLabel || projectMilestoneContext?.contractCompletionDateLabel || 'Pending')}</strong><small>${esc(summaryContractCompletion?.status || projectMilestoneContext?.contractCompletionDate || '')}</small></article>
+          <article><span>Room Schedule Status</span><strong>${esc(summary.roomScheduleStatus || projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</strong><small>${esc(summary.roomScheduleLabel || projectMilestoneContext?.roomScheduleLabel || 'Room Schedule')}</small></article>
+        </div>
+      </header>
+      <nav class="mc-ws-timeline-filters" aria-label="Timeline filters">
+        ${filters.map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-timeline-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+      </nav>
+      <div class="mc-ws-timeline-layout">
+        <section class="mc-ws-timeline-list" aria-label="Timeline chronology">
+          ${groups.length ? groups.map(group => `
+            <div class="mc-ws-timeline-group">
+              <header><strong>${esc(group.label)}</strong><small>${esc(group.items.length)}</small></header>
+              <ul>${group.items.map(item => renderWorkspaceTimelineItem(item, { selected: item.id === selected?.id })).join('')}</ul>
+            </div>
+          `).join('') : `<div class="mc-ws-empty-inline">${esc(timelineModel.emptyState || 'No timeline records are available for this Workspace yet.')}</div>`}
+        </section>
+        <aside class="mc-ws-timeline-detail-shell" aria-label="Timeline detail">
+          ${selected ? `
+            <header>
+              <div>
+                <span>${esc(selected.category || 'TIMELINE')}</span>
+                <strong>${esc(selected.title || 'Selected milestone')}</strong>
+                <small>${esc(selected.scope || 'PROJECT')} · ${esc(selected.status || 'UNKNOWN')} · ${esc(selected.dateType || 'UNKNOWN')}</small>
+              </div>
+              <div class="mc-ws-timeline-state ${selected.status === 'COMPLETE' ? 'complete' : selected.status === 'OVERDUE' ? 'danger' : selected.status === 'PENDING_DATE' || selected.status === 'AWAITING_SOURCE' ? 'pending' : 'watch'}">
+                <strong>${esc(selected.status || 'UNKNOWN')}</strong>
+                <span>${selected.authoritative ? 'Authoritative project record' : 'Contextual project marker'}</span>
+              </div>
+            </header>
+            ${renderWorkspaceTimelineDetail(selected)}
+          ` : `
+            <div class="mc-ws-empty-inline">${esc(timelineModel.emptyState || 'No timeline records are available for this Workspace yet.')}</div>
+          `}
+        </aside>
+      </div>
+    </section>`;
+}
+
 function renderWorkspaceDocumentsView(workspaceModel, activeWorkspace, projectMilestoneContext) {
   const documentsModel = buildWorkspaceDocumentsModel({ workspace: activeWorkspace, projectMilestoneContext });
   const categoryMarkup = documentsModel.categories.map(category => `
@@ -739,6 +903,7 @@ let activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
 let activeBedfordWorkspaceSheetNumber = '';
 let activeBedfordWorkspaceSection = 'overview';
 const workspaceChecklistSessionState = new Map();
+const workspaceTimelineSessionState = new Map();
 const workspaceNotesSessionState = new Map();
 const workspaceIssuesSessionState = new Map();
 let previousUserProjectId = null;
@@ -5270,6 +5435,12 @@ async function renderMissionControlWorkspace() {
     issuesModel,
     pmisRuntime: missionPmisRuntimeData()
   });
+  const timelineModel = buildWorkspaceTimelineModel({
+    workspace: activeWorkspace,
+    projectMilestoneContext,
+    issuesModel,
+    checklistModel
+  });
   const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
   if (!checklistModel.filters.some(filter => String(filter.id) === String(checklistState.filter))) checklistState.filter = 'all';
   const checklistItems = checklistModel.items.map(item => ({
@@ -5278,12 +5449,16 @@ async function renderMissionControlWorkspace() {
   }));
   if (checklistState.selectedItemId && !checklistItems.some(item => item.id === checklistState.selectedItemId)) checklistState.selectedItemId = '';
   if (!checklistState.selectedItemId) checklistState.selectedItemId = checklistModel.items.find(item => item.status === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
+  const timelineState = workspaceTimelineStateFor(activeWorkspace?.id || '');
+  if (!timelineModel.filters.some(filter => String(filter.id) === String(timelineState.filter))) timelineState.filter = 'all';
+  if (timelineState.selectedItemId && !timelineModel.items.some(item => item.id === timelineState.selectedItemId)) timelineState.selectedItemId = '';
+  if (!timelineState.selectedItemId) timelineState.selectedItemId = timelineModel.selectedItemId || '';
   const checklistDoneCount = checklistItems.filter(item => item.checked).length;
   const checklistApplicableCount = checklistModel.counts?.applicableItems ?? checklistItems.length;
   const checklistBlockedCount = checklistModel.counts?.blocked ?? checklistItems.filter(item => item.status === 'BLOCKED').length;
   const checklistUnknownCount = checklistModel.counts?.unknown ?? checklistItems.filter(item => item.status === 'UNKNOWN' || item.status === 'NOT_VERIFIED').length;
   const notesValue = workspaceNotesStateFor(activeWorkspace?.id || '');
-  const milestoneTimeline = projectMilestoneContext?.timeline || [];
+  const milestoneTimeline = timelineModel.overviewItems || projectMilestoneContext?.timeline || [];
   const milestoneNextSteps = projectMilestoneContext?.nextSteps || [];
   const combinedNextSteps = [...milestoneNextSteps, ...(activeWorkspace?.nextSteps || [])];
   const compactNextSteps = combinedNextSteps.slice(0, 5);
@@ -5433,13 +5608,13 @@ async function renderMissionControlWorkspace() {
       <main class="mc-ws-main">
         <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article><span>Checklist Review</span><strong class="${checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger'}">${checklistApplicableCount ? `${checklistDoneCount}/${checklistApplicableCount}` : 'No data'}</strong><small>${checklistApplicableCount ? `${checklistDoneCount} of ${checklistApplicableCount} reviewed this session` : 'No deterministic checklist items recorded'}</small></article><article><span>Blocked</span><strong class="${checklistBlockedCount ? 'danger' : 'watch'}">${checklistBlockedCount}</strong><small>${checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded'}</small></article><article><span>Open Questions</span><strong>${issuesModel.counts.questions}</strong><small>${issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.'}</small></article><article><span>Related Documents</span><strong>${(activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0)}</strong><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets</small></article></div></header>
         <section class="mc-ws-project-clock" aria-label="Project milestone context">
-          <div><small>PROJECT PHASE</small><strong>${esc(projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
+          <div><small>PROJECT PHASE</small><strong>${esc(timelineModel.summary?.projectPhase || projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
           <div><small>NTP</small><strong>${esc(projectMilestoneContext?.ntpDateLabel || 'Aug 13, 2026')}</strong></div>
-          <div><small>CONTRACT COMPLETION</small><strong>${esc(projectMilestoneContext?.contractCompletionDateLabel || 'Aug 14, 2028')}</strong></div>
-          <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
+          <div><small>CONTRACT COMPLETION</small><strong>${esc(timelineModel.summary?.contractCompletion?.dateLabel || projectMilestoneContext?.contractCompletionDateLabel || 'Aug 14, 2028')}</strong></div>
+          <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(timelineModel.summary?.roomScheduleStatus || projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
         </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
-        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : `
+        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : `
         <section class="mc-ws-upper">
           <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
@@ -5448,7 +5623,7 @@ async function renderMissionControlWorkspace() {
           <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${issueSummaryMarkup}</ul></article>
           <article id="workspaceComparisonsPanel"><header><strong>TRACEABILITY MAP</strong><button type="button" data-ws-section="comparisons">Focus</button></header><div class="mc-ws-trace">${(activeWorkspace?.traceabilityMap || []).flatMap(item => [`<div><b>Source</b><span>${esc(item.from)}</span></div>`, '<i>→</i>', `<div><b>Requirement</b><span>${esc(item.requirement)}</span></div>`, '<i>→</i>', `<div><b>Impact</b><span>${esc(item.impact)}</span></div>`]).join('')}</div></article>
           <article id="workspaceChecklistPanel"><header><strong>SESSION REVIEW PROGRESS</strong><button type="button" data-ws-section="checklist">Open Full Checklist</button></header><p class="mc-ws-muted">Checklist review is grounded in the current workspace evidence and stays session-only unless an authoritative source says otherwise.</p><div class="mc-ws-progress"><span style="width:${checklistApplicableCount ? Math.min(100, Math.round((checklistDoneCount / checklistApplicableCount) * 100)) : 0}%"></span></div><small>${checklistDoneCount} of ${checklistApplicableCount} reviewed this session · ${checklistBlockedCount} blocked · ${checklistUnknownCount} unknown</small><ul class="mc-ws-check">${checklistSummaryMarkup}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
-          <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.label)}</b><span>${esc(item.dueDateLabel || item.status || '')}</span><small>${esc(item.detail || item.notes || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button><details class="mc-ws-notes" id="workspaceNotesPanel"><summary>Workspace notes</summary><textarea data-ws-note="${esc(activeWorkspace?.id || '')}" rows="4" placeholder="Add temporary workspace notes for this session.">${esc(notesValue)}</textarea></details></article>
+          <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.title)}</b><span>${esc(item.date ? item.dateLabel || item.date : item.status || '')}</span><small>${esc(item.description || item.workspaceImpact || item.nextStep || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button><details class="mc-ws-notes" id="workspaceNotesPanel"><summary>Workspace notes</summary><textarea data-ws-note="${esc(activeWorkspace?.id || '')}" rows="4" placeholder="Add temporary workspace notes for this session.">${esc(notesValue)}</textarea></details></article>
         </section>`}
       </main>
     </section>`;
@@ -5692,6 +5867,19 @@ $('#missionControlContent').onclick = async event => {
   if (button.dataset.wsChecklistId) {
     const checklistState = workspaceChecklistStateFor(activeBedfordWorkspaceId || '');
     checklistState.selectedItemId = button.dataset.wsChecklistId;
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsTimelineFilter) {
+    const timelineState = workspaceTimelineStateFor(activeBedfordWorkspaceId || '');
+    timelineState.filter = button.dataset.wsTimelineFilter;
+    timelineState.selectedItemId = '';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsTimelineId) {
+    const timelineState = workspaceTimelineStateFor(activeBedfordWorkspaceId || '');
+    timelineState.selectedItemId = button.dataset.wsTimelineId;
     await showMissionControlView('workspace');
     return;
   }

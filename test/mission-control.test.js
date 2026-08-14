@@ -200,6 +200,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /CONTRACT COMPLETION/);
   assert.match(workspace, /SCHEDULE STATUS/);
   assert.match(workspace, /mc-ws-timeline/);
+  assert.match(workspace, /renderWorkspaceTimelineView\(/);
+  assert.match(workspace, /buildWorkspaceTimelineModel\(/);
   assert.match(workspace, /combinedNextSteps\.slice\(0, 5\)/);
   assert.match(workspace, /mc-ws-next-summary/);
   assert.match(workspace, /RELATED DOCUMENTS \/ SOURCE SHEETS/);
@@ -214,6 +216,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /data-ws-project-document=/);
   assert.match(app, /data-ws-issue-filter=/);
   assert.match(app, /data-ws-issue-id=/);
+  assert.match(app, /data-ws-timeline-filter=/);
+  assert.match(app, /data-ws-timeline-id=/);
   assert.match(app, /mc-ws-documents/);
   assert.match(app, /mc-ws-documents-grid/);
   assert.match(workspaceDocuments, /PRIMARY SOURCE DRAWINGS/);
@@ -231,6 +235,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(css, /\.mc-ws-risks,\.mc-ws-check,\.mc-ws-next,\.mc-ws-timeline\{min-height:0;overflow:auto;max-height:160px\}/);
   assert.match(css, /\.mc-ws-checklist\{/);
   assert.match(css, /\.mc-ws-checklist-layout\{/);
+  assert.match(css, /\.mc-ws-timeline-view\{/);
+  assert.match(css, /\.mc-ws-timeline-layout\{/);
   assert.match(css, /\.mc-ws-notes/);
   assert.match(css, /\.mc-ws-project-clock/);
   assert.match(css, /\.mc-ws-timeline/);
