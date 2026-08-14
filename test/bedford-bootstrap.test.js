@@ -21,6 +21,7 @@ const { createDrawingSpecificationLinkService } = await import('../src/drawing-s
 const { loadBedfordDrawingSpecMappings } = await import('../src/specification-knowledge.js');
 const { createChiefSpecificationSME } = await import('../src/chief-specification-sme.js');
 const { createChiefIntelligenceBridge } = await import('../src/chief-intelligence-bridge.js');
+const { openSpecificationDocument } = await import('../src/authoritative-spec-resolver.js');
 const { getBedfordDrawingSetForReference } = await import('../src/bedford-project.js');
 const { BEDFORD_PROJECT } = await import('../src/bedford-project.js');
 const { BEDFORD_NTP_SOURCE_DOCUMENT } = await import('../src/workspace-milestones.js');
@@ -100,6 +101,43 @@ test('Bedford bootstrap loads the authoritative relationship graph before Chief 
     ['01 33 23', '07 84 00', '09 91 00', '21 08 00', '21 13 13', '28 31 00'].sort()
   );
   assert.equal(context.specificationAnswer?.drawings?.some(item => item.sheetNumber === '61FX100'), true);
+});
+
+test('Bedford specification source resolution keeps the built-in specification document resolvable across repeated opens', async () => {
+  const documents = [{
+    id: 'bedford-specifications',
+    projectId: 'bedford',
+    name: 'Bedford Specification Manual',
+    title: 'Bedford Specification Manual',
+    role: 'specification',
+    builtIn: true
+  }];
+  const engine = {
+    documents: async () => documents,
+    sourceFile: async documentId => documentId === 'bedford-specifications'
+      ? { documentId, sourceBlob: new Blob(['pdf'], { type: 'application/pdf' }) }
+      : null
+  };
+  const originalFetch = globalThis.fetch;
+  const originalAlert = globalThis.alert;
+  const originalDocument = globalThis.document;
+  globalThis.fetch = async () => ({ ok: true, async json() { return authoritativeSections; } });
+  globalThis.alert = () => {};
+  globalThis.document = { baseURI: 'http://example.test/' };
+
+  try {
+    const first = await openSpecificationDocument('09 91 00', engine);
+    const second = await openSpecificationDocument('28 31 00', engine);
+    const third = await openSpecificationDocument('21 13 13', engine);
+
+    assert.equal(first?.section?.documentId, 'bedford-specifications');
+    assert.equal(second?.section?.documentId, 'bedford-specifications');
+    assert.equal(third?.section?.documentId, 'bedford-specifications');
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.alert = originalAlert;
+    globalThis.document = originalDocument;
+  }
 });
 
 test('Bedford project fixture includes the contractual Notice to Proceed source document', () => {

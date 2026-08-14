@@ -7,6 +7,44 @@ import {
 import { normalizeRegion } from './pdf-source.js';
 
 const safeId = value => textValue(value).trim();
+const safeList = value => Array.isArray(value) ? value.filter(item => item != null).map(item => textValue(item)) : [];
+
+function normalizeSourceSectionRecord(section = null) {
+  if (!section || typeof section !== 'object') return null;
+  const sectionTitle = textValue(section.sectionTitle || section.heading || section.title || section.label);
+  const sectionNumber = textValue(section.sectionNumber || section.metadata?.sectionNumber);
+  const normalized = { ...section };
+  normalized.sectionNumber = sectionNumber;
+  normalized.sectionTitle = sectionTitle;
+  normalized.heading = textValue(section.heading || sectionTitle || section.title || section.label);
+  normalized.title = textValue(section.title || sectionTitle || section.heading || section.label);
+  normalized.label = textValue(section.label || sectionTitle || section.heading || section.title);
+  normalized.sentence = textValue(section.sentence);
+  normalized.sentences = safeList(section.sentences);
+  normalized.text = textValue(section.text);
+  normalized.content = textValue(section.content);
+  normalized.metadata = section.metadata && typeof section.metadata === 'object'
+    ? { ...section.metadata }
+    : {};
+  return normalized;
+}
+
+export function createSpecificationSourceTarget(section = null, target = {}) {
+  const normalizedSection = normalizeSourceSectionRecord(section);
+  return {
+    ...target,
+    documentId: textValue(target.documentId || normalizedSection?.documentId),
+    projectId: textValue(target.projectId || normalizedSection?.projectId),
+    pageNumber: Number.isFinite(Number(target.pageNumber))
+      ? Number(target.pageNumber)
+      : Number(normalizedSection?.startPdfPage) || 0,
+    sectionNumber: textValue(target.sectionNumber || normalizedSection?.sectionNumber),
+    sectionTitle: textValue(target.sectionTitle || normalizedSection?.sectionTitle),
+    articleReference: textValue(target.articleReference),
+    returnTarget: textValue(target.returnTarget),
+    section: normalizedSection ? structuredClone(normalizedSection) : null
+  };
+}
 
 export function sourceAnchorId(scope, identifier) {
   const prefix = safeId(scope)
@@ -122,7 +160,7 @@ export function resolveSourceTarget(target, {
     status,
     target,
     document,
-    section,
+    section: normalizeSourceSectionRecord(section),
     project,
     library, sourceFile, analysis, sheet, observation,
     validProjectId: project ? target.projectId : '',
@@ -483,7 +521,7 @@ export function resolveSpecificationNavigationTarget(target = {}, {
     target: normalized,
     sourceTarget,
     document: resolution.document,
-    section: resolution.section,
+    section: resolution.section ? { ...resolution.section } : null,
     projectId: safeId(normalized?.projectId || ''),
     projectAvailable,
     destination: normalized?.destination || 'knowledge',

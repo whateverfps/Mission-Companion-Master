@@ -1,3 +1,5 @@
+import { BEDFORD_PROJECT_ID, BEDFORD_SPEC_DOCUMENT_ID } from './bedford-project.js';
+
 // Authoritative specification section resolver
 // ONE INDEX. ONE VIEWER. ONE SOURCE-OPENING PATH.
 
@@ -20,6 +22,24 @@ async function loadAuthoritativeIndex() {
 // Normalize section number: "06 10 00" → "061000"
 function normalizeSectionNumber(sectionNumber) {
   return String(sectionNumber || '').replace(/\s/g, '');
+}
+
+function normalizeSpecificationSection(section = null) {
+  if (!section || typeof section !== 'object') return null;
+  return {
+    ...section,
+    sectionNumber: String(section.sectionNumber || '').trim(),
+    normalizedSectionNumber: String(section.normalizedSectionNumber || normalizeSectionNumber(section.sectionNumber)),
+    sectionTitle: String(section.sectionTitle || '').trim(),
+    documentId: String(section.documentId || '').trim(),
+    startPdfPage: Number(section.startPdfPage) || 0,
+    endPdfPage: Number(section.endPdfPage) || 0,
+    sentence: '',
+    sentences: [],
+    text: '',
+    content: '',
+    metadata: section.metadata && typeof section.metadata === 'object' ? { ...section.metadata } : {}
+  };
 }
 
 // Resolve section from authoritative index
@@ -58,14 +78,7 @@ export async function openSpecificationSection(sectionNumber) {
   
   return {
     ok: true,
-    section: {
-      sectionNumber: section.sectionNumber,
-      normalizedSectionNumber: section.normalizedSectionNumber,
-      sectionTitle: section.sectionTitle,
-      documentId: section.documentId,
-      startPdfPage: section.startPdfPage,
-      endPdfPage: section.endPdfPage
-    },
+    section: normalizeSpecificationSection(section),
     error: null
   };
 }
@@ -86,10 +99,11 @@ export async function openSpecificationDocument(sectionNumber, engine) {
   // But the actual Bedford project may use a different document ID
   // Try to find the Bedford specification document in the current project
   const documents = await engine.documents();
-  const specDocument = documents.find(doc => 
-    doc.projectId === 'bedford' && 
-    (doc.role === 'specification' || doc.name?.toLowerCase().includes('specification') || doc.title?.toLowerCase().includes('specification'))
-  );
+  const specDocument = documents.find(doc => doc.id === BEDFORD_SPEC_DOCUMENT_ID) ||
+    documents.find(doc =>
+      doc.projectId === BEDFORD_PROJECT_ID &&
+      (doc.role === 'specification' || doc.name?.toLowerCase().includes('specification') || doc.title?.toLowerCase().includes('specification'))
+    );
   
   if (!specDocument) {
     alert(`Bedford Specification Manual not found in current project. Please attach the Bedford Specification Manual PDF (518-22-700.Bedford.MA.EHRM.Specifications.IFC.20260413.pdf) to the Bedford project.`);

@@ -20,6 +20,7 @@ import {
   actionTargetToSourceTarget,
   answerAnchorId,
   createActionTarget,
+  createSpecificationSourceTarget,
   createSourceTarget,
   normalizeActionTargetPayload,
   prepareActionNavigationState,
@@ -1942,7 +1943,7 @@ const drawingActionRouter=createDrawingActionRouter({handlers:{
   'open-drawing-page':target=>{drawingTarget=createDrawingTarget({...drawingTarget,documentId:target.documentId,pageNumber:target.pageNumber,sheetNumber:target.sheetNumber});return renderDrawingWorkspace(experience==='mission-control'?'mission-control':'professional');},
   'open-specification-section':target=>{specificationDrawingReturnTarget=captureDrawingSupportReturnState();return openProfessionalDestination({view:'knowledge',documentId:target.documentId,sectionNumber:target.sectionNumber});},
   'open-specification-explorer':target=>{const currentSheetNumber=drawingTarget?.sheetNumber||activeDrawingViewerAnalysis?.sheets?.find(item=>item.pageId===drawingTarget?.pageId)?.sheetNumber;if(!currentSheetNumber){alert('No active sheet');return true;}const currentSheet=activeDrawingViewerAnalysis?.sheets?.find(item=>item.sheetNumber===currentSheetNumber)||{sheetNumber:currentSheetNumber,sheetTitle:'Unknown',discipline:'Unknown'};openSpecificationExplorer(currentSheet);return true;},
-  'open-specification-source-page':target=>{specificationDrawingReturnTarget=captureDrawingSupportReturnState();specificationSourceTarget={...target,projectId:state().activeProject,returnTarget:'drawings'};show('specification-source');return true;},
+  'open-specification-source-page':target=>{specificationDrawingReturnTarget=captureDrawingSupportReturnState();invalidateSpecificationSourceTarget();sourceNavigationTarget=null;specificationSourceTarget=createSpecificationSourceTarget(target,{projectId:state().activeProject,returnTarget:'drawings'});show('specification-source');return true;},
   'return-to-drawing':()=>restoreDrawingSupportReturnState(),
   'open-coverage-review':()=>{drawingCoverageReviewMode=true;return renderDrawingWorkspace(experience==='mission-control'?'mission-control':'professional');},
   'close-coverage-review':()=>{drawingCoverageReviewMode=false;return renderDrawingWorkspace(experience==='mission-control'?'mission-control':'professional');}
@@ -2184,6 +2185,10 @@ const chiefDrawingThumbnailRenderCache = new Map();
 const pageRequirementState = new Map();
 const constructionIntelligenceScroll = { page: 0, object: 0 };
 let specificationSourceRequestId = 0;
+function invalidateSpecificationSourceTarget({ clearTarget = false } = {}) {
+  specificationSourceRequestId += 1;
+  if (clearTarget) specificationSourceTarget = null;
+}
 const RenderState = Object.freeze({
   IDLE: 'IDLE',
   LOADING_DOCUMENT: 'LOADING_DOCUMENT',
@@ -3388,7 +3393,10 @@ const titles = {
 function show(name) {
   const preserveDrawingForSpecification = Boolean(specificationDrawingReturnTarget) && ['knowledge', 'specification-source'].includes(name);
   if (name !== 'drawings' && !preserveDrawingForSpecification) releaseDrawingSource();
-  if (name !== 'specification-source') void specificationSourceViewer.close('workspace-changed');
+  if (name !== 'specification-source') {
+    invalidateSpecificationSourceTarget({ clearTarget: true });
+    void specificationSourceViewer.close('workspace-changed');
+  }
   if (!['knowledge', 'specification-source'].includes(name)) specificationDrawingReturnTarget = null;
   view = name;
   if (experience === 'professional-workspace') lastProfessionalView = name;
@@ -3643,7 +3651,9 @@ async function openChiefSpecificationViewer(sectionNumber, { returnTarget = 'cha
 
   const { section } = docResult;
   specificationDrawingReturnTarget = preserveDrawingReturnState ? captureDrawingSupportReturnState() : null;
-  specificationSourceTarget = {
+  invalidateSpecificationSourceTarget();
+  sourceNavigationTarget = null;
+  specificationSourceTarget = createSpecificationSourceTarget(section, {
     documentId: section.documentId,
     projectId: section.projectId || state().activeProject || '',
     pageNumber: Number(section.startPdfPage) || 0,
@@ -3651,7 +3661,7 @@ async function openChiefSpecificationViewer(sectionNumber, { returnTarget = 'cha
     sectionTitle: section.sectionTitle || '',
     articleReference: '',
     returnTarget
-  };
+  });
   await switchExperience('professional-workspace', { destination: 'specification-source' });
   console.log('CHIEF_SPEC_DESTINATION_RESOLVED', {
     sectionNumber: section.sectionNumber || sectionNumber,
@@ -13171,7 +13181,9 @@ function renderDocumentMetadata(document, allSections = []) {
   $('[data-specification-view-source-page]')?.addEventListener('click', event => {
     const exactPage = Number(event.currentTarget.dataset.specificationViewSourcePage) || 0;
     if (!exactPage || !specificationResolution?.available || !isSpecificationDocument(document)) return;
-    specificationSourceTarget = {
+    invalidateSpecificationSourceTarget();
+    sourceNavigationTarget = null;
+    specificationSourceTarget = createSpecificationSourceTarget(specificationResolution.section, {
       documentId: document.id,
       projectId: document.projectId || state().activeProject,
       pageNumber: exactPage,
@@ -13179,7 +13191,7 @@ function renderDocumentMetadata(document, allSections = []) {
       sectionTitle: specificationResolution.sectionTitle,
       articleReference: specificationResolution.target?.articleReference || '',
       returnTarget: specificationDrawingReturnTarget ? 'drawings' : 'knowledge'
-    };
+    });
     show('specification-source');
   });
 
@@ -13227,9 +13239,9 @@ async function renderSpecificationSourceEvidence() {
   const canvas = $('#specificationSourceCanvas');
   const returnButton = $('[data-specification-source-return]');
   returnButton?.addEventListener('click', async () => {
-    specificationSourceRequestId += 1;
+    invalidateSpecificationSourceTarget({ clearTarget: true });
     await specificationSourceViewer.close('return');
-    specificationSourceTarget = null;
+    sourceNavigationTarget = null;
     if (specificationDrawingReturnTarget?.target) {
       restoreDrawingSupportReturnState();
     } else if (target.returnTarget === 'chat') {

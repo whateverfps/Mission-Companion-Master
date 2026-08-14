@@ -4,6 +4,7 @@ import {
   actionTargetToSourceTarget,
   answerAnchorId,
   createActionTarget,
+  createSpecificationSourceTarget,
   createSourceTarget,
   deduplicateActionTargets,
   normalizeActionTargetPayload,
@@ -40,7 +41,11 @@ const target = createSourceTarget({
 test('resolves an exact section ID within the exact document', () => {
   const result = resolveSourceTarget(target, context);
   assert.equal(result.status, 'section');
-  assert.equal(result.section, section);
+  assert.equal(result.section.id, section.id);
+  assert.equal(result.section.documentId, section.documentId);
+  assert.equal(result.section.heading, section.heading);
+  assert.equal(result.section.sentence, '');
+  assert.deepEqual(result.section.sentences, []);
 });
 
 test('selects the exact document', () => {
@@ -59,6 +64,105 @@ test('reports a missing section without losing the exact document', () => {
   const result = resolveSourceTarget({ ...target, sectionId: 'removed' }, context);
   assert.equal(result.status, 'missing-section');
   assert.equal(result.document, document);
+});
+
+test('normalizes specification sections even when sentence metadata is absent', () => {
+  const sparseSection = {
+    id: section.id,
+    documentId: document.id,
+    sectionNumber: '09 05 16',
+    sectionTitle: 'Subsurface Preparation for Floor Finishes',
+    startPdfPage: 1320,
+    endPdfPage: 1325,
+    sentence: null,
+    sentences: null,
+    text: null,
+    content: null
+  };
+  const result = resolveSpecificationNavigationTarget(createActionTarget({
+    kind: 'source',
+    projectId: project.id,
+    documentId: document.id,
+    sectionId: sparseSection.id,
+    destination: 'knowledge',
+    returnTarget: 'chief-answer'
+  }), {
+    projects: [project],
+    libraries: [library],
+    documents: [document],
+    sections: [sparseSection]
+  });
+
+  assert.equal(result.status, 'section');
+  assert.equal(result.sectionNumber, '090516');
+  assert.equal(result.sectionTitle, 'Subsurface Preparation for Floor Finishes');
+  assert.equal(result.section?.sentence, '');
+  assert.deepEqual(result.section?.sentences, []);
+  assert.equal(result.section?.text, '');
+  assert.equal(result.section?.content, '');
+  assert.equal(result.section?.startPdfPage, 1320);
+  assert.equal(result.section?.endPdfPage, 1325);
+});
+
+test('creates isolated specification source targets for successive selections', () => {
+  const sourceSection = {
+    id: 'section-a',
+    documentId: document.id,
+    projectId: project.id,
+    sectionNumber: '09 91 00',
+    sectionTitle: 'Interior Finishes',
+    startPdfPage: 1320,
+    sentence: null,
+    sentences: null,
+    text: null,
+    content: null
+  };
+  const first = createSpecificationSourceTarget(sourceSection, {
+    projectId: project.id,
+    documentId: document.id,
+    pageNumber: 1320,
+    returnTarget: 'knowledge'
+  });
+  const second = createSpecificationSourceTarget(
+    {
+      ...sourceSection,
+      id: 'section-b',
+      sectionTitle: 'Interior Finishes - Recheck',
+      startPdfPage: 1321
+    },
+    {
+      projectId: project.id,
+      documentId: document.id,
+      pageNumber: 1321,
+      returnTarget: 'knowledge'
+    }
+  );
+  const third = createSpecificationSourceTarget(
+    {
+      ...sourceSection,
+      id: 'section-c',
+      sectionTitle: 'Interior Finishes - Final',
+      startPdfPage: 1322
+    },
+    {
+      projectId: project.id,
+      documentId: document.id,
+      pageNumber: 1322,
+      returnTarget: 'knowledge'
+    }
+  );
+
+  assert.equal(first.sectionNumber, '09 91 00');
+  assert.equal(first.section?.sentence, '');
+  assert.deepEqual(first.section?.sentences, []);
+  assert.equal(first.section?.text, '');
+  assert.equal(first.section?.content, '');
+  assert.equal(second.sectionNumber, '09 91 00');
+  assert.equal(second.section?.sectionTitle, 'Interior Finishes - Recheck');
+  assert.equal(third.section?.sectionTitle, 'Interior Finishes - Final');
+  assert.notEqual(first.section, second.section);
+  assert.notEqual(second.section, third.section);
+  assert.notEqual(first.sectionTitle, second.sectionTitle);
 });
 
 test('reports a missing document and does not select another document', () => {

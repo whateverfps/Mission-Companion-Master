@@ -57,6 +57,95 @@ test('a second page reuses the same isolated proxy handle', async () => {
   assert.equal(viewer.diagnostics().specificationSourcePage, 11);
 });
 
+test('closing a loaded source page clears stale state before the next source selection', async () => {
+  const { viewer, rendered } = harness();
+  const firstDocument = { ...specification, id: 'spec-first', contentHash: 'spec-first' };
+  const secondDocument = { ...specification, id: 'spec-second', contentHash: 'spec-second' };
+  const thirdDocument = { ...specification, id: 'spec-third', contentHash: 'spec-third' };
+  const firstCanvas = canvas();
+  const secondCanvas = canvas();
+  const thirdCanvas = canvas();
+
+  const first = await viewer.open({
+    document: firstDocument,
+    sourceBlob: new Blob(['first'], { type: 'application/pdf' }),
+    pageNumber: 120,
+    sectionNumber: '09 91 00',
+    sectionTitle: 'Interior Finishes',
+    canvas: firstCanvas
+  });
+  assert.equal(first.ok, true);
+  assert.equal(viewer.diagnostics().specificationSourcePage, 120);
+
+  const closed = await viewer.close('return');
+  assert.equal(closed.specificationSourcePage, null);
+  assert.equal(firstCanvas.width, 0);
+  assert.equal(firstCanvas.height, 0);
+
+  const second = await viewer.open({
+    document: secondDocument,
+    sourceBlob: new Blob(['second'], { type: 'application/pdf' }),
+    pageNumber: 121,
+    sectionNumber: '28 31 00',
+    sectionTitle: 'Fire Protection',
+    canvas: secondCanvas
+  });
+  assert.equal(second.ok, true);
+  assert.equal(viewer.diagnostics().specificationSourcePage, 121);
+
+  const secondClosed = await viewer.close('return');
+  assert.equal(secondClosed.specificationSourcePage, null);
+
+  const third = await viewer.open({
+    document: thirdDocument,
+    sourceBlob: new Blob(['third'], { type: 'application/pdf' }),
+    pageNumber: 122,
+    sectionNumber: '09 91 00',
+    sectionTitle: 'Painting',
+    canvas: thirdCanvas
+  });
+  assert.equal(third.ok, true);
+  assert.equal(viewer.diagnostics().specificationSourcePage, 122);
+  assert.deepEqual(rendered, [120, 121, 122]);
+});
+
+test('reopening the same specification after close rebuilds the viewer from a fresh proxy', async () => {
+  const { viewer, proxies, rendered } = harness();
+  const firstDocument = { ...specification, id: 'spec-reopen', contentHash: 'spec-reopen' };
+  const firstCanvas = canvas();
+  const secondCanvas = canvas();
+
+  const first = await viewer.open({
+    document: firstDocument,
+    sourceBlob: new Blob(['first'], { type: 'application/pdf' }),
+    pageNumber: 210,
+    sectionNumber: '21 13 13',
+    sectionTitle: 'Wet Pipe Sprinkler Systems',
+    canvas: firstCanvas
+  });
+  assert.equal(first.ok, true);
+  assert.equal(proxies.length, 1);
+  assert.equal(viewer.diagnostics().specificationSourcePage, 210);
+
+  const closed = await viewer.close('return');
+  assert.equal(closed.specificationSourcePage, null);
+  assert.equal(closed.specificationPdfProxyActive, false);
+
+  const reopened = await viewer.open({
+    document: firstDocument,
+    sourceBlob: new Blob(['first'], { type: 'application/pdf' }),
+    pageNumber: 211,
+    sectionNumber: '21 13 13',
+    sectionTitle: 'Wet Pipe Sprinkler Systems',
+    canvas: secondCanvas
+  });
+
+  assert.equal(reopened.ok, true);
+  assert.equal(proxies.length, 2);
+  assert.equal(viewer.diagnostics().specificationSourcePage, 211);
+  assert.deepEqual(rendered, [210, 211]);
+});
+
 test('same-page reopen uses the rendered-page cache', async () => {
   const { viewer, rendered } = harness();
   const first = await viewer.open({ document: { ...specification, contentHash: 'spec-v1' }, sourceBlob: new Blob(['pdf'], { type: 'application/pdf' }), pageNumber: 88, canvas: canvas() });

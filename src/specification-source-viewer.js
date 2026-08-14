@@ -30,6 +30,9 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
   let cleanupTimestamp = '';
   let generation = 0;
   let activeRequestKey = '';
+  let activePdfCacheKey = '';
+  let lifecycleSequence = 0;
+  let activeLifecycleId = 0;
 
   const diagnostics = () => ({
     specificationPdfProxyActive: Boolean(proxy),
@@ -42,6 +45,14 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
   });
 
   async function close(reason = 'closed') {
+    const lifecycleId = activeLifecycleId || lifecycleSequence || 0;
+    console.info(`SOURCE EVIDENCE CLOSE #${lifecycleId}`, {
+      reason,
+      target: target ? structuredClone(target) : null,
+      diagnostics: diagnostics(),
+      activeRequestKey,
+      activePdfCacheKey
+    });
     generation += 1;
     activeRequestKey = '';
     try { render?.cancel?.(); } catch {}
@@ -51,8 +62,11 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
     canvas = null;
     try { await proxy?.cleanup?.(); } catch {}
     try { await proxy?.destroy?.(); } catch {}
+    if (activePdfCacheKey) pdfCache.delete(activePdfCacheKey);
     proxy = null;
     target = null;
+    activePdfCacheKey = '';
+    activeLifecycleId = 0;
     cleanupTimestamp = now();
     const state = { ...diagnostics(), reason };
     onDiagnostic(state);
@@ -91,10 +105,24 @@ export function createSpecificationSourceViewer({ openPdf, renderPage, now = () 
     }
     if (generation !== requestGeneration) { return { ok: false, status: 'superseded', diagnostics: diagnostics() }; }
     proxy = cachedProxy;
+    activePdfCacheKey = pdfKey;
+    activeLifecycleId = ++lifecycleSequence;
     if (exactPage > Number(proxy?.numPages || 0)) { await close('page-unavailable'); return { ok: false, status: 'page-unavailable', diagnostics: diagnostics() }; }
     // canvas is already assigned to activeCanvas above
     target = { documentId: text(document.id), pageNumber: exactPage, sectionNumber: text(sectionNumber), sectionTitle: text(sectionTitle), articleReference: text(articleReference), returnTarget: returnTarget ? structuredClone(returnTarget) : null };
     activeRequestKey = renderKey({ documentId: document.id, fingerprint, pageNumber: exactPage, scale: 1.25, rotation: 0 });
+    console.info(`SOURCE EVIDENCE OPEN #${activeLifecycleId}`, {
+      documentId: text(document.id),
+      pageNumber: exactPage,
+      sectionNumber: text(sectionNumber),
+      sectionTitle: text(sectionTitle),
+      articleReference: text(articleReference),
+      requestGeneration,
+      activeRequestKey,
+      activePdfCacheKey,
+      diagnostics: diagnostics(),
+      target: structuredClone(target)
+    });
     const cachedRender = renderCache.get(activeRequestKey) || null;
     if (cachedRender?.snapshot) {
       canvas.width = cachedRender.width;
