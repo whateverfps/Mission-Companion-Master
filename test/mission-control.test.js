@@ -208,10 +208,12 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /data-ws-section="overview"/);
   assert.match(workspace, /data-ws-section="documents"/);
   assert.match(workspace, /data-ws-section="comparisons"/);
+  assert.match(workspace, /data-ws-section="notes"/);
   assert.match(workspace, /data-ws-action="compare-spec"/);
   assert.match(app, /data-ws-checklist-toggle=/);
   assert.match(app, /data-ws-checklist-id=/);
-  assert.match(workspace, /data-ws-note=/);
+  assert.match(workspace, /renderWorkspaceNotesView\(/);
+  assert.match(workspace, /workspaceNotesStore\.list\(/);
   assert.match(app, /data-ws-source-sheet=/);
   assert.match(app, /data-ws-drawing-sheet=/);
   assert.match(app, /data-ws-spec-section=/);
@@ -243,7 +245,9 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(css, /\.mc-ws-comparison-summary\{/);
   assert.match(css, /\.mc-ws-comparison-layout\{/);
   assert.match(css, /\.mc-ws-comparison-field\{/);
-  assert.match(css, /\.mc-ws-notes/);
+  assert.match(css, /\.mc-ws-notes-view/);
+  assert.match(css, /\.mc-ws-notes-layout/);
+  assert.match(css, /\.mc-ws-note-editor/);
   assert.match(css, /\.mc-ws-project-clock/);
   assert.match(css, /\.mc-ws-timeline/);
   assert.match(css, /\.mc-ws-documents/);

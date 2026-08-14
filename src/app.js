@@ -116,6 +116,15 @@ import { buildWorkspaceIssuesModel, issueFilterMatches } from './workspace-issue
 import { buildWorkspaceChecklistModel, checklistFilterMatches } from './workspace-checklist.js';
 import { buildWorkspaceTimelineModel, timelineFilterMatches } from './workspace-timeline.js';
 import {
+  buildWorkspaceNotesEvidenceChoices,
+  buildWorkspaceNotesModel,
+  createWorkspaceNotesStore,
+  workspaceNoteCategoryName,
+  workspaceNoteCategoryOptions,
+  workspaceNoteFilterName,
+  workspaceNoteFilterOptions
+} from './workspace-notes.js';
+import {
   buildWorkspaceComparisonsModel,
   resolveWorkspaceComparisonRightWorkspaceId,
   workspaceComparisonModeLabel,
@@ -292,12 +301,69 @@ function workspaceTimelineStateFor(workspaceId = '') {
 }
 
 function workspaceNotesStateFor(workspaceId = '') {
-  if (!workspaceNotesSessionState.has(workspaceId)) workspaceNotesSessionState.set(workspaceId, '');
-  return workspaceNotesSessionState.get(workspaceId);
+  if (!workspaceNotesSessionState.has(workspaceId)) {
+    workspaceNotesSessionState.set(workspaceId, {
+      filter: 'all',
+      search: '',
+      selectedNoteId: '',
+      mode: 'view',
+      draft: null
+    });
+  }
+  const state = workspaceNotesSessionState.get(workspaceId);
+  if (state.mode !== 'view' && !state.draft) {
+    state.draft = {
+      id: '',
+      projectId: '',
+      workspaceId,
+      category: 'GENERAL',
+      text: '',
+      tagsText: '',
+      pinned: false,
+      sourceLinks: []
+    };
+  }
+  if (state.mode === 'view' && state.draft) state.draft = null;
+  return state;
 }
 
-function setWorkspaceNotesState(workspaceId = '', notes = '') {
-  workspaceNotesSessionState.set(workspaceId, String(notes ?? ''));
+function workspaceNotesDraftFromNote(note = null, workspace = null, projectId = '') {
+  return {
+    id: note?.id || '',
+    projectId: note?.projectId || projectId || '',
+    workspaceId: note?.workspaceId || workspace?.id || '',
+    category: note?.category || 'GENERAL',
+    text: note?.text || '',
+    tagsText: Array.isArray(note?.tags) ? note.tags.join(', ') : '',
+    pinned: Boolean(note?.pinned),
+    sourceLinks: Array.isArray(note?.sourceLinks) ? note.sourceLinks.map(link => ({ ...link, openTarget: link.openTarget ? { ...link.openTarget } : null })) : []
+  };
+}
+
+function workspaceNotesDraftForWorkspace(workspace = null, projectId = '') {
+  return workspaceNotesDraftFromNote(null, workspace, projectId);
+}
+
+function workspaceNoteTimestampLabel(timestamp = '') {
+  if (!timestamp) return 'Unavailable';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return date.toLocaleString();
+}
+
+function normalizeWorkspaceNoteTags(tagsText = '') {
+  return String(tagsText || '').split(',').map(item => item.trim()).filter(Boolean);
+}
+
+function workspaceNotesChoiceByKindAndId(model = {}, kind = '', id = '') {
+  const needleKind = String(kind || '').trim().toLowerCase();
+  const needleId = String(id || '').trim();
+  for (const group of model.evidenceGroups || []) {
+    for (const item of group.items || []) {
+      if (String(item.kind || '').trim().toLowerCase() === needleKind && String(item.id || '').trim() === needleId) return item;
+    }
+  }
+  return null;
 }
 
 function workspaceIssuesStateFor(workspaceId = '') {
@@ -832,6 +898,201 @@ function renderWorkspaceTimelineView(timelineModel = {}, activeWorkspace = null,
     </section>`;
 }
 
+function renderWorkspaceNotesEvidenceLink(link = {}) {
+  const kind = String(link.kind || '').toLowerCase();
+  const label = esc(link.label || link.sheetNumber || link.sectionNumber || link.documentId || link.id || 'Linked evidence');
+  const detail = esc(link.detail || link.relationship || link.title || '');
+  const meta = esc(link.relationship || link.kind || 'Evidence');
+  if (kind === 'drawing') {
+    return `<button type="button" data-ws-source-sheet="${esc(link.sheetNumber || link.id)}" aria-label="Open drawing ${label}"><strong>${label}</strong><span>${detail}</span><small>${meta}</small></button>`;
+  }
+  if (kind === 'specification') {
+    return `<button type="button" data-ws-spec-section="${esc(link.sectionNumber || link.id)}" aria-label="Open specification ${label}"><strong>${label}</strong><span>${detail}</span><small>${meta}</small></button>`;
+  }
+  if (kind === 'document') {
+    return `<button type="button" data-ws-project-document="${esc(link.documentId || link.id)}" aria-label="Open document ${label}"><strong>${label}</strong><span>${detail}</span><small>${meta}</small></button>`;
+  }
+  if (kind === 'issue') {
+    return `<button type="button" data-ws-issue-id="${esc(link.issueId || link.id)}" aria-label="Open issue ${label}"><strong>${label}</strong><span>${detail}</span><small>${meta}</small></button>`;
+  }
+  if (kind === 'checklist') {
+    return `<button type="button" data-ws-checklist-id="${esc(link.checklistId || link.id)}" aria-label="Open checklist item ${label}"><strong>${label}</strong><span>${detail}</span><small>${meta}</small></button>`;
+  }
+  if (kind === 'timeline') {
+    return `<button type="button" data-ws-timeline-id="${esc(link.timelineId || link.id)}" aria-label="Open timeline item ${label}"><strong>${label}</strong><span>${detail}</span><small>${meta}</small></button>`;
+  }
+  return `<div><strong>${label}</strong><span>${detail}</span><small>${meta}</small></div>`;
+}
+
+function renderWorkspaceNotesEvidenceChoice(choice = {}) {
+  const kind = String(choice.kind || '').toLowerCase();
+  const label = esc(choice.label || choice.sheetNumber || choice.sectionNumber || choice.documentId || choice.id || 'Evidence');
+  const detail = esc(choice.detail || choice.relationship || choice.title || '');
+  const meta = esc(choice.relationship || choice.kind || 'Evidence');
+  return `<button type="button" data-ws-note-link-add="${esc(choice.id || '')}" data-ws-note-link-kind="${esc(kind)}" data-ws-note-link-label="${label}" data-ws-note-link-detail="${detail}" data-ws-note-link-document-id="${esc(choice.documentId || '')}" data-ws-note-link-page-id="${esc(choice.pageId || '')}" data-ws-note-link-page-number="${esc(choice.pageNumber || '')}" data-ws-note-link-sheet-number="${esc(choice.sheetNumber || '')}" data-ws-note-link-section-number="${esc(choice.sectionNumber || '')}" aria-label="Link ${label}"><strong>${label}</strong><span>${detail}</span><small>${meta}</small></button>`;
+}
+
+function renderWorkspaceNotesView(notesModel = {}, activeWorkspace = null, projectMilestoneContext = null, notesState = null) {
+  const filters = Array.isArray(notesModel.filters) && notesModel.filters.length ? notesModel.filters : workspaceNoteFilterOptions();
+  const categories = Array.isArray(notesModel.categories) && notesModel.categories.length ? notesModel.categories : workspaceNoteCategoryOptions();
+  const allNotes = Array.isArray(notesModel.notes) ? notesModel.notes : [];
+  const selectedNote = notesState?.mode === 'create' ? null : notesModel.selectedNote || null;
+  const draft = notesState?.mode === 'create' || notesState?.mode === 'edit'
+    ? (notesState?.draft || null)
+    : null;
+  const summary = [
+    { label: 'Total Notes', value: notesModel.counts?.total ?? 0 },
+    { label: 'Pinned', value: notesModel.counts?.pinned ?? 0 },
+    { label: 'Linked', value: notesModel.counts?.linked ?? 0 },
+    { label: 'Archived', value: notesModel.counts?.archived ?? 0 }
+  ];
+  const workspaceInfo = activeWorkspace ? `${activeWorkspace.id} · ${activeWorkspace.room} · ${activeWorkspace.name}` : 'Select a workspace to capture notes.';
+  const noteListMarkup = allNotes.length ? allNotes.map(note => {
+    const selected = note.id === selectedNote?.id;
+    const updatedLabel = workspaceNoteTimestampLabel(note.updatedAt);
+    const preview = note.text ? (note.text.length > 130 ? `${note.text.slice(0, 127)}…` : note.text) : 'No note text recorded.';
+    return `
+      <article class="mc-ws-note-card ${selected ? 'active' : ''} ${note.pinned ? 'pinned' : ''}">
+        <button type="button" class="mc-ws-note-select" data-ws-note-id="${esc(note.id)}">
+          <span>${esc(workspaceNoteCategoryName(note.category))}${note.pinned ? ' · PINNED' : ''}</span>
+          <strong>${esc(preview)}</strong>
+          <small>${esc(note.tags.length ? note.tags.join(' · ') : 'No tags')} · ${note.sourceLinks.length} linked · Updated ${esc(updatedLabel)}</small>
+        </button>
+        <div class="mc-ws-note-actions">
+          <button type="button" data-ws-note-action="pin" data-ws-note-id="${esc(note.id)}">${note.pinned ? 'Unpin' : 'Pin'}</button>
+          <button type="button" data-ws-note-action="archive" data-ws-note-id="${esc(note.id)}">Archive</button>
+        </div>
+      </article>`;
+  }).join('') : `
+    <div class="mc-ws-empty-inline">
+      <b>No notes recorded for this Workspace yet.</b>
+      <span>Use New Note to capture field observations, coordination reminders, decisions, or follow-up items.</span>
+    </div>`;
+  const detailMarkup = notesState?.mode === 'create' || notesState?.mode === 'edit' ? `
+    <form class="mc-ws-note-detail mc-ws-note-editor" data-ws-note-editor="${esc(notesState.mode)}">
+      <header>
+        <div>
+          <span>${notesState.mode === 'create' ? 'NEW NOTE' : 'EDIT NOTE'}</span>
+          <strong>${esc(draft?.id ? 'Local note' : 'Local Workspace Note')}</strong>
+          <small>${esc(notesModel.localNotesLabel || 'LOCAL WORKSPACE NOTES')}</small>
+        </div>
+        <div class="mc-ws-note-state">
+          <strong>${draft?.pinned ? 'PINNED' : 'LOCAL'}</strong>
+          <span>Client-side only</span>
+        </div>
+      </header>
+      <label class="mc-ws-note-field">Category
+        <select data-ws-note-field="category">
+          ${categories.map(category => `<option value="${esc(category.id)}" ${String(category.id) === String(draft?.category || 'GENERAL') ? 'selected' : ''}>${esc(category.label)}</option>`).join('')}
+        </select>
+      </label>
+      <label class="mc-ws-note-field">Note
+        <textarea rows="7" data-ws-note-field="text" placeholder="Capture a field observation, coordination reminder, decision, or follow-up item.">${esc(draft?.text || '')}</textarea>
+      </label>
+      <label class="mc-ws-note-field">Tags
+        <input type="text" data-ws-note-field="tagsText" value="${esc(draft?.tagsText || '')}" placeholder="OIT, POWER, SCHEDULE">
+      </label>
+      <label class="mc-ws-note-pin"><input type="checkbox" data-ws-note-field="pinned" ${draft?.pinned ? 'checked' : ''}> Pin note</label>
+      <section class="mc-ws-note-links-picker">
+        <header><strong>LINK EVIDENCE</strong><small>Active Workspace only</small></header>
+        ${Array.isArray(notesModel.evidenceGroups) && notesModel.evidenceGroups.length ? notesModel.evidenceGroups.map(group => `
+          <article class="mc-ws-note-link-group">
+            <header><strong>${esc(group.label)}</strong><small>${esc(group.items.length)}</small></header>
+            ${group.items.length ? `<div class="mc-ws-note-link-grid">${group.items.map(choice => renderWorkspaceNotesEvidenceChoice(choice)).join('')}</div>` : '<div class="mc-ws-empty-inline">No evidence available in this category.</div>'}
+          </article>
+        `).join('') : '<div class="mc-ws-empty-inline">No active Workspace evidence is available to link yet.</div>'}
+      </section>
+      <section class="mc-ws-note-linked">
+        <header><strong>LINKED EVIDENCE</strong><small>${esc((draft?.sourceLinks || []).length)}</small></header>
+        ${(draft?.sourceLinks || []).length ? `<div class="mc-ws-note-linked-grid">${draft.sourceLinks.map(link => `${renderWorkspaceNotesEvidenceLink(link)}<button type="button" class="mc-ws-note-link-remove" data-ws-note-link-remove="${esc(link.kind || '')}:${esc(link.id || '')}" aria-label="Remove ${esc(link.label || link.id || 'linked evidence')}">×</button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked evidence has been added to this note yet.</div>'}
+      </section>
+      <div class="mc-ws-note-actions">
+        <button type="button" data-ws-note-action="save">${notesState?.mode === 'create' ? 'Save Note' : 'Save Changes'}</button>
+        <button type="button" class="subtle" data-ws-note-action="cancel">Cancel</button>
+      </div>
+    </form>` : selectedNote ? `
+    <section class="mc-ws-note-detail" aria-label="Selected note">
+      <header>
+        <div>
+          <span>${esc(workspaceNoteCategoryName(selectedNote.category))}</span>
+          <strong>${esc(selectedNote.pinned ? 'Pinned workspace note' : 'Workspace note')}</strong>
+          <small>${esc(notesModel.localNotesLabel || 'LOCAL WORKSPACE NOTES')}</small>
+        </div>
+        <div class="mc-ws-note-state ${selectedNote.pinned ? 'pinned' : 'local'}">
+          <strong>${selectedNote.pinned ? 'PINNED' : 'LOCAL'}</strong>
+          <span>${selectedNote.sourceLinks.length} linked</span>
+        </div>
+      </header>
+      <p class="mc-ws-note-body">${esc(selectedNote.text || 'No note text recorded.')}</p>
+      <div class="mc-ws-note-meta">
+        <article><strong>Updated</strong><span>${esc(workspaceNoteTimestampLabel(selectedNote.updatedAt))}</span></article>
+        <article><strong>Created</strong><span>${esc(workspaceNoteTimestampLabel(selectedNote.createdAt))}</span></article>
+        <article><strong>Tags</strong><span>${esc(selectedNote.tags.length ? selectedNote.tags.join(' · ') : 'None')}</span></article>
+        <article><strong>Linked Evidence</strong><span>${esc(String(selectedNote.sourceLinks.length))}</span></article>
+      </div>
+      <section class="mc-ws-note-linked">
+        <header><strong>LINKED EVIDENCE</strong><small>${esc(selectedNote.sourceLinks.length)}</small></header>
+        ${selectedNote.sourceLinks.length ? `<div class="mc-ws-note-linked-grid">${selectedNote.sourceLinks.map(link => renderWorkspaceNotesEvidenceLink(link)).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked evidence has been added to this note yet.</div>'}
+      </section>
+      <div class="mc-ws-note-actions">
+        <button type="button" data-ws-note-action="edit" data-ws-note-id="${esc(selectedNote.id)}">Edit</button>
+        <button type="button" data-ws-note-action="pin" data-ws-note-id="${esc(selectedNote.id)}">${selectedNote.pinned ? 'Unpin' : 'Pin'}</button>
+        <button type="button" data-ws-note-action="archive" data-ws-note-id="${esc(selectedNote.id)}">Archive</button>
+      </div>
+    </section>` : `
+    <section class="mc-ws-note-detail" aria-label="Selected note">
+      <header>
+        <div>
+          <span>NO NOTES</span>
+          <strong>${esc(notesModel.localNotesLabel || 'LOCAL WORKSPACE NOTES')}</strong>
+          <small>${esc(workspaceInfo)}</small>
+        </div>
+        <div class="mc-ws-note-state">
+          <strong>EMPTY</strong>
+          <span>Use New Note to begin</span>
+        </div>
+      </header>
+      <div class="mc-ws-empty-inline">
+        <b>No notes recorded for this Workspace yet.</b>
+        <span>Use New Note to capture field observations, coordination reminders, decisions, or follow-up items.</span>
+      </div>
+      <div class="mc-ws-note-actions">
+        <button type="button" data-ws-note-action="new">+ New Note</button>
+      </div>
+    </section>`;
+  return `
+    <section class="mc-ws-notes-view" aria-label="Workspace Notes">
+      <header class="mc-ws-notes-header">
+        <div>
+          <span class="mc-ws-back">← Bedford Workspaces</span>
+          <h1 id="missionControlTitle" tabindex="-1">Notes</h1>
+          <p>${esc(activeWorkspace ? workspaceInfo : 'Select a workspace to capture local project notes.')}</p>
+          <small>${esc(notesModel.localNotesLabel || 'LOCAL WORKSPACE NOTES')}</small>
+        </div>
+        <div class="mc-ws-notes-summary">
+          ${summary.map(item => `<article><span>${esc(item.label)}</span><strong>${esc(item.value)}</strong></article>`).join('')}
+        </div>
+      </header>
+      <div class="mc-ws-notes-toolbar">
+        <button type="button" class="mc-ws-note-new" data-ws-note-action="new">+ New Note</button>
+        <div class="mc-ws-notes-filters" role="tablist" aria-label="Workspace note filters">
+          ${filters.map(filter => `<button type="button" class="${String(filter.id) === String(notesModel.filter || 'all') ? 'active' : ''}" data-ws-note-filter="${esc(filter.id)}">${esc(filter.label)}${filter.id === 'linked' ? ` <small>${esc(notesModel.counts.linked || 0)}</small>` : ''}</button>`).join('')}
+        </div>
+        <label class="mc-ws-notes-search">Search
+          <input type="search" data-ws-note-search value="${esc(notesModel.search || '')}" placeholder="Search notes, tags, or categories">
+        </label>
+      </div>
+      <div class="mc-ws-notes-layout">
+        <section class="mc-ws-notes-list-shell" aria-label="Workspace notes list">
+          ${allNotes.length ? `<div class="mc-ws-notes-list">${noteListMarkup}</div>` : `<div class="mc-ws-empty-inline">${esc(notesModel.emptyState || 'No notes recorded for this Workspace yet.')}</div>`}
+        </section>
+        <aside class="mc-ws-notes-detail-shell" aria-label="Workspace note detail">
+          ${detailMarkup}
+        </aside>
+      </div>
+    </section>`;
+}
+
 function renderWorkspaceComparisonCountCard(label, value, detail = '', tone = 'neutral') {
   return `<article class="mc-ws-comparison-kpi ${esc(tone)}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></article>`;
 }
@@ -1146,6 +1407,7 @@ const workspaceComparisonsSessionState = {
   selectedDimensionId: 'identity',
   selectedRequirementId: ''
 };
+const workspaceNotesStore = createWorkspaceNotesStore({ storage: globalThis.localStorage, persistence: engine.workspaceNotesPersistence() });
 let previousUserProjectId = null;
 let selectedDoc = null;
 let selectedKnowledgeSection = 'all';
@@ -5716,13 +5978,32 @@ async function renderMissionControlWorkspace() {
   const checklistApplicableCount = checklistModel.counts?.applicableItems ?? checklistItems.length;
   const checklistBlockedCount = checklistModel.counts?.blocked ?? checklistItems.filter(item => item.status === 'BLOCKED').length;
   const checklistUnknownCount = checklistModel.counts?.unknown ?? checklistItems.filter(item => item.status === 'UNKNOWN' || item.status === 'NOT_VERIFIED').length;
-  const notesValue = workspaceNotesStateFor(activeWorkspace?.id || '');
   const milestoneTimeline = timelineModel.overviewItems || projectMilestoneContext?.timeline || [];
   const milestoneNextSteps = projectMilestoneContext?.nextSteps || [];
   const combinedNextSteps = [...milestoneNextSteps, ...(activeWorkspace?.nextSteps || [])];
   const compactNextSteps = combinedNextSteps.slice(0, 5);
   const remainingNextSteps = Math.max(0, combinedNextSteps.length - compactNextSteps.length);
   const documentsModel = buildWorkspaceDocumentsModel({ workspace: activeWorkspace, projectMilestoneContext });
+  const notesState = workspaceNotesStateFor(activeWorkspace?.id || '');
+  await workspaceNotesStore.load(state().activeProject);
+  const notesModel = buildWorkspaceNotesModel({
+    projectId: state().activeProject,
+    workspace: activeWorkspace,
+    documentsModel,
+    issuesModel,
+    checklistModel,
+    timelineModel,
+    notes: workspaceNotesStore.list({ projectId: state().activeProject, workspaceId: activeWorkspace?.id || '' }),
+    filter: notesState.filter,
+    search: notesState.search,
+    selectedNoteId: notesState.selectedNoteId
+  });
+  if (notesState.filter !== notesModel.filter) notesState.filter = notesModel.filter || 'all';
+  if (notesState.selectedNoteId !== notesModel.selectedNoteId) notesState.selectedNoteId = notesModel.selectedNoteId || '';
+  if (notesState.mode === 'view') notesState.draft = null;
+  if ((notesState.mode === 'create' || notesState.mode === 'edit') && !notesState.draft) {
+    notesState.draft = workspaceNotesDraftForWorkspace(activeWorkspace, state().activeProject);
+  }
   const issuesSummaryItems = issuesModel.compactIssues.length ? issuesModel.compactIssues : issuesModel.issues.slice(0, 3);
   const checklistSummaryItems = (checklistModel.overviewItems.length ? checklistModel.overviewItems : checklistItems.slice(0, 3)).map(item => ({
     ...item,
@@ -5846,6 +6127,7 @@ async function renderMissionControlWorkspace() {
           </header>
           <div class="mc-ws-empty-inline">${esc(documentsModel.emptyState || 'No Workspace documents available for this record.')}</div>
         </section>`;
+  const notesViewMarkup = renderWorkspaceNotesView(notesModel, activeWorkspace, projectMilestoneContext, notesState);
   $('#missionControlContent').innerHTML = `
     <section class="mc-ws" aria-labelledby="missionControlTitle">
       <aside class="mc-ws-sidebar">
@@ -5873,7 +6155,7 @@ async function renderMissionControlWorkspace() {
           <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(timelineModel.summary?.roomScheduleStatus || projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
         </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
-        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : `
+        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
         <section class="mc-ws-upper">
           <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
@@ -5882,7 +6164,7 @@ async function renderMissionControlWorkspace() {
           <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${issueSummaryMarkup}</ul></article>
           <article id="workspaceComparisonsPanel"><header><strong>TRACEABILITY MAP</strong><button type="button" data-ws-section="comparisons">Focus</button></header><div class="mc-ws-trace">${(activeWorkspace?.traceabilityMap || []).flatMap(item => [`<div><b>Source</b><span>${esc(item.from)}</span></div>`, '<i>→</i>', `<div><b>Requirement</b><span>${esc(item.requirement)}</span></div>`, '<i>→</i>', `<div><b>Impact</b><span>${esc(item.impact)}</span></div>`]).join('')}</div></article>
           <article id="workspaceChecklistPanel"><header><strong>SESSION REVIEW PROGRESS</strong><button type="button" data-ws-section="checklist">Open Full Checklist</button></header><p class="mc-ws-muted">Checklist review is grounded in the current workspace evidence and stays session-only unless an authoritative source says otherwise.</p><div class="mc-ws-progress"><span style="width:${checklistApplicableCount ? Math.min(100, Math.round((checklistDoneCount / checklistApplicableCount) * 100)) : 0}%"></span></div><small>${checklistDoneCount} of ${checklistApplicableCount} reviewed this session · ${checklistBlockedCount} blocked · ${checklistUnknownCount} unknown</small><ul class="mc-ws-check">${checklistSummaryMarkup}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
-          <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.title)}</b><span>${esc(item.date ? item.dateLabel || item.date : item.status || '')}</span><small>${esc(item.description || item.workspaceImpact || item.nextStep || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button><details class="mc-ws-notes" id="workspaceNotesPanel"><summary>Workspace notes</summary><textarea data-ws-note="${esc(activeWorkspace?.id || '')}" rows="4" placeholder="Add temporary workspace notes for this session.">${esc(notesValue)}</textarea></details></article>
+          <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.title)}</b><span>${esc(item.date ? item.dateLabel || item.date : item.status || '')}</span><small>${esc(item.description || item.workspaceImpact || item.nextStep || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button></article>
         </section>`}
       </main>
     </section>`;
@@ -6082,6 +6364,148 @@ $('#missionControlContent').onclick = async event => {
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return;
+  }
+  if (button.dataset.wsNoteAction || button.dataset.wsNoteId || button.dataset.wsNoteFilter || button.dataset.wsNoteLinkAdd || button.dataset.wsNoteLinkRemove) {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const notesState = workspaceNotesStateFor(activeBedfordWorkspaceId || '');
+    const projectId = state().activeProject || BEDFORD_PROJECT_ID;
+    const currentNotes = workspaceNotesStore.list({ projectId, workspaceId: activeWorkspace?.id || '' });
+    const currentNote = currentNotes.find(item => item.id === notesState.selectedNoteId) || currentNotes[0] || null;
+    const commitRefresh = async () => {
+      activeBedfordWorkspaceSection = 'notes';
+      await showMissionControlView('workspace');
+    };
+    if (button.dataset.wsNoteFilter) {
+      notesState.filter = button.dataset.wsNoteFilter;
+      notesState.mode = 'view';
+      notesState.draft = null;
+      notesState.selectedNoteId = currentNotes.find(note => !note.archived && (String(note.category) === String(button.dataset.wsNoteFilter) || String(button.dataset.wsNoteFilter).toLowerCase() === 'all'))?.id || currentNotes[0]?.id || '';
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteId) {
+      notesState.selectedNoteId = button.dataset.wsNoteId;
+      notesState.mode = 'view';
+      notesState.draft = null;
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteAction === 'new') {
+      notesState.mode = 'create';
+      notesState.selectedNoteId = '';
+      notesState.draft = workspaceNotesDraftForWorkspace(activeWorkspace, projectId);
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteAction === 'edit') {
+      const note = workspaceNotesStore.get(button.dataset.wsNoteId) || currentNote;
+      if (!note) return;
+      notesState.mode = 'edit';
+      notesState.selectedNoteId = note.id;
+      notesState.draft = workspaceNotesDraftFromNote(note, activeWorkspace, projectId);
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteAction === 'pin') {
+      if (notesState.mode === 'create' || notesState.mode === 'edit') {
+        if (!notesState.draft) notesState.draft = workspaceNotesDraftForWorkspace(activeWorkspace, projectId);
+        notesState.draft.pinned = !notesState.draft.pinned;
+      } else if (button.dataset.wsNoteId) {
+        workspaceNotesStore.togglePin(button.dataset.wsNoteId);
+        notesState.selectedNoteId = button.dataset.wsNoteId;
+      } else if (currentNote) {
+        workspaceNotesStore.togglePin(currentNote.id);
+        notesState.selectedNoteId = currentNote.id;
+      }
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteAction === 'archive') {
+      const noteId = button.dataset.wsNoteId || currentNote?.id || '';
+      if (!noteId) return;
+      workspaceNotesStore.archive(noteId, true);
+      notesState.mode = 'view';
+      notesState.draft = null;
+      const remaining = workspaceNotesStore.list({ projectId, workspaceId: activeWorkspace?.id || '' });
+      notesState.selectedNoteId = remaining.find(note => note.id !== noteId)?.id || '';
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteAction === 'cancel') {
+      notesState.mode = 'view';
+      notesState.draft = null;
+      if (!notesState.selectedNoteId) notesState.selectedNoteId = currentNotes[0]?.id || '';
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteAction === 'save') {
+      const draft = notesState.draft || workspaceNotesDraftForWorkspace(activeWorkspace, projectId);
+      const payload = {
+        id: draft.id || '',
+        projectId,
+        workspaceId: activeWorkspace?.id || '',
+        category: draft.category || 'GENERAL',
+        text: draft.text || '',
+        tags: normalizeWorkspaceNoteTags(draft.tagsText || ''),
+        pinned: Boolean(draft.pinned),
+        sourceLinks: Array.isArray(draft.sourceLinks) ? draft.sourceLinks.map(link => ({ ...link, openTarget: link.openTarget ? { ...link.openTarget } : null })) : []
+      };
+      const saved = draft.id ? workspaceNotesStore.update(draft.id, payload) : workspaceNotesStore.create(payload);
+      notesState.mode = 'view';
+      notesState.draft = null;
+      notesState.selectedNoteId = saved?.id || currentNotes[0]?.id || '';
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteLinkAdd) {
+      if (!(notesState.mode === 'create' || notesState.mode === 'edit')) return;
+      const draft = notesState.draft || workspaceNotesDraftForWorkspace(activeWorkspace, projectId);
+      const kind = String(button.dataset.wsNoteLinkKind || '').trim().toLowerCase();
+      const id = String(button.dataset.wsNoteLinkAdd || '').trim();
+      const duplicateKey = `${kind}:${id}`;
+      const sourceLinks = Array.isArray(draft.sourceLinks) ? draft.sourceLinks : [];
+      if (sourceLinks.some(link => `${String(link.kind || '').toLowerCase()}:${String(link.id || '')}` === duplicateKey)) return;
+      const link = {
+        kind,
+        id,
+        label: button.dataset.wsNoteLinkLabel || id,
+        detail: button.dataset.wsNoteLinkDetail || '',
+        projectId,
+        workspaceId: activeWorkspace?.id || '',
+        documentId: button.dataset.wsNoteLinkDocumentId || '',
+        pageId: button.dataset.wsNoteLinkPageId || '',
+        pageNumber: Number(button.dataset.wsNoteLinkPageNumber) || 0,
+        sheetNumber: button.dataset.wsNoteLinkSheetNumber || '',
+        sectionNumber: button.dataset.wsNoteLinkSectionNumber || '',
+        openTarget: kind === 'drawing' && button.dataset.wsNoteLinkDocumentId
+          ? {
+            kind: 'drawing',
+            documentId: button.dataset.wsNoteLinkDocumentId || '',
+            sheetId: button.dataset.wsNoteLinkSheetNumber || id,
+            pageId: button.dataset.wsNoteLinkPageId || '',
+            pageNumber: Number(button.dataset.wsNoteLinkPageNumber) || 0,
+            sheetNumber: button.dataset.wsNoteLinkSheetNumber || id
+          }
+          : kind === 'specification'
+            ? { kind: 'specification', sectionNumber: button.dataset.wsNoteLinkSectionNumber || id }
+            : kind === 'document'
+              ? { kind: 'source', documentId: button.dataset.wsNoteLinkDocumentId || id, destination: 'sources' }
+              : null
+      };
+      draft.sourceLinks = [...sourceLinks, link];
+      notesState.draft = draft;
+      await commitRefresh();
+      return;
+    }
+    if (button.dataset.wsNoteLinkRemove) {
+      if (!(notesState.mode === 'create' || notesState.mode === 'edit')) return;
+      const draft = notesState.draft || workspaceNotesDraftForWorkspace(activeWorkspace, projectId);
+      draft.sourceLinks = list(draft.sourceLinks).filter(link => `${String(link.kind || '').toLowerCase()}:${String(link.id || '')}` !== String(button.dataset.wsNoteLinkRemove || ''));
+      notesState.draft = draft;
+      await commitRefresh();
+      return;
+    }
   }
   if (button.dataset.wsSheet) {
     activeBedfordWorkspaceSheetNumber = button.dataset.wsSheet;
@@ -6750,9 +7174,21 @@ $('#missionControlContent').addEventListener('change', event => {
 });
 $('#missionControlContent').addEventListener('input', event => {
   const target = event.target;
-  if (!(target instanceof HTMLTextAreaElement)) return;
-  if (!target.matches('textarea[data-ws-note]')) return;
-  setWorkspaceNotesState(target.dataset.wsNote || '', target.value);
+  if (target.matches?.('input[data-ws-note-search]')) {
+    const notesState = workspaceNotesStateFor(activeBedfordWorkspaceId || '');
+    notesState.search = target.value || '';
+    return;
+  }
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+  if (!target.matches('input[data-ws-note-field], textarea[data-ws-note-field], select[data-ws-note-field]')) return;
+  const notesState = workspaceNotesStateFor(activeBedfordWorkspaceId || '');
+  if (!notesState.draft) notesState.draft = workspaceNotesDraftForWorkspace(buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace, state().activeProject);
+  const draft = notesState.draft;
+  if (target.dataset.wsNoteField === 'pinned' && target instanceof HTMLInputElement) draft.pinned = target.checked;
+  else if (target.dataset.wsNoteField === 'category') draft.category = target.value || 'GENERAL';
+  else if (target.dataset.wsNoteField === 'text') draft.text = target.value || '';
+  else if (target.dataset.wsNoteField === 'tagsText') draft.tagsText = target.value || '';
+  notesState.draft = draft;
 });
 
 app.addEventListener('click', event => {

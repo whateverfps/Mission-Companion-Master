@@ -1097,6 +1097,14 @@ export const engine = {
     };
   },
 
+  workspaceNotesPersistence() {
+    return {
+      loadNotes: async (projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === 'workspace-note' && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record)),
+      putNote: async record => putMany('stateRecords', [{ id: `workspace-note:${record.projectId}:${record.workspaceId}:${record.id}`, kind: 'workspace-note', projectId: record.projectId, workspaceId: record.workspaceId, noteCategory: record.category, record: structuredClone(record), updatedAt: record.updatedAt }]),
+      deleteNote: async (noteId, projectId = state.activeProject, workspaceId = '') => tx('stateRecords', 'readwrite', store => store.delete(`workspace-note:${projectId}:${workspaceId}:${noteId}`))
+    };
+  },
+
   constructionGraphPersistence() {
     const records = async (kind, projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === kind && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record));
     return {
