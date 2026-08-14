@@ -247,6 +247,40 @@ function buildApplicableSpecifications(sourceSheets) {
   return records;
 }
 
+function normalizeDrawingLinkRecords(drawingLinks = []) {
+  return list(drawingLinks).filter(link => link && typeof link === 'object');
+}
+
+function buildApplicableSpecificationsForSheet(sourceSheets, selectedSheetNumber = '', drawingLinks = []) {
+  const sheet = text(selectedSheetNumber).toUpperCase();
+  if (sheet) {
+    const selectedLinks = normalizeDrawingLinkRecords(drawingLinks).filter(link => text(link.sheetNumber).toUpperCase() === sheet);
+    if (selectedLinks.length) {
+      const seen = new Set();
+      const records = [];
+      for (const link of selectedLinks) {
+        const sectionNumber = text(link.sectionNumber);
+        if (!sectionNumber || seen.has(sectionNumber)) continue;
+        seen.add(sectionNumber);
+        records.push({
+          sectionNumber,
+          sectionTitle: text(link.sectionTitle),
+          relationshipType: text(link.relationshipType || link.status || 'RELATED'),
+          status: text(link.status || link.relationshipType || 'RELATED'),
+          origin: text(link.origin || ''),
+          drawingPageId: text(link.drawingPageId || ''),
+          sheetNumber: sheet,
+          evidenceText: text(link.evidenceText || link.reason),
+          confidence: Number(link.confidence) || 0
+        });
+      }
+      return records;
+    }
+    return [];
+  }
+  return buildApplicableSpecifications(sourceSheets);
+}
+
 function buildIssues({ room, name, type }) {
   if (text(type) === 'EXISTING_TRANSITION') {
     return [
@@ -480,13 +514,52 @@ export function getBedfordWorkspaceDefaultId() {
   return WORKSPACE_REGISTRY[0]?.id || '';
 }
 
-export function buildBedfordWorkspaceModel(id = '') {
+export function buildBedfordWorkspaceModel(id = '', { selectedSheetNumber = '', drawingLinks = [] } = {}) {
   const activeRecord = getBedfordWorkspaceRecord(id) || WORKSPACE_REGISTRY[0] || null;
+  const applicableSpecifications = activeRecord
+    ? (text(selectedSheetNumber)
+      ? buildApplicableSpecificationsForSheet(activeRecord.sourceSheets, selectedSheetNumber, drawingLinks)
+      : list(activeRecord.applicableSpecifications).map(item => ({ ...item })))
+    : [];
   return {
     activeWorkspaceId: activeRecord?.id || '',
-    activeWorkspace: activeRecord,
+    activeWorkspace: activeRecord ? {
+      ...activeRecord,
+      applicableSpecifications,
+      chiefInsight: buildChiefInsight({
+        id: activeRecord.id,
+        room: activeRecord.room,
+        name: activeRecord.name,
+        type: activeRecord.type,
+        level: activeRecord.level,
+        disciplineFocus: activeRecord.disciplineFocus,
+        sourceSheets: activeRecord.sourceSheets,
+        relatedSheets: activeRecord.relatedSheets,
+        applicableSpecifications,
+        relatedRooms: activeRecord.relatedRooms,
+        pmisBuilding: activeRecord.pmisBuilding
+      }) || activeRecord.chiefInsight,
+      traceabilityMap: buildTraceabilityMap({
+        sourceSheets: activeRecord.sourceSheets,
+        applicableSpecifications,
+        name: activeRecord.name,
+        level: activeRecord.level,
+        disciplineFocus: activeRecord.disciplineFocus
+      }),
+      nextSteps: buildNextSteps({
+        sourceSheets: activeRecord.sourceSheets,
+        applicableSpecifications,
+        relatedRooms: activeRecord.relatedRooms,
+        pmisBuilding: activeRecord.pmisBuilding,
+        room: activeRecord.room,
+        name: activeRecord.name
+      })
+    } : null,
     workspaces: listBedfordWorkspaceRecords(),
-    projectMilestoneContext: buildBedfordProjectMilestoneContext({ workspace: activeRecord })
+    projectMilestoneContext: buildBedfordProjectMilestoneContext({ workspace: activeRecord ? {
+      ...activeRecord,
+      applicableSpecifications
+    } : null })
   };
 }
 

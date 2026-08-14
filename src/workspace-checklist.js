@@ -48,27 +48,29 @@ function itemId(parts = []) {
 }
 
 function sourceSheetRef(sheet = {}, relationship = 'Source') {
-  const sheetNumber = text(sheet.sheetNumber);
+  const source = sheet && typeof sheet === 'object' ? sheet : {};
+  const sheetNumber = text(source.sheetNumber);
   return sheetNumber ? {
     kind: 'drawing',
     relationship,
     sheetNumber,
-    sheetTitle: text(sheet.sheetTitle),
-    discipline: text(sheet.discipline),
-    level: text(sheet.level),
-    documentId: text(sheet.documentId),
-    pageId: text(sheet.pageId),
-    pageNumber: Number(sheet.pdfPageNumber) || 0
+    sheetTitle: text(source.sheetTitle),
+    discipline: text(source.discipline),
+    level: text(source.level),
+    documentId: text(source.documentId),
+    pageId: text(source.pageId),
+    pageNumber: Number(source.pdfPageNumber) || 0
   } : null;
 }
 
 function specRef(spec = {}, relationship = 'Applicable') {
-  const sectionNumber = text(spec.sectionNumber);
+  const source = spec && typeof spec === 'object' ? spec : {};
+  const sectionNumber = text(source.sectionNumber);
   return sectionNumber ? {
     kind: 'specification',
     relationship,
     sectionNumber,
-    sectionTitle: text(spec.sectionTitle),
+    sectionTitle: text(source.sectionTitle),
     sourceLabel: 'Bedford IFC specification index'
   } : null;
 }
@@ -195,10 +197,10 @@ function buildPrimaryWorkspaceChecklist({
   const building = normalizeBuildingKey(workspace?.building);
   const level = text(workspace?.level || 'Workspace');
   const roomType = text(workspace?.type);
-  const sourceSheets = list(workspace?.sourceSheets);
-  const relatedSheets = list(workspace?.relatedSheets);
-  const applicableSpecifications = list(workspace?.applicableSpecifications);
-  const relatedRooms = list(workspace?.relatedRooms);
+  const sourceSheets = list(workspace?.sourceSheets).filter(item => item && typeof item === 'object');
+  const relatedSheets = list(workspace?.relatedSheets).filter(item => item && typeof item === 'object');
+  const applicableSpecifications = list(workspace?.applicableSpecifications).filter(item => item && typeof item === 'object');
+  const relatedRooms = list(workspace?.relatedRooms).filter(Boolean);
   const issueList = list(issuesModel?.issues);
   const scheduleIssue = issueList.find(issue => /awaiting contractor schedule/i.test(text(issue.title))) || null;
   const appIssue = issueList.find(issue => /app date pending/i.test(text(issue.title))) || null;

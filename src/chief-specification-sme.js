@@ -127,6 +127,7 @@ export function createChiefSpecificationSME({
     const number = normalizeSectionNumber(sectionNumber);
     const sheets = new Map();
     for (const link of list(drawingLinksOverride).length ? list(drawingLinksOverride) : projectDrawingLinks()) {
+      if (!link || typeof link !== 'object') continue;
       if (normalizeSectionNumber(link.sectionNumber) !== number) continue;
       const sheet = sheetForPageId(link.drawingPageId);
       const sheetNumber = text(sheet?.sheetNumber) || text(link.sheetNumber) || text(link.drawingPageId);
@@ -160,6 +161,7 @@ export function createChiefSpecificationSME({
     const sheet = normalizeSheetNumber(sheetNumber);
     const result = [];
     for (const link of list(drawingLinksOverride).length ? list(drawingLinksOverride) : projectDrawingLinks()) {
+      if (!link || typeof link !== 'object') continue;
       const page = sheetForPageId(link.drawingPageId);
       if (normalizeSheetNumber(page?.sheetNumber || link.sheetNumber) !== sheet) continue;
       result.push({

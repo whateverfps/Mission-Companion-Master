@@ -333,8 +333,15 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /function workspaceSelectableSheets\(workspace = null\)/);
   assert.match(app, /const selectableSheets = workspaceSelectableSheets\(workspace\);/);
   assert.match(app, /const previewSheet = selectableSheets\.find\(sheet => sheet\.sheetNumber === activeBedfordWorkspaceSheetNumber\)\s*\|\|\s*selectableSheets\[0\]\s*\|\|\s*null;/);
+  assert.match(app, /const workspaceContextModel = previewSheet\?\.sheetNumber/);
+  assert.match(app, /selectedSheetNumber: previewSheet\.sheetNumber/);
+  assert.match(app, /drawingLinks: bedfordRelationshipLinksForSheet\(previewSheet\.sheetNumber\)/);
+  assert.match(app, /view=Fit/);
+  assert.match(app, /: workspaceModel;/);
+  assert.match(app, /const activeWorkspace = workspaceContextModel\.activeWorkspace \|\| workspaceSeed \|\| null;/);
   assert.doesNotMatch(workspace, /mc-ws-sheet-picker/);
   assert.doesNotMatch(workspace, /ACTIVE ROOM/);
+  assert.doesNotMatch(workspace, /MARKUPS & ITEMS/);
   assert.match(app, /if \(button\.dataset\.wsSheet\) \{\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsSheet;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
   assert.match(app, /if \(button\.dataset\.wsDrawingSheet\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, button\.dataset\.wsDrawingSheet\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsDrawingSheet;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
   assert.match(app, /if \(button\.dataset\.wsAction === 'drawings'\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, activeBedfordWorkspaceSheetNumber\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('plans'\);/);
@@ -368,7 +375,7 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(css, /\.mc-ws-trades\{[^}]*overflow:visible\}/);
   assert.match(css, /\.mc-ws-sheet-group\{[^}]*overflow:visible\}/);
   assert.match(css, /\.mc-ws-sheet-grid\{[^}]*overflow:visible\}/);
-  assert.match(css, /\.mc-ws-pdf::before\{/);
+  assert.doesNotMatch(css, /#missionControlContent \.mc-ws-pdf::before/);
   assert.match(css, /\.mc-ws-checklist-layout\{/);
   assert.match(css, /\.mc-ws-timeline-view\{/);
   assert.match(css, /\.mc-ws-timeline-layout\{/);
@@ -544,6 +551,24 @@ test('Phase 24A.2 exposes a full-scale stable viewer and verified construction o
   assert.match(css, /\.mc-drawing-layout\.drawing-expanded/);
   assert.match(css, /\.mc-drawing-object-overlay\.confirmed/);
   assert.doesNotMatch(css, /\.mc-drawing-stage\{[^}]*background:\s*(?:white|#fff(?:fff)?)/i);
+});
+
+test('Mission Control drawing workspace exposes a workspace-local fullscreen mode without changing the main viewer', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
+  const renderer = app.slice(app.indexOf("async function renderDrawingWorkspaceWithProviders"), app.indexOf('async function renderMissionControlDashboard'));
+  assert.match(app, /let workspaceDrawingFullscreen = false;/);
+  assert.match(app, /captureWorkspaceDrawingFullscreenScrollState/);
+  assert.match(app, /restoreWorkspaceDrawingFullscreenScrollState/);
+  assert.match(app, /host\.classList\.toggle\('workspace-fullscreen', shell === 'mission-control' && workspaceDrawingFullscreen\)/);
+  assert.match(renderer, /shell === 'mission-control' \? `<button data-drawing-fullscreen aria-pressed="\$\{workspaceDrawingFullscreen \? 'true' : 'false'\}">/);
+  assert.match(renderer, /data-drawing-fullscreen/);
+  assert.match(app, /event\.key !== 'Escape' \|\| experience !== 'mission-control' \|\| missionControlView !== 'plans' \|\| !workspaceDrawingFullscreen/);
+  assert.match(css, /\.mc-drawing-workspace\.workspace-fullscreen/);
+  assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-layout/);
+  assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-index,#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-evidence/);
+  assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-viewer/);
+  assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-stage/);
 });
 
 test('Phase 24B makes Chief construction-first with one synchronized drawing state', () => {

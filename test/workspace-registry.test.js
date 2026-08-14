@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildBedfordWorkspaceModel,
   buildChiefInsight,
@@ -11,6 +14,21 @@ import {
   buildBedfordProjectMilestoneContext,
   BEDFORD_NTP_SOURCE_DOCUMENT
 } from '../src/workspace-milestones.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(__dirname, '..');
+const readJson = relativePath => JSON.parse(fs.readFileSync(path.join(root, relativePath), 'utf8'));
+const relationshipData = readJson('project-data/bedford/relationships/building-61-spec-links.json');
+
+function flattenRelationshipLinks(data) {
+  return Object.entries(data.results || {}).flatMap(([sheetNumber, sheetData]) =>
+    (Array.isArray(sheetData?.links) ? sheetData.links : []).map(link => ({
+      ...link,
+      sheetNumber,
+      projectId: 'bedford'
+    }))
+  );
+}
 
 test('Bedford workspace registry exposes the four plan-derived Building 61 records', () => {
   const records = listBedfordWorkspaceRecords();
@@ -40,6 +58,23 @@ test('Bedford workspace registry preserves the 137 transition room grounding', (
   assert.equal(room137.sourceSheets[1].sheetNumber, '61T-501');
   assert.ok(room137.relatedRooms.includes('B13'));
   assert.ok(room137.applicableSpecifications.some(item => item.sectionNumber === '27 15 00'));
+});
+
+test('Bedford workspace registry follows the selected sheet when resolving applicable specifications', () => {
+  const drawingLinks = flattenRelationshipLinks(relationshipData);
+  const telecom = buildBedfordWorkspaceModel('B13', { selectedSheetNumber: '61T-100', drawingLinks }).activeWorkspace;
+  const electrical = buildBedfordWorkspaceModel('B13', { selectedSheetNumber: '61E-100', drawingLinks: [null, ...drawingLinks] }).activeWorkspace;
+  const mechanical = buildBedfordWorkspaceModel('B13', { selectedSheetNumber: '61M-101', drawingLinks }).activeWorkspace;
+  const unmapped = buildBedfordWorkspaceModel('B13', { selectedSheetNumber: '61T-999', drawingLinks: [null] }).activeWorkspace;
+
+  assert.deepEqual(telecom?.applicableSpecifications.map(item => item.sectionNumber), ['27 10 00', '27 05 11', '27 05 26', '27 05 33', '27 15 00', '28 23 00']);
+  assert.equal(telecom?.applicableSpecifications[0]?.sheetNumber, '61T-100');
+  assert.deepEqual(electrical?.applicableSpecifications.map(item => item.sectionNumber), ['26 26 00', '26 51 00', '26 56 00', '26 05 11', '26 24 16', '26 09 23', '26 27 26']);
+  assert.equal(electrical?.applicableSpecifications[0]?.sheetNumber, '61E-100');
+  assert.ok(mechanical?.applicableSpecifications.some(item => item.sectionNumber === '23 05 93'));
+  assert.equal(mechanical?.applicableSpecifications[0]?.sheetNumber, '61M-101');
+  assert.match(electrical?.chiefInsight || '', /7 applicable specification sections/i);
+  assert.deepEqual(unmapped?.applicableSpecifications, []);
 });
 
 test('Bedford workspace model keeps the active record and returns all records', () => {

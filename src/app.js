@@ -1517,6 +1517,12 @@ let chiefHistoryVisible = false;
 let activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
 let activeBedfordWorkspaceSheetNumber = '';
 let activeBedfordWorkspaceSection = 'overview';
+let workspaceDrawingFullscreen = false;
+const workspaceDrawingFullscreenScrollState = {
+  windowScrollY: 0,
+  sidebarScrollTop: 0,
+  evidenceScrollTop: 0
+};
 const workspaceTradesSessionState = {
   expandedTradesWorkspaceId: '',
   expandedWorkspaceCategory: ''
@@ -1532,6 +1538,23 @@ const workspaceComparisonsSessionState = {
   selectedRequirementId: ''
 };
 const workspaceNotesStore = createWorkspaceNotesStore({ storage: globalThis.localStorage, persistence: engine.workspaceNotesPersistence() });
+
+function captureWorkspaceDrawingFullscreenScrollState() {
+  workspaceDrawingFullscreenScrollState.windowScrollY = globalThis.scrollY || globalThis.pageYOffset || 0;
+  workspaceDrawingFullscreenScrollState.sidebarScrollTop = $('.mc-drawing-index')?.scrollTop || 0;
+  workspaceDrawingFullscreenScrollState.evidenceScrollTop = $('.mc-drawing-evidence')?.scrollTop || 0;
+}
+
+function restoreWorkspaceDrawingFullscreenScrollState() {
+  requestAnimationFrame(() => {
+    window.scrollTo({ top: workspaceDrawingFullscreenScrollState.windowScrollY || 0, behavior: 'auto' });
+    const sidebar = $('.mc-drawing-index');
+    if (sidebar) sidebar.scrollTop = workspaceDrawingFullscreenScrollState.sidebarScrollTop || 0;
+    const evidence = $('.mc-drawing-evidence');
+    if (evidence) evidence.scrollTop = workspaceDrawingFullscreenScrollState.evidenceScrollTop || 0;
+  });
+}
+
 let previousUserProjectId = null;
 let selectedDoc = null;
 let selectedKnowledgeSection = 'all';
@@ -1697,7 +1720,7 @@ const loadBedfordRelationshipBootstrap = async drawingSet => {
 function bedfordRelationshipLinksForSheet(sheetNumber = '') {
   const sheet = String(sheetNumber || '').trim();
   const drawingSet = getBedfordDrawingSetForSheetNumber(sheet);
-  const rawLinks = [...(drawingSet ? bedfordRelationshipResultsByDocumentId.get(drawingSet.documentId)?.[sheet]?.links || [] : [])];
+  const rawLinks = [...(drawingSet ? bedfordRelationshipResultsByDocumentId.get(drawingSet.documentId)?.[sheet]?.links || [] : [])].filter(link => link && typeof link === 'object');
   if (rawLinks.length) return rawLinks.map(link => ({ ...link, sheetNumber: sheet, projectId: BEDFORD_PROJECT_ID }));
   const catalogRecords = getBedfordDrawingCatalogRecords();
   const canonicalSheet = chiefSpecificationSME?.getSheetForSheetNumber?.(sheet) || catalogRecords.find(item => item.sheetNumber === sheet) || null;
@@ -5577,6 +5600,7 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
   const workspaceRenderRequest = ++drawingWorkspaceRenderRequest;
   const host = shell === 'mission-control' ? ($('#missionInlineDrawingViewer') || $('#missionDrawingViewer')) : $('#drawingInspector');
   if (!host) return;
+  host.classList.toggle('workspace-fullscreen', shell === 'mission-control' && workspaceDrawingFullscreen);
   const preservedCanvas = host.querySelector('#mcDrawingCanvas') || portableDrawingCanvas;
   const preservedStage = host.querySelector('#mcDrawingStage');
   const preservedViewport = { scrollLeft: preservedStage?.scrollLeft || 0, scrollTop: preservedStage?.scrollTop || 0 };
@@ -5804,6 +5828,7 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
   replaceTrackedResource('requirement-model', pendingRequirements, { pageId: currentSheet?.pageId || '', status: 'loading' });
   const returnAction = drawingReturnAction(drawingTarget?.returnTarget || '');
   const returnLabel = shell === 'professional' && returnAction?.kind === 'mission-control' ? 'Return to Chief' : returnAction?.label;
+  const fullscreenLabel = workspaceDrawingFullscreen ? 'Exit Full Screen' : 'Full Screen';
   const focusTarget = drawingFocusTarget({ sheet: currentSheet, observation: effectiveObservation, planObject: effectivePlanObject, region: effectiveRegion });
   const announcementText = currentSheet ? drawingAnnouncementText({ sheet: currentSheet, observation: effectiveObservation, planObject: effectivePlanObject, region: effectiveRegion }) : 'No drawing selected';
   const objectSearchMatchIds = new Set(drawingFilter ? searchDrawingObjects(activeDrawingObjects,drawingFilter).map(item=>item.objectId) : []);
@@ -5859,7 +5884,7 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
     <div class="mc-drawing-layout ${drawingWorkspacePanels.finderHidden ? 'finder-hidden' : ''} ${drawingWorkspacePanels.evidenceHidden ? 'evidence-hidden' : ''} ${drawingWorkspacePanels.expanded ? 'drawing-expanded' : ''}">
       <aside class="mc-drawing-index" aria-label="Find construction drawing evidence">${bedfordBuildingSelector}<label>Drawing set<select id="mcDrawingDocument">${documents.map(item => `<option value="${esc(item.id)}" ${item.id === selected.id ? 'selected' : ''}>${esc(item.title || item.name || item.id)}</option>`).join('')}</select></label>${analysis ? `<label>Find a sheet, room, trade, or tag<input id="mcDrawingSearch" value="${esc(drawingFilter)}" autocomplete="off" aria-controls="mcDrawingResults" aria-describedby="mcDrawingResultStatus"></label><button class="subtle" data-drawing-clear-search ${drawingFilter ? '' : 'hidden'}>Clear search</button><div class="mc-drawing-filters"><label>Discipline<select id="mcDrawingDiscipline"><option value="all">All disciplines</option>${disciplines.map(item => `<option ${item === drawingDiscipline ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></label><label>Drawing type<select id="mcDrawingType"><option value="all">All types</option>${sheetTypes.map(item => `<option ${item === drawingType ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></label></div><p id="mcDrawingResultStatus" role="status" aria-live="polite">${esc(drawingSearchSummary(drawingFilter, shownSheets.length))}</p><ol id="mcDrawingResults" aria-label="Drawing search results">${searchResults.map((result, index) => drawingSearchResultMarkup(result, currentSheet?.sheetId, index)).join('') || '<li class="mc-drawing-no-results"><strong>No drawing evidence found.</strong><span>Try a sheet number, room, trade, equipment tag, or clear the active filters.</span></li>'}</ol>` : ''}</aside>
       <main class="mc-drawing-viewer"><details class="mc-construction-orientation"><summary>Work and selection context</summary><div><strong>${esc(activeWorkPackage?.workSummary?.[0]?.label || currentSheet?.sheetTitle || 'Select construction evidence')}</strong><span>${currentSheet?.building ? `Building ${esc(currentSheet.building)} · ` : ''}${esc(activeWorkPackage?.discipline || currentSheet?.discipline || 'Unknown')} · ${esc(selectionExplanation)}</span></div></details>${coverageReviewMarkup}
-        ${!source ? `<div class="mc-drawing-unavailable"><strong>Original drawing unavailable — reattach PDF to view sheet.</strong><p>Reattach the exact source PDF to inspect the drawing. Indexed project text remains available.</p><label class="mc-drawing-reattach"><input id="mcDrawingReattach" type="file" accept="application/pdf,.pdf">Reattach Original PDF</label></div>` : !currentSheet ? `<div class="mc-drawing-unavailable"><strong>Drawing page unavailable.</strong><p>The retained PDF does not expose a viewable page.</p></div>` : `<header id="${focusTarget === 'mc-drawing-selected-evidence' ? 'mc-drawing-selected-evidence' : 'mc-drawing-sheet-title'}" class="mc-drawing-sheet-title" tabindex="-1" aria-live="polite" aria-label="${esc(announcementText)}"><div><span>${esc(currentSheet.sheetNumber || `Page ${currentSheet.pageNumber}`)}</span><h3>${esc(currentSheet.sheetTitle || `Page ${currentSheet.pageNumber}`)}</h3><p>${esc(selectionExplanation)}</p></div><dl><div><dt>Discipline</dt><dd>${esc(currentSheet.discipline)}</dd></div><div><dt>Type</dt><dd>${esc(currentSheet.primarySheetType || currentSheet.sheetTypes[0] || 'Unknown')}</dd></div><div><dt>Position</dt><dd>${analysis.viewerFallback ? 'Page' : 'Sheet'} ${currentSheet.pageNumber} of ${analysis.sheets.length}</dd></div><div><dt>Identity</dt><dd>${esc(currentSheet.identityStatus)}</dd></div></dl></header><div class="mc-drawing-toolbar"><div role="group" aria-label="Drawing navigation"><button data-drawing-previous ${navigationIndex <= 0 ? 'disabled' : ''}>Previous</button><button data-drawing-next ${navigationIndex < 0 || navigationIndex >= navigationSheetIds.length - 1 ? 'disabled' : ''}>Next</button><button data-drawing-layout="toggle-finder">${drawingWorkspacePanels.finderHidden ? 'Show' : 'Hide'} Sheet Finder</button></div><div role="group" aria-label="Drawing view controls"><button data-drawing-fit="page">Fit Page</button><button data-drawing-fit="width">Fit Width</button><button data-drawing-zoom="out">Zoom Out</button><button data-drawing-zoom="in">Zoom In</button><button data-drawing-rotate>Rotate</button><button data-drawing-reset-view>Reset View</button><button data-drawing-layout="${drawingWorkspacePanels.expanded ? 'restore' : 'expand'}">${drawingWorkspacePanels.expanded ? 'Restore Workspace' : 'Expand Drawing'}</button></div><div class="mc-drawing-spec-slot"><button type="button" class="mc-drawing-spec-button" data-drawing-spec-explorer>View Governing Specifications</button></div><div role="group" aria-label="Construction context actions">${analysis.viewerFallback ? '' : '<button data-drawing-ask>Ask Chief</button><button data-drawing-current-work>Add to Current Work</button><button data-drawing-inspection>Create Inspection</button>'}<button data-drawing-edit-metadata>Edit Page Metadata</button><button data-coverage-review-open>Review Drawing Coverage</button><button class="subtle" data-drawing-source>Open Source Details</button><button data-drawing-layout="toggle-evidence">${drawingWorkspacePanels.evidenceHidden ? 'Show' : 'Hide'} Construction Evidence</button></div><output aria-label="Current drawing view">${Number.isFinite(drawingZoom) ? Math.round(drawingZoom * 100) : 'Fit'}% · ${drawingRotation}°</output></div>        <div id="mcDrawingStage" class="mc-drawing-stage ${drawingCoverageRegionItemId?'is-drawing-review-region':''}"><canvas id="mcDrawingCanvas" aria-label="${esc(currentSheet.sheetNumber || `PDF page ${currentSheet.pageNumber}`)} ${esc(currentSheet.sheetTitle || 'drawing')}"></canvas><div class="mc-drawing-overlay-layer" aria-label="Drawing evidence overlays"></div></div>${drawingRotation || currentSheet.rotation ? '<p class="mc-drawing-note">Location highlights are synchronized with the rotated drawing view.</p>' : ''}`}
+        ${!source ? `<div class="mc-drawing-unavailable"><strong>Original drawing unavailable — reattach PDF to view sheet.</strong><p>Reattach the exact source PDF to inspect the drawing. Indexed project text remains available.</p><label class="mc-drawing-reattach"><input id="mcDrawingReattach" type="file" accept="application/pdf,.pdf">Reattach Original PDF</label></div>` : !currentSheet ? `<div class="mc-drawing-unavailable"><strong>Drawing page unavailable.</strong><p>The retained PDF does not expose a viewable page.</p></div>` : `<header id="${focusTarget === 'mc-drawing-selected-evidence' ? 'mc-drawing-selected-evidence' : 'mc-drawing-sheet-title'}" class="mc-drawing-sheet-title" tabindex="-1" aria-live="polite" aria-label="${esc(announcementText)}"><div><span>${esc(currentSheet.sheetNumber || `Page ${currentSheet.pageNumber}`)}</span><h3>${esc(currentSheet.sheetTitle || `Page ${currentSheet.pageNumber}`)}</h3><p>${esc(selectionExplanation)}</p></div><dl><div><dt>Discipline</dt><dd>${esc(currentSheet.discipline)}</dd></div><div><dt>Type</dt><dd>${esc(currentSheet.primarySheetType || currentSheet.sheetTypes[0] || 'Unknown')}</dd></div><div><dt>Position</dt><dd>${analysis.viewerFallback ? 'Page' : 'Sheet'} ${currentSheet.pageNumber} of ${analysis.sheets.length}</dd></div><div><dt>Identity</dt><dd>${esc(currentSheet.identityStatus)}</dd></div></dl></header><div class="mc-drawing-toolbar"><div role="group" aria-label="Drawing navigation"><button data-drawing-previous ${navigationIndex <= 0 ? 'disabled' : ''}>Previous</button><button data-drawing-next ${navigationIndex < 0 || navigationIndex >= navigationSheetIds.length - 1 ? 'disabled' : ''}>Next</button><button data-drawing-layout="toggle-finder">${drawingWorkspacePanels.finderHidden ? 'Show' : 'Hide'} Sheet Finder</button></div><div role="group" aria-label="Drawing view controls"><button data-drawing-fit="page">Fit Page</button><button data-drawing-fit="width">Fit Width</button><button data-drawing-zoom="out">Zoom Out</button><button data-drawing-zoom="in">Zoom In</button><button data-drawing-rotate>Rotate</button><button data-drawing-reset-view>Reset View</button><button data-drawing-layout="${drawingWorkspacePanels.expanded ? 'restore' : 'expand'}">${drawingWorkspacePanels.expanded ? 'Restore Workspace' : 'Expand Drawing'}</button>${shell === 'mission-control' ? `<button data-drawing-fullscreen aria-pressed="${workspaceDrawingFullscreen ? 'true' : 'false'}">${esc(fullscreenLabel)}</button>` : ''}</div><div class="mc-drawing-spec-slot"><button type="button" class="mc-drawing-spec-button" data-drawing-spec-explorer>View Governing Specifications</button></div><div role="group" aria-label="Construction context actions">${analysis.viewerFallback ? '' : '<button data-drawing-ask>Ask Chief</button><button data-drawing-current-work>Add to Current Work</button><button data-drawing-inspection>Create Inspection</button>'}<button data-drawing-edit-metadata>Edit Page Metadata</button><button data-coverage-review-open>Review Drawing Coverage</button><button class="subtle" data-drawing-source>Open Source Details</button><button data-drawing-layout="toggle-evidence">${drawingWorkspacePanels.evidenceHidden ? 'Show' : 'Hide'} Construction Evidence</button></div><output aria-label="Current drawing view">${Number.isFinite(drawingZoom) ? Math.round(drawingZoom * 100) : 'Fit'}% · ${drawingRotation}°</output></div>        <div id="mcDrawingStage" class="mc-drawing-stage ${drawingCoverageRegionItemId?'is-drawing-review-region':''}"><canvas id="mcDrawingCanvas" aria-label="${esc(currentSheet.sheetNumber || `PDF page ${currentSheet.pageNumber}`)} ${esc(currentSheet.sheetTitle || 'drawing')}"></canvas><div class="mc-drawing-overlay-layer" aria-label="Drawing evidence overlays"></div></div>${drawingRotation || currentSheet.rotation ? '<p class="mc-drawing-note">Location highlights are synchronized with the rotated drawing view.</p>' : ''}`}
       </main>
       <aside id="${shell === 'mission-control' ? 'missionPlansSheetInspector' : 'drawingSheetInspector'}" class="mc-drawing-evidence" aria-label="Construction Intelligence">${constructionIntelligencePanelMarkup(constructionIntelligencePanel)}</aside>${chiefDrawingDockMarkup(chiefCards)}
     </div>${drawingLifecycleUnavailable.length ? `<section class="mc-drawing-recovery-list" aria-label="Unavailable drawing lifecycle records"><h2>Drawing records requiring attention</h2>${drawingLifecycleUnavailable.map(drawingRecoveryMarkup).join('')}</section>` : ''}`;
@@ -6030,22 +6055,29 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
 
 async function renderMissionControlWorkspace() {
   const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
-  const activeWorkspace = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
-  const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+  const workspaceSeed = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
+  const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: workspaceSeed });
   const pmisRuntime = missionPmisRuntimeData();
-  const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
-  const issueState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+  const issuesModel = buildWorkspaceIssuesModel({ workspace: workspaceSeed, projectMilestoneContext, pmisRuntime });
+  const issueState = workspaceIssuesStateFor(workspaceSeed?.id || '');
   if (!issuesModel.filters.some(filter => String(filter.id) === String(issueState.filter))) issueState.filter = 'all';
   if (issueState.selectedIssueId && !issuesModel.issues.some(issue => issue.id === issueState.selectedIssueId)) issueState.selectedIssueId = '';
   if (!issueState.selectedIssueId) issueState.selectedIssueId = issuesModel.selectedIssueId || '';
   const pmisBuilding = missionPmisSelectedBuilding?.() || null;
-  const pmisContext = pmisBuilding?.Building || pmisBuilding?.building || pmisBuilding?.name || pmisBuilding?.label || activeWorkspace?.pmisBuilding || 'Unavailable';
-  const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+  const pmisContext = pmisBuilding?.Building || pmisBuilding?.building || pmisBuilding?.name || pmisBuilding?.label || workspaceSeed?.pmisBuilding || 'Unavailable';
+  const selectableSheets = workspaceSelectableSheets(workspaceSeed);
   const previewSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
     || selectableSheets[0]
     || null;
+  const workspaceContextModel = previewSheet?.sheetNumber
+    ? buildBedfordWorkspaceModel(activeBedfordWorkspaceId, {
+      selectedSheetNumber: previewSheet.sheetNumber,
+      drawingLinks: bedfordRelationshipLinksForSheet(previewSheet.sheetNumber)
+    })
+    : workspaceModel;
+  const activeWorkspace = workspaceContextModel.activeWorkspace || workspaceSeed || null;
   const previewUrl = previewSheet?.pdfPageNumber
-    ? new URL(`project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf#page=${previewSheet.pdfPageNumber}&view=FitH`, document.baseURI).toString()
+    ? new URL(`project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf#page=${previewSheet.pdfPageNumber}&view=Fit`, document.baseURI).toString()
     : '';
   const chiefInsight = activeWorkspace ? buildChiefInsight({
     id: activeWorkspace.id,
@@ -6273,7 +6305,7 @@ async function renderMissionControlWorkspace() {
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
         ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
         <section class="mc-ws-upper">
-          <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div></article>
+          <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
         </section>
         <section class="mc-ws-lower">
@@ -7822,6 +7854,13 @@ app.addEventListener('click', async event => {
   }
   if (button.hasAttribute('data-drawing-rotate')) { drawingRotation = (drawingRotation + 90) % 360; captureDrawingViewport({ rotation: drawingRotation, mode: 'custom' }); await repaintCurrentSheet({ preserveSidebarScroll: true }); return; }
   if (button.hasAttribute('data-drawing-reset-view')) { drawingZoom = null; drawingRotation = 0; captureDrawingViewport({ ...defaultDrawingViewport() }); await repaintCurrentSheet({ preserveSidebarScroll: true }); return; }
+  if (button.hasAttribute('data-drawing-fullscreen')) {
+    captureWorkspaceDrawingFullscreenScrollState();
+    workspaceDrawingFullscreen = !workspaceDrawingFullscreen;
+    await renderDrawingWorkspace(shell);
+    restoreWorkspaceDrawingFullscreenScrollState();
+    return;
+  }
   if (button.dataset.drawingLayout) {
     if (button.dataset.drawingLayout === 'expand') drawingWorkspaceBeforeExpand = { ...drawingWorkspacePanels };
     drawingWorkspacePanels = button.dataset.drawingLayout === 'restore' && drawingWorkspaceBeforeExpand
@@ -7842,6 +7881,15 @@ app.addEventListener('click', async event => {
   if (button.hasAttribute('data-drawing-inspection')) { const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId); selectedDoc = drawingTarget?.documentId || selectedDoc; await openInspectionForm(null, { projectId: state().activeProject, discipline: sheet?.discipline || '', sourceDocumentIds: [drawingTarget?.documentId].filter(Boolean), relatedDrawingIds: [drawingTarget?.documentId].filter(Boolean), sourceSectionIds: [], evidenceReferences: [] }); return; }
   if (button.hasAttribute('data-drawing-ask')) { const sheet = analysis?.sheets.find(item => item.sheetId === drawingTarget?.sheetId); pendingDrawingContext = createDrawingTarget({ ...drawingTarget, projectId: state().activeProject, documentId: analysis?.documentId, drawingSetId: analysis?.drawingSetId, sheetNumber: sheet?.sheetNumber, origin: 'ask-about-sheet' });chiefDrawingDock.open();const dock=$('.mc-chief-drawing-dock');if(dock){dock.hidden=false;dock.classList.add('open');const prompt=$('#chiefDrawingDockPrompt');if(prompt){prompt.value=`What governs ${sheet?.sheetNumber||`page ${drawingTarget?.pageNumber}`}?`;prompt.focus();}}return; }
 });
+
+app.addEventListener('keydown', async event => {
+  if (event.key !== 'Escape' || experience !== 'mission-control' || missionControlView !== 'plans' || !workspaceDrawingFullscreen) return;
+  event.preventDefault();
+  captureWorkspaceDrawingFullscreenScrollState();
+  workspaceDrawingFullscreen = false;
+  await renderDrawingWorkspace('mission-control');
+  restoreWorkspaceDrawingFullscreenScrollState();
+}, true);
 
 const activationTimestamp = () => new Date().toISOString();
 
