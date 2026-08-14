@@ -160,11 +160,12 @@ test('Mission Control retains the shared dark visual system without white surfac
   assert.doesNotMatch(refinement, /background(?:-color)?:#fff(?:fff)?(?:[;}]|$)/i);
 });
 
-test('Mission Control uses Dashboard, Chief, and Drawings as the primary shell navigation', () => {
+test('Mission Control uses Dashboard, Chief, Drawings, and Workspace as the primary shell navigation', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /data-control-view="dashboard">Dashboard<\/button>/);
   assert.match(app, /data-control-home[^>]*>Chief<\/button>/);
   assert.match(app, /data-control-view="plans">Drawings<\/button>/);
+  assert.match(app, /data-control-view="workspace">Workspace<\/button>/);
   assert.doesNotMatch(app, /data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /data-control-more-tools/);
   assert.doesNotMatch(app, /aria-label="More Tools"/);

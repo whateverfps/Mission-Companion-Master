@@ -1183,6 +1183,7 @@ app.innerHTML = `
     <button data-control-view="dashboard">Dashboard</button>
     <button data-control-home aria-current="page">Chief</button>
     <button data-control-view="plans">Drawings</button>
+    <button data-control-view="workspace">Workspace</button>
     <span style="position:absolute;left:-9999px;clip:rect(0 0 0 0);"><button data-control-view="plans">Open Plans</button></span>
   </nav>
 <main id="missionControlMain" tabindex="-1">
@@ -4735,6 +4736,37 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
   }
 }
 
+
+async function renderMissionControlWorkspace() {
+  const b61DrawingUrl = new URL('project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf#page=14&view=FitH', document.baseURI).toString();
+  $('#missionControlContent').innerHTML = `
+    <section class="mc-ws" aria-labelledby="missionControlTitle">
+      <aside class="mc-ws-sidebar">
+        <div class="mc-ws-side-head"><span>WORKSPACE</span><button type="button" data-ws-action="new">＋ New Workspace</button></div>
+        <div class="mc-ws-side-section"><small>ACTIVE WORKSPACE</small><strong>B61 – Telecom Room 107</strong><span>Readiness Impact: <b>High</b></span><span>Discipline Focus: Telecom / OIT</span><span>Source: Bedford project data</span></div>
+        <nav class="mc-ws-side-nav" aria-label="Workspace sections">
+          <button class="active">⌂ Overview</button><button>▣ Documents</button><button>◇ Issues</button><button>☑ Checklist</button><button>⇄ Comparisons</button><button>◷ Timeline</button><button>✎ Notes</button>
+        </nav>
+        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="specs">Compare to Spec</button><button data-ws-action="rfi">Create RFI</button><button data-ws-action="observation">Create Observation</button><button data-ws-action="package">Export Package</button></div>
+        <div class="mc-ws-chief"><div class="mc-ws-chief-avatar">👷</div><strong>Chief Insight</strong><p>Telecom Room 107 is a critical path work area for Building 61 activation. Use the evidence panels to trace requirements before field acceptance.</p><button data-ws-action="chief">Ask Chief</button></div>
+      </aside>
+      <main class="mc-ws-main">
+        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B61 – Telecom Room 107</h1><p>Investigate, analyze, and build the work package.</p></div><div class="mc-ws-kpis"><article><span>Overall Readiness</span><strong class="watch">55%</strong><small>● Watch</small></article><article><span>Critical Issues</span><strong class="danger">3</strong><small>● High</small></article><article><span>Open Questions</span><strong>2</strong><small>● Medium</small></article><article><span>Related Documents</span><strong>24</strong><small>● In Workspace</small></article></div></header>
+        <div class="mc-ws-breadcrumb"><button>Building 61</button><span>›</span><button>First Floor</button><span>›</span><button>Room 107 – Telecom</button><em>Primary</em></div>
+        <section class="mc-ws-upper">
+          <article class="mc-ws-drawing"><header><strong>DRAWING: BUILDING 61 – TELECOM / FIRST FLOOR</strong><div><button data-ws-action="drawings">Open Drawings</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf"><object data="${b61DrawingUrl}" type="application/pdf" aria-label="Building 61 drawing"><div class="mc-ws-pdf-fallback"><strong>Building 61 Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">Open Drawing Viewer</button></div></object><div class="mc-ws-markups"><span>MARKUPS & ITEMS</span><label>🟣 Equipment <b>4</b></label><label>🔵 Racks / Cabinets <b>2</b></label><label>🟢 Power <b>3</b></label><label>🔴 Penetrations <b>2</b></label><label>🟠 Notes <b>1</b></label></div></div></article>
+          <aside class="mc-ws-evidence"><section><header><strong>APPLICABLE SPECIFICATIONS (6)</strong><button data-ws-action="specs">View All</button></header><ul><li><b>28 31 00 – Telecommunications</b><span>Sections 1.05, 2.03, 3.10</span><em>Relevant</em></li><li><b>26 27 26 – Wiring Devices</b><span>Part 1, 2.02, 2.05</span><em>Relevant</em></li><li><b>26 05 19 – Low Voltage Electrical Power</b><span>Part 1, 2.01, 3.02</span><em>Relevant</em></li><li><b>26 24 16 – Panelboards</b><span>Part 1, 2.03, 3.04</span><em>Relevant</em></li><li><b>07 84 00 – Firestopping</b><span>Part 1, 2.02, 3.01</span><em class="related">Related</em></li><li><b>01 45 35 – Quality Control</b><span>Part 1, 1.03, 1.05</span><em class="related">Related</em></li></ul></section><section><header><strong>RELATED DOCUMENTS (4)</strong><button>View All</button></header><ul><li><b>RFI-061-017 – Door Hardware</b><span>RFI · Open</span></li><li><b>Submittal-145 – Firestopping</b><span>Submittal · In Review</span></li><li><b>Telecom Equipment Room Standards</b><span>Document</span></li><li><b>Room 107 Field Photos</b><span>Photo Set</span></li></ul></section></aside>
+        </section>
+        <section class="mc-ws-lower">
+          <article><header><strong>ISSUES & RISKS (5)</strong><button>View All</button></header><ul class="mc-ws-risks"><li><i>●</i><div><b>Penetrations not firestopped</b><span>Verify conduit cluster conditions.</span></div><em class="high">High</em></li><li><i>●</i><div><b>UPS location coordination</b><span>Confirm clearance and maintenance access.</span></div><em>Medium</em></li><li><i>●</i><div><b>Cable pathway capacity</b><span>Verify available capacity for new circuits.</span></div><em>Medium</em></li><li><i>●</i><div><b>Door hardware coordination</b><span>Open RFI requires resolution.</span></div><em>Low</em></li></ul></article>
+          <article><header><strong>TRACEABILITY MAP</strong></header><div class="mc-ws-trace"><div><b>Spec</b><span>28 31 00 3.21</span></div><i>→</i><div><b>Requirement</b><span>Telecom Room Performance</span></div><i>→</i><div><b>PMIS Gate</b><span>OIT Activation Readiness</span></div><div><b>Spec</b><span>07 84 00 3.01</span></div><i>→</i><div><b>Requirement</b><span>Firestop All Penetrations</span></div><i>→</i><div><b>Impact</b><span>Activation / Acceptance</span></div></div></article>
+          <article><header><strong>CHECKLIST BUILDER</strong></header><p class="mc-ws-muted">Based on project specifications and readiness gates</p><div class="mc-ws-progress"><span style="width:43%"></span></div><small>6 of 14 Complete · 43%</small><ul class="mc-ws-check"><li>☑ Verify room dimensions and clearances</li><li>☑ Confirm rack locations and elevations</li><li>☑ Verify power circuits and labeling</li><li>☐ Inspect cable pathway and supports</li><li>☐ Verify grounding and bonding</li><li>☐ Inspect firestop at all penetrations</li></ul><button class="mc-ws-wide">Open Full Checklist</button></article>
+          <article><header><strong>NEXT STEPS</strong></header><ul class="mc-ws-next"><li><span>Verify firestopping at conduit cluster</span><em class="high">High</em></li><li><span>Resolve RFI-061-017 – Door Hardware</span><em class="high">High</em></li><li><span>Confirm UPS/PDU coordination</span><em>Medium</em></li><li><span>Review OIT activation prerequisites</span><em>Medium</em></li><li><span>Cable testing and documentation</span><em>Low</em></li></ul><button class="mc-ws-wide">View Full Action Plan</button></article>
+        </section>
+      </main>
+    </section>`;
+}
+
 async function renderMissionControlDashboard() {
   $('#missionControlContent').innerHTML = `
     <section class="mc-dashboard-shell" aria-labelledby="missionControlTitle">
@@ -4887,6 +4919,7 @@ async function renderMissionControl(prefetchedDocuments = null, prefetchedSectio
   if (missionControlView === 'inspections') { await renderMissionControlInspections(); return; }
   if (missionControlView === 'plans') { await renderMissionControlPlans(); return; }
   if (missionControlView === 'dashboard') { await renderMissionControlDashboard(); return; }
+  if (missionControlView === 'workspace') { await renderMissionControlWorkspace(); return; }
   await renderChiefWorkspace();
 }
 
@@ -4905,8 +4938,8 @@ missionControlIdentity?.addEventListener('keydown', event => {
 });
 
 function showMissionControlView(name = 'home') {
-  if (!['plans', 'dashboard', 'home', 'history'].includes(name)) releaseDrawingSource();
-  missionControlView = ['projects', 'chat', 'history', 'library', 'inspections', 'plans', 'dashboard', 'home', 'landing'].includes(name) ? name : 'home';
+  if (!['plans', 'dashboard', 'workspace', 'home', 'history'].includes(name)) releaseDrawingSource();
+  missionControlView = ['projects', 'chat', 'history', 'library', 'inspections', 'plans', 'dashboard', 'workspace', 'home', 'landing'].includes(name) ? name : 'home';
   updateMissionControlNavigationVisibility();
   const homeButton = $('[data-control-home]');
   homeButton?.toggleAttribute('aria-current', missionControlView === 'home');
@@ -4921,6 +4954,10 @@ $$('[data-control-view]').forEach(button => button.onclick = () => showMissionCo
 $('#missionControlContent').onclick = async event => {
   const button = event.target.closest('button');
   if (!button) return;
+  if (button.dataset.wsAction === 'chief') return showMissionControlView('home');
+  if (button.dataset.wsAction === 'drawings') return showMissionControlView('plans');
+  if (button.dataset.wsAction === 'specs') return showMissionControlView('home');
+  if (button.dataset.wsAction === 'new') return;
   if (button.dataset.controlAction === 'enter-mission-control') {
     return showMissionControlView('home');
   }
