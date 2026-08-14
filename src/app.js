@@ -210,6 +210,8 @@ setLifecycle('loading-ui');
 const app = document.querySelector('#app');
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
+const list = value => Array.isArray(value) ? value : [];
+const text = value => value === null || value === undefined ? '' : String(value).trim();
 const safeText = textValue;
 const preferredText = firstText;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -1408,6 +1410,98 @@ function workspaceSelectableSheets(workspace = null) {
   return sheets;
 }
 
+function workspaceDisplayTitle(value = '') {
+  const trimmed = text(value);
+  if (!trimmed) return '';
+  if (trimmed !== trimmed.toUpperCase()) return trimmed;
+  return trimmed
+    .split(/(\s+|\/|—|-)/)
+    .map(part => {
+      if (/^(\s+|\/|—|-)$/.test(part)) return part === '-' ? ' — ' : part;
+      if (/^[A-Z0-9&]{2,6}$/.test(part)) return part;
+      return part.toLowerCase().replace(/\b([a-z])/g, (_, letter) => letter.toUpperCase());
+    })
+    .join('')
+    .replace(/\s+—\s+/g, ' — ')
+    .replace(/\s{2,}/g, ' ');
+}
+
+function workspaceRoomTreeMarkup(workspaceModel = {}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = [], workspaceTradesState = null) {
+  const tradesState = workspaceTradesState || { expandedTradesWorkspaceId: '', expandedWorkspaceCategory: '' };
+  const workspaces = list(workspaceModel.workspaces);
+  if (!workspaces.length) return '<div class="mc-ws-room-tree mc-ws-room-tree-empty"><strong>No workspaces available.</strong></div>';
+  return `<div class="mc-ws-room-tree-shell">${workspaces.map(record => {
+    const isActive = record.id === activeWorkspace?.id;
+    const tradesOpen = isActive && tradesState.expandedTradesWorkspaceId === record.id;
+    const activeCategoryKey = tradesOpen ? tradesState.expandedWorkspaceCategory : '';
+    const roomArrow = isActive ? '▼' : '▶';
+    const tradesArrow = tradesOpen ? '▼' : '▶';
+    const roomLabel = workspaceDisplayTitle(record.id || record.room || 'Workspace');
+    const roomLevel = esc(record.level || 'Unknown');
+    const roomType = workspaceDisplayTitle(record.name || 'Workspace');
+    const roomBadge = workspaceDisplayTitle(record.type || '');
+    const roomSheetCount = fmt(workspaceSelectableSheets(record).length);
+    const roomTradeGroups = tradesOpen && workspaceDrawingCategories.length
+      ? `<details class="mc-ws-trades" open>
+          <summary>
+            <button type="button" class="mc-ws-trades-toggle active" data-ws-trades="${esc(record.id)}">
+              <strong>Trades</strong>
+              <span>${fmt(workspaceDrawingCategories.length)} groups</span>
+              <em>${fmt(workspaceDrawingCategories.length)}</em>
+            </button>
+          </summary>
+          <div class="mc-ws-trades-body">
+            <div class="mc-ws-sheet-groups">${workspaceDrawingCategories.map((category, index) => {
+              const categoryKey = `${record.id}:${category.id}`;
+              const categoryOpen = activeCategoryKey === categoryKey || (!activeCategoryKey && index === 0);
+              const categoryArrow = categoryOpen ? '▼' : '▶';
+              return `
+              <details class="mc-ws-sheet-group" ${categoryOpen ? 'open' : ''}>
+                <summary>
+                  <button type="button" class="${categoryOpen ? 'active' : ''}" data-ws-trade-category="${esc(categoryKey)}">
+                    <strong>${categoryArrow} ${esc(workspaceDisplayTitle(category.label))}</strong>
+                    <span>${fmt(category.items.length)} sheets</span>
+                    <em>${fmt(category.items.length)}</em>
+                  </button>
+                </summary>
+                <div class="mc-ws-sheet-grid">
+                  ${category.items.map(sheet => `
+                    <button type="button" class="${sheet.sheetNumber === previewSheet?.sheetNumber ? 'active' : ''}" data-ws-sheet="${esc(sheet.sheetNumber)}">
+                      <strong>${esc(sheet.sheetNumber)}</strong>
+                      <span>${esc(workspaceDisplayTitle(sheet.sheetTitle))}</span>
+                      <small>${esc(workspaceDisplayTitle(sheet.relevance || sheet.discipline || 'Source'))}</small>
+                    </button>
+                  `).join('')}
+                </div>
+              </details>`;
+            }).join('')}</div>
+          </div>
+        </details>`
+      : isActive
+        ? `<details class="mc-ws-trades">
+            <summary>
+              <button type="button" class="mc-ws-trades-toggle" data-ws-trades="${esc(record.id)}">
+                <strong>${tradesArrow} Trades</strong>
+                <span>${fmt(workspaceDrawingCategories.length)} groups</span>
+                <em>${fmt(workspaceDrawingCategories.length)}</em>
+              </button>
+            </summary>
+          </details>`
+      : '';
+    return `<details class="mc-ws-room-group${isActive ? ' active' : ''}" ${isActive ? 'open' : ''}>
+      <summary>
+        <button type="button" class="${isActive ? 'active' : ''}" data-ws-select="${esc(record.id)}" aria-current="${isActive ? 'true' : 'false'}">
+          <strong>${roomArrow} ${esc(roomLabel)}</strong>
+          <span>${roomLevel}</span>
+          <small>${esc(roomType)}</small>
+          ${roomBadge ? `<em>${esc(roomBadge)}</em>` : ''}
+        </button>
+      </summary>
+      <div class="mc-ws-room-group-body">${roomTradeGroups || '<span class="mc-ws-empty-inline">Trades are collapsed. Open Trades to browse categories.</span>'}</div>
+    </details>`;
+  }).join('')}</div>`;
+}
+
 function workspaceNextStepPriority(item = {}) {
   if (item.status === 'complete') return 'low';
   if (item.status === 'pending-date') return 'medium';
@@ -1423,6 +1517,10 @@ let chiefHistoryVisible = false;
 let activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
 let activeBedfordWorkspaceSheetNumber = '';
 let activeBedfordWorkspaceSection = 'overview';
+const workspaceTradesSessionState = {
+  expandedTradesWorkspaceId: '',
+  expandedWorkspaceCategory: ''
+};
 const workspaceChecklistSessionState = new Map();
 const workspaceTimelineSessionState = new Map();
 const workspaceNotesSessionState = new Map();
@@ -6062,39 +6160,8 @@ async function renderMissionControlWorkspace() {
         <em class="${item.status === 'BLOCKED' ? 'high' : item.checked ? 'medium' : 'low'}">${esc(item.category || 'Checklist')}</em>
       </li>`).join('')
     : '<li><i>☐</i><div><b>No deterministic checklist items are available for this Workspace yet.</b><span>Checklist derivation will appear once workspace evidence is available.</span></div><em class="low">Info</em></li>';
-  const workspaceButtons = workspaceModel.workspaces.map(record => `
-    <button type="button" class="${record.id === activeWorkspace?.id ? 'active' : ''}" data-ws-select="${esc(record.id)}">
-      <strong>${esc(record.id)}</strong>
-      <span>${esc(record.room)} · ${esc(record.level)}</span>
-      <small>${esc(record.name)}</small>
-    </button>
-  `).join('');
   const workspaceDrawingCategories = activeWorkspace?.drawingCategories || [];
-  const sourceSheetButtons = workspaceDrawingCategories.length
-    ? `<div class="mc-ws-sheet-groups">${workspaceDrawingCategories.map((category, index) => `
-        <details class="mc-ws-sheet-group" ${index === 0 ? 'open' : ''}>
-          <summary>
-            <strong>${esc(category.label)}</strong>
-            <span>${fmt(category.items.length)}</span>
-          </summary>
-          <div class="mc-ws-sheet-grid">
-            ${category.items.map(sheet => `
-              <button type="button" class="${sheet.sheetNumber === previewSheet?.sheetNumber ? 'active' : ''}" data-ws-sheet="${esc(sheet.sheetNumber)}">
-                <strong>${esc(sheet.sheetNumber)}</strong>
-                <span>${esc(sheet.sheetTitle)}</span>
-                <small>${esc(sheet.relevance || sheet.discipline || 'Source')}</small>
-              </button>
-            `).join('')}
-          </div>
-        </details>
-      `).join('')}</div>`
-    : (activeWorkspace?.sourceSheets || []).map(sheet => `
-        <button type="button" class="${sheet.sheetNumber === previewSheet?.sheetNumber ? 'active' : ''}" data-ws-sheet="${esc(sheet.sheetNumber)}">
-          <strong>${esc(sheet.sheetNumber)}</strong>
-          <span>${esc(sheet.sheetTitle)}</span>
-          <small>${esc(sheet.discipline || 'Source')}</small>
-        </button>
-      `).join('') || '<span class="mc-ws-empty-inline">No source sheets available.</span>';
+  const workspaceDrawingTree = workspaceRoomTreeMarkup(workspaceModel, activeWorkspace, previewSheet, workspaceDrawingCategories, workspaceTradesSessionState);
   const relatedDocumentItems = (activeWorkspace?.sourceEvidence || []).slice(0, 4).map(item => `
     <li>
       <button type="button" data-ws-source-sheet="${esc(item.sheetNumber)}" aria-label="Open source sheet ${esc(item.sheetNumber)}">
@@ -6182,25 +6249,7 @@ async function renderMissionControlWorkspace() {
     <section class="mc-ws" aria-labelledby="missionControlTitle">
       <aside class="mc-ws-sidebar">
         <div class="mc-ws-side-head"><span>WORKSPACE</span><button type="button" data-ws-action="new">Select Workspace</button></div>
-        <div class="mc-ws-side-section"><small>ACTIVE WORKSPACE</small><strong>${esc(activeWorkspace?.id || 'Unavailable')} — ${esc(activeWorkspace?.room || 'Unknown')} · ${esc(activeWorkspace?.name || 'Workspace')}</strong><span>Level: <b>${esc(activeWorkspace?.level || 'Unavailable')}</b></span><span>Discipline Focus: ${esc(activeWorkspace?.disciplineFocus || 'Unavailable')}</span><span>PMIS Context: ${esc(pmisContext)}</span></div>
-        <div class="mc-ws-side-section"><small>WORKSPACE RECORDS</small><nav class="mc-ws-side-nav" aria-label="Workspace records">${workspaceButtons}</nav></div>
-        ${workspaceDrawingCategories.length ? `<div class="mc-ws-side-section mc-ws-side-expand"><small>DRAWING CATEGORIES</small><div class="mc-ws-sheet-groups">${workspaceDrawingCategories.map((category, index) => `
-          <details class="mc-ws-sheet-group" ${index === 0 ? 'open' : ''}>
-            <summary>
-              <strong>${esc(category.label)}</strong>
-              <span>${fmt(category.items.length)}</span>
-            </summary>
-            <div class="mc-ws-sheet-grid">
-              ${category.items.map(sheet => `
-                <button type="button" class="${sheet.sheetNumber === previewSheet?.sheetNumber ? 'active' : ''}" data-ws-sheet="${esc(sheet.sheetNumber)}">
-                  <strong>${esc(sheet.sheetNumber)}</strong>
-                  <span>${esc(sheet.sheetTitle)}</span>
-                  <small>${esc(sheet.relevance || sheet.discipline || 'Source')}</small>
-                </button>
-              `).join('')}
-            </div>
-          </details>
-        `).join('')}</div></div>` : ''}
+        <div class="mc-ws-side-section"><small>WORKSPACE RECORDS</small><nav class="mc-ws-side-nav" aria-label="Workspace records">${workspaceDrawingTree}</nav></div>
         <nav class="mc-ws-side-nav" aria-label="Workspace sections">
           <button type="button" class="${activeBedfordWorkspaceSection === 'overview' ? 'active' : ''}" data-ws-section="overview">⌂ Overview</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'documents' ? 'active' : ''}" data-ws-section="documents">▣ Documents</button>
@@ -6224,7 +6273,7 @@ async function renderMissionControlWorkspace() {
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
         ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
         <section class="mc-ws-upper">
-          <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
+          <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
         </section>
         <section class="mc-ws-lower">
@@ -6429,7 +6478,33 @@ $('#missionControlContent').onclick = async event => {
     const selectedWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace;
     activeBedfordWorkspaceSheetNumber = selectedWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
+    workspaceTradesSessionState.expandedTradesWorkspaceId = '';
+    workspaceTradesSessionState.expandedWorkspaceCategory = '';
     await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsTrades) {
+    const workspaceId = String(button.dataset.wsTrades || '').trim();
+    if (workspaceTradesSessionState.expandedTradesWorkspaceId === workspaceId) {
+      workspaceTradesSessionState.expandedTradesWorkspaceId = '';
+      workspaceTradesSessionState.expandedWorkspaceCategory = '';
+    } else {
+      workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
+      workspaceTradesSessionState.expandedWorkspaceCategory = '';
+    }
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsTradeCategory) {
+    const categoryKey = String(button.dataset.wsTradeCategory || '').trim();
+    const [workspaceId] = categoryKey.split(':');
+    if (workspaceId && buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.id === workspaceId) {
+      workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
+      workspaceTradesSessionState.expandedWorkspaceCategory = workspaceTradesSessionState.expandedWorkspaceCategory === categoryKey ? '' : categoryKey;
+      activeBedfordWorkspaceSection = 'overview';
+      await showMissionControlView('workspace');
+    }
     return;
   }
   if (button.dataset.wsNoteAction || button.dataset.wsNoteId || button.dataset.wsNoteFilter || button.dataset.wsNoteLinkAdd || button.dataset.wsNoteLinkRemove) {
@@ -6713,6 +6788,8 @@ $('#missionControlContent').onclick = async event => {
     activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
     activeBedfordWorkspaceSheetNumber = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
+    workspaceTradesSessionState.expandedTradesWorkspaceId = '';
+    workspaceTradesSessionState.expandedWorkspaceCategory = '';
     await showMissionControlView('workspace');
     return;
   }

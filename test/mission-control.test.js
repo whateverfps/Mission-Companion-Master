@@ -176,11 +176,117 @@ test('Mission Control workspace is registry-backed and no longer hard-codes Room
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
   assert.match(workspace, /buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)/);
-  assert.match(workspace, /data-ws-select=/);
+  assert.match(app, /data-ws-select=/);
+  assert.match(app, /function workspaceRoomTreeMarkup\(workspaceModel = \{\}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = \[\], workspaceTradesState = null\)/);
   assert.match(workspace, /Select Workspace/);
-  assert.match(workspace, /PMIS Context:/);
+  assert.doesNotMatch(workspace, /ACTIVE WORKSPACE/);
+  assert.doesNotMatch(workspace, /PMIS Context:/);
   assert.doesNotMatch(workspace, /Telecom Room 107/);
   assert.doesNotMatch(workspace, /B61 – Telecom Room 107/);
+});
+
+test('Mission Control workspace defines local normalization helpers for the compact room tree', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  assert.match(app, /const list = value => Array\.isArray\(value\) \? value : \[\];/);
+  assert.match(app, /const text = value => value === null \|\| value === undefined \? '' : String\(value\)\.trim\(\);/);
+  assert.match(app, /function workspaceRoomTreeMarkup\(workspaceModel = \{\}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = \[\], workspaceTradesState = null\)/);
+  assert.match(app, /const workspaces = list\(workspaceModel\.workspaces\);/);
+});
+
+test('Mission Control workspace room-tree markup executes without undeclared helpers', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  const start = app.indexOf('function workspaceRoomTreeMarkup(workspaceModel = {}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = [], workspaceTradesState = null)');
+  const end = app.indexOf('function workspaceNextStepPriority(item = {})');
+  assert.ok(start >= 0 && end > start);
+  const fnSource = app.slice(start, end);
+  const workspaceRoomTreeMarkup = new Function('list', 'text', 'esc', 'fmt', 'workspaceDisplayTitle', 'workspaceSelectableSheets', `${fnSource}; return workspaceRoomTreeMarkup;`)(
+    value => Array.isArray(value) ? value : [],
+    value => value === null || value === undefined ? '' : String(value).trim(),
+    value => String(value ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[c]),
+    value => Number(value || 0).toLocaleString('en-US'),
+    value => {
+      const trimmed = value === null || value === undefined ? '' : String(value).trim();
+      if (!trimmed) return '';
+      if (trimmed !== trimmed.toUpperCase()) return trimmed;
+      return trimmed
+        .split(/(\s+|\/|—|-)/)
+        .map(part => {
+          if (/^(\s+|\/|—|-)$/.test(part)) return part === '-' ? ' — ' : part;
+          if (/^[A-Z0-9&]{2,6}$/.test(part)) return part;
+          return part.toLowerCase().replace(/\b([a-z])/g, (_, letter) => letter.toUpperCase());
+        })
+        .join('')
+        .replace(/\s+—\s+/g, ' — ')
+        .replace(/\s{2,}/g, ' ');
+    },
+    workspace => {
+      const seen = new Set();
+      const sheets = [];
+      const push = sheet => {
+        if (!sheet) return;
+        const sheetNumber = String(sheet.sheetNumber || '').trim();
+        const pageId = String(sheet.pageId || '').trim();
+        const key = pageId || sheetNumber;
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        sheets.push({
+          sheetNumber,
+          sheetTitle: String(sheet.sheetTitle || '').trim(),
+          discipline: String(sheet.discipline || '').trim(),
+          drawingType: String(sheet.drawingType || '').trim(),
+          pdfPageNumber: Number(sheet.pdfPageNumber) || 0,
+          pageId
+        });
+      };
+      for (const sheet of workspace?.sourceSheets || []) push(sheet);
+      for (const sheet of workspace?.relatedSheets || []) push(sheet);
+      for (const category of workspace?.drawingCategories || []) {
+        for (const sheet of category?.items || []) push(sheet);
+      }
+      return sheets;
+    }
+  );
+  const workspaceModel = {
+    workspaces: [{
+      id: 'B13',
+      room: 'B13',
+      level: 'B1',
+      name: 'Primary Telecommunications Room',
+      drawingCategories: [{ label: 'Electrical / Power', id: 'electrical-power', items: [{ sheetNumber: '13E-101', sheetTitle: 'Power Plan', discipline: 'Electrical', drawingType: 'Plan', pdfPageNumber: 12, pageId: 'demo:page:12', relevance: 'DIRECT' }] }],
+      sourceSheets: [{ sheetNumber: '13E-100', sheetTitle: 'Source Plan', discipline: 'Electrical', drawingType: 'Plan', pdfPageNumber: 11, pageId: 'demo:page:11' }],
+      relatedSheets: [{ sheetNumber: '13E-102', sheetTitle: 'Related Plan', discipline: 'Electrical', drawingType: 'Plan', pdfPageNumber: 13, pageId: 'demo:page:13' }]
+    }]
+  };
+  const activeWorkspace = workspaceModel.workspaces[0];
+  const collapsedMarkup = workspaceRoomTreeMarkup(
+    workspaceModel,
+    activeWorkspace,
+    { sheetNumber: '13E-100' },
+    activeWorkspace.drawingCategories,
+    { expandedTradesWorkspaceId: '', expandedWorkspaceCategory: '' }
+  );
+  const expandedMarkup = workspaceRoomTreeMarkup(
+    workspaceModel,
+    activeWorkspace,
+    { sheetNumber: '13E-101' },
+    activeWorkspace.drawingCategories,
+    { expandedTradesWorkspaceId: 'B13', expandedWorkspaceCategory: 'B13:electrical-power' }
+  );
+  assert.match(collapsedMarkup, /mc-ws-room-tree-shell/);
+  assert.match(collapsedMarkup, /data-ws-select="B13"/);
+  assert.match(collapsedMarkup, /data-ws-trades="B13"/);
+  assert.doesNotMatch(collapsedMarkup, /data-ws-trade-category="B13:electrical-power"/);
+  assert.doesNotMatch(collapsedMarkup, /data-ws-sheet="13E-101"/);
+  assert.match(expandedMarkup, /data-ws-trade-category="B13:electrical-power"/);
+  assert.match(expandedMarkup, /data-ws-sheet="13E-101"/);
+  assert.match(expandedMarkup, /13E-101/);
+  assert.doesNotMatch(expandedMarkup, /workspaceButtons/);
 });
 
 test('Mission Control workspace preserves the approved wide composition and four-panel lower grid', () => {
@@ -200,6 +306,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /CONTRACT COMPLETION/);
   assert.match(workspace, /SCHEDULE STATUS/);
   assert.match(workspace, /mc-ws-timeline/);
+  assert.match(app, /function workspaceRoomTreeMarkup\(workspaceModel = \{\}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = \[\], workspaceTradesState = null\)/);
+  assert.match(workspace, /workspaceDrawingTree = workspaceRoomTreeMarkup\(workspaceModel, activeWorkspace, previewSheet, workspaceDrawingCategories, workspaceTradesSessionState\)/);
   assert.match(workspace, /renderWorkspaceTimelineView\(/);
   assert.match(workspace, /buildWorkspaceTimelineModel\(/);
   assert.match(workspace, /combinedNextSteps\.slice\(0, 5\)/);
@@ -225,6 +333,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /function workspaceSelectableSheets\(workspace = null\)/);
   assert.match(app, /const selectableSheets = workspaceSelectableSheets\(workspace\);/);
   assert.match(app, /const previewSheet = selectableSheets\.find\(sheet => sheet\.sheetNumber === activeBedfordWorkspaceSheetNumber\)\s*\|\|\s*selectableSheets\[0\]\s*\|\|\s*null;/);
+  assert.doesNotMatch(workspace, /mc-ws-sheet-picker/);
+  assert.doesNotMatch(workspace, /ACTIVE ROOM/);
   assert.match(app, /if \(button\.dataset\.wsSheet\) \{\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsSheet;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
   assert.match(app, /if \(button\.dataset\.wsDrawingSheet\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, button\.dataset\.wsDrawingSheet\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsDrawingSheet;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
   assert.match(app, /if \(button\.dataset\.wsAction === 'drawings'\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, activeBedfordWorkspaceSheetNumber\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('plans'\);/);
@@ -238,12 +348,27 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /No room-specific issues recorded\./);
   assert.match(app, /Checklist Review/);
   assert.match(workspace, /Create RFI is not configured yet/);
-  assert.match(css, /\.mc-ws\{grid-template-columns:232px minmax\(0,1fr\)\}/);
+  assert.match(css, /\.mc-ws\{grid-template-columns:240px minmax\(0,1fr\)\}/);
+  assert.match(css, /\.mc-ws-sidebar\{[^}]*display:flex;[^}]*flex-direction:column;[^}]*height:calc\(100dvh - 126px\)[^}]*overflow-y:auto;[^}]*overflow-x:hidden\}/);
+  assert.match(css, /\.mc-ws-sidebar>\.mc-ws-side-section:first-of-type\{[^}]*display:block;[^}]*min-height:0;[^}]*overflow:visible\}/);
+  assert.match(css, /\.mc-ws-sidebar>\.mc-ws-side-section:first-of-type>\.mc-ws-side-nav\{[^}]*overflow:visible;[^}]*padding-right:0\}/);
   assert.match(css, /\.mc-ws-upper\{grid-template-columns:minmax\(0,2\.55fr\) minmax\(300px,1fr\)/);
   assert.match(css, /\.mc-ws-lower\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(css, /\.mc-ws-lower > article\{min-height:320px;max-height:380px;display:grid;grid-template-rows:auto minmax\(0,1fr\) auto auto;overflow:hidden\}/);
   assert.match(css, /\.mc-ws-risks,\.mc-ws-check,\.mc-ws-next,\.mc-ws-timeline\{min-height:0;overflow:auto;max-height:160px\}/);
-  assert.match(css, /\.mc-ws-checklist\{/);
+  assert.match(css, /\.mc-ws-room-tree-shell\{/);
+  assert.match(css, /\.mc-ws-trades\{/);
+  assert.match(css, /\.mc-ws-trades-toggle\{/);
+  assert.match(css, /\.mc-ws-room-group\{/);
+  assert.match(css, /\.mc-ws-room-group-body\{/);
+  assert.match(css, /\.mc-ws-room-group\{/);
+  assert.match(css, /\.mc-ws-sheet-group\{/);
+  assert.match(css, /\.mc-ws-sheet-grid\{/);
+  assert.match(css, /\.mc-ws-room-group\{[^}]*overflow:visible\}/);
+  assert.match(css, /\.mc-ws-trades\{[^}]*overflow:visible\}/);
+  assert.match(css, /\.mc-ws-sheet-group\{[^}]*overflow:visible\}/);
+  assert.match(css, /\.mc-ws-sheet-grid\{[^}]*overflow:visible\}/);
+  assert.match(css, /\.mc-ws-pdf::before\{/);
   assert.match(css, /\.mc-ws-checklist-layout\{/);
   assert.match(css, /\.mc-ws-timeline-view\{/);
   assert.match(css, /\.mc-ws-timeline-layout\{/);
