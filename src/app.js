@@ -107,8 +107,13 @@ import {
 } from './bedford-project.js';
 import {
   buildBedfordWorkspaceModel,
+  buildChiefInsight,
   getBedfordWorkspaceDefaultId
 } from './workspace-registry.js';
+import {
+  BEDFORD_NTP_SOURCE_DOCUMENT,
+  buildBedfordProjectMilestoneContext
+} from './workspace-milestones.js';
 import {
   buildMissionControlModel,
   normalizeStartupExperience,
@@ -243,6 +248,62 @@ function missionPmisSelectedBuilding() {
   }
 }
 
+function workspaceChecklistStateFor(workspaceId = '') {
+  if (!workspaceChecklistSessionState.has(workspaceId)) workspaceChecklistSessionState.set(workspaceId, new Set());
+  return workspaceChecklistSessionState.get(workspaceId);
+}
+
+function workspaceNotesStateFor(workspaceId = '') {
+  if (!workspaceNotesSessionState.has(workspaceId)) workspaceNotesSessionState.set(workspaceId, '');
+  return workspaceNotesSessionState.get(workspaceId);
+}
+
+function setWorkspaceNotesState(workspaceId = '', notes = '') {
+  workspaceNotesSessionState.set(workspaceId, String(notes ?? ''));
+}
+
+function workspaceSectionAnchor(section = 'overview') {
+  return ({
+    overview: 'workspaceOverviewPanel',
+    documents: 'workspaceDocumentsPanel',
+    issues: 'workspaceIssuesPanel',
+    checklist: 'workspaceChecklistPanel',
+    comparisons: 'workspaceComparisonsPanel',
+    timeline: 'workspaceTimelinePanel',
+    notes: 'workspaceNotesPanel'
+  })[section] || 'workspaceOverviewPanel';
+}
+
+function buildWorkspaceChiefPrompt(workspace = null, pmisContext = '', projectMilestoneContext = null) {
+  if (!workspace) return 'What should I focus on today?';
+  const sourceSheetNumbers = (workspace.sourceSheets || []).map(sheet => sheet.sheetNumber).filter(Boolean);
+  const specNumbers = (workspace.applicableSpecifications || []).map(spec => spec.sectionNumber).filter(Boolean);
+  const milestoneSummary = projectMilestoneContext?.summary || `Project phase: ${projectMilestoneContext?.projectPhase || 'Preconstruction'}.`;
+  return `What should I focus on for ${workspace.building ? `Building ${workspace.building}` : 'this workspace'}${workspace.room ? ` room ${workspace.room}` : ''}? Source sheets: ${sourceSheetNumbers.join(', ') || 'None recorded'}. Applicable specs: ${specNumbers.join(', ') || 'None recorded'}. PMIS context: ${pmisContext || workspace.pmisBuilding || 'Unavailable'}. ${milestoneSummary}`;
+}
+
+function buildWorkspaceDrawingTarget(workspace = null, sheetNumber = '') {
+  const sheet = (workspace?.sourceSheets || []).find(item => item.sheetNumber === sheetNumber) || workspace?.sourceSheets?.[0] || null;
+  if (!workspace || !sheet) return null;
+  return createDrawingTarget({
+    projectId: state().activeProject,
+    documentId: BEDFORD_DRAWING_DOCUMENT_ID,
+    drawingSetId: BEDFORD_DRAWING_DOCUMENT_ID,
+    pageId: sheet.pageId,
+    sheetId: sheet.sheetNumber,
+    sheetNumber: sheet.sheetNumber,
+    pageNumber: sheet.pdfPageNumber,
+    origin: 'workspace',
+    returnTarget: 'workspace'
+  });
+}
+
+function workspaceNextStepPriority(item = {}) {
+  if (item.status === 'complete') return 'low';
+  if (item.status === 'pending-date') return 'medium';
+  return 'high';
+}
+
 let view = 'chat';
 let experience = 'mission-control';
 let lastProfessionalView = '';
@@ -251,6 +312,9 @@ let missionControlAttachments = [];
 let chiefHistoryVisible = false;
 let activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
 let activeBedfordWorkspaceSheetNumber = '';
+let activeBedfordWorkspaceSection = 'overview';
+const workspaceChecklistSessionState = new Map();
+const workspaceNotesSessionState = new Map();
 let previousUserProjectId = null;
 let selectedDoc = null;
 let selectedKnowledgeSection = 'all';
@@ -4746,6 +4810,7 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
 async function renderMissionControlWorkspace() {
   const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
   const activeWorkspace = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
+  const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
   const pmisBuilding = missionPmisSelectedBuilding?.() || null;
   const pmisContext = pmisBuilding?.Building || pmisBuilding?.building || pmisBuilding?.name || pmisBuilding?.label || activeWorkspace?.pmisBuilding || 'Unavailable';
   const previewSheet = activeWorkspace?.sourceSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
@@ -4754,6 +4819,33 @@ async function renderMissionControlWorkspace() {
   const previewUrl = previewSheet?.pdfPageNumber
     ? new URL(`project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf#page=${previewSheet.pdfPageNumber}&view=FitH`, document.baseURI).toString()
     : '';
+  const chiefInsight = activeWorkspace ? buildChiefInsight({
+    id: activeWorkspace.id,
+    room: activeWorkspace.room,
+    name: activeWorkspace.name,
+    type: activeWorkspace.type,
+    level: activeWorkspace.level,
+    disciplineFocus: activeWorkspace.disciplineFocus,
+    sourceSheets: activeWorkspace.sourceSheets,
+    relatedSheets: activeWorkspace.relatedSheets,
+    applicableSpecifications: activeWorkspace.applicableSpecifications,
+    relatedRooms: activeWorkspace.relatedRooms,
+    pmisBuilding: activeWorkspace.pmisBuilding,
+    projectMilestoneContext
+  }) : 'Workspace evidence is available for review.';
+  const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
+  const checklistItems = (activeWorkspace?.checklist || []).map(item => ({
+    ...item,
+    done: checklistState.has(item.label) || Boolean(item.done)
+  }));
+  const checklistDoneCount = checklistItems.filter(item => item.done).length;
+  const readinessScore = checklistItems.length ? Math.round((checklistDoneCount / checklistItems.length) * 100) : null;
+  const notesValue = workspaceNotesStateFor(activeWorkspace?.id || '');
+  const milestoneTimeline = projectMilestoneContext?.timeline || [];
+  const milestoneNextSteps = projectMilestoneContext?.nextSteps || [];
+  const combinedNextSteps = [...milestoneNextSteps, ...(activeWorkspace?.nextSteps || [])];
+  const compactNextSteps = combinedNextSteps.slice(0, 5);
+  const remainingNextSteps = Math.max(0, combinedNextSteps.length - compactNextSteps.length);
   const workspaceButtons = workspaceModel.workspaces.map(record => `
     <button type="button" class="${record.id === activeWorkspace?.id ? 'active' : ''}" data-ws-select="${esc(record.id)}">
       <strong>${esc(record.id)}</strong>
@@ -4770,9 +4862,11 @@ async function renderMissionControlWorkspace() {
   `).join('') || '<span class="mc-ws-empty-inline">No source sheets available.</span>';
   const relatedDocumentItems = (activeWorkspace?.sourceEvidence || []).slice(0, 4).map(item => `
     <li>
-      <b>${esc(item.sheetNumber)}</b>
-      <span>${esc(item.sheetTitle)}</span>
-      <em>Source Sheet</em>
+      <button type="button" data-ws-source-sheet="${esc(item.sheetNumber)}" aria-label="Open source sheet ${esc(item.sheetNumber)}">
+        <b>${esc(item.sheetNumber)}</b>
+        <span>${esc(item.sheetTitle)}</span>
+        <em>Source Sheet</em>
+      </button>
     </li>
   `).join('') || '<li><b>No source sheets</b><span>Workspace data unavailable.</span><em>Unavailable</em></li>';
   const sourceSheetItems = (activeWorkspace?.sourceSheets || []).map(sheet => `
@@ -4791,9 +4885,11 @@ async function renderMissionControlWorkspace() {
   `).join('') || '<li><b>No related sheets</b><span>Workspace data unavailable.</span><em>Unavailable</em></li>';
   const specificationItems = (activeWorkspace?.applicableSpecifications || []).map(spec => `
     <li>
-      <b>${esc(spec.sectionNumber)} – ${esc(spec.sectionTitle)}</b>
-      <span>Supported by ${esc(activeWorkspace?.sourceSheets?.[0]?.sheetNumber || activeWorkspace?.room || 'workspace evidence')}</span>
-      <em>${spec.sectionNumber === '28 31 00' ? 'Primary' : 'Relevant'}</em>
+      <button type="button" data-ws-spec-section="${esc(spec.sectionNumber)}" aria-label="Open specification ${esc(spec.sectionNumber)}">
+        <b>${esc(spec.sectionNumber)} – ${esc(spec.sectionTitle)}</b>
+        <span>Supported by ${esc(activeWorkspace?.sourceSheets?.[0]?.sheetNumber || activeWorkspace?.room || 'workspace evidence')}</span>
+        <em>${spec.sectionNumber === '28 31 00' ? 'Primary' : 'Relevant'}</em>
+      </button>
     </li>
   `).join('') || '<li><b>No applicable specifications</b><span>Workspace data unavailable.</span><em>Unavailable</em></li>';
   const relatedRoomItems = (activeWorkspace?.relatedRooms || []).map(room => `<li><span>${esc(room)}</span></li>`).join('') || '<li><span>No related rooms recorded.</span></li>';
@@ -4805,23 +4901,35 @@ async function renderMissionControlWorkspace() {
         <div class="mc-ws-side-section"><small>ACTIVE WORKSPACE</small><strong>${esc(activeWorkspace?.id || 'Unavailable')} — ${esc(activeWorkspace?.room || 'Unknown')} · ${esc(activeWorkspace?.name || 'Workspace')}</strong><span>Level: <b>${esc(activeWorkspace?.level || 'Unavailable')}</b></span><span>Discipline Focus: ${esc(activeWorkspace?.disciplineFocus || 'Unavailable')}</span><span>PMIS Context: ${esc(pmisContext)}</span></div>
         <div class="mc-ws-side-section"><small>WORKSPACE RECORDS</small><nav class="mc-ws-side-nav" aria-label="Workspace records">${workspaceButtons}</nav></div>
         <nav class="mc-ws-side-nav" aria-label="Workspace sections">
-          <button class="active">⌂ Overview</button><button>▣ Documents</button><button>◇ Issues</button><button>☑ Checklist</button><button>⇄ Comparisons</button><button>◷ Timeline</button><button>✎ Notes</button>
+          <button type="button" class="${activeBedfordWorkspaceSection === 'overview' ? 'active' : ''}" data-ws-section="overview">⌂ Overview</button>
+          <button type="button" class="${activeBedfordWorkspaceSection === 'documents' ? 'active' : ''}" data-ws-section="documents">▣ Documents</button>
+          <button type="button" class="${activeBedfordWorkspaceSection === 'issues' ? 'active' : ''}" data-ws-section="issues">◇ Issues</button>
+          <button type="button" class="${activeBedfordWorkspaceSection === 'checklist' ? 'active' : ''}" data-ws-section="checklist">☑ Checklist</button>
+          <button type="button" class="${activeBedfordWorkspaceSection === 'comparisons' ? 'active' : ''}" data-ws-section="comparisons">⇄ Comparisons</button>
+          <button type="button" class="${activeBedfordWorkspaceSection === 'timeline' ? 'active' : ''}" data-ws-section="timeline">◷ Timeline</button>
+          <button type="button" class="${activeBedfordWorkspaceSection === 'notes' ? 'active' : ''}" data-ws-section="notes">✎ Notes</button>
         </nav>
-        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="specs">Compare to Spec</button><button data-ws-action="rfi">Create RFI</button><button data-ws-action="observation">Create Observation</button><button data-ws-action="package">Export Package</button></div>
-        <div class="mc-ws-chief"><div class="mc-ws-chief-avatar">👷</div><strong>Chief Insight</strong><p>${esc(activeWorkspace?.chiefInsight || 'Workspace evidence is available for review.')}</p><button data-ws-action="chief">Ask Chief</button></div>
+        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="specs">Compare to Spec</button><button data-ws-action="rfi" disabled title="Create RFI is not configured yet">Create RFI</button><button data-ws-action="observation" disabled title="Create Observation is not configured yet">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
+        <div class="mc-ws-chief" id="workspaceChiefInsightPanel"><div class="mc-ws-chief-avatar">👷</div><strong>Chief Insight</strong><p>${esc(chiefInsight)}</p><button data-ws-action="chief">Ask Chief</button></div>
       </aside>
       <main class="mc-ws-main">
-        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article><span>Overall Readiness</span><strong class="${activeWorkspace?.id === '137' ? 'watch' : 'watch'}">${activeWorkspace?.id === '137' ? 'Watch' : 'Ready'}</strong><small>${pmisContext}</small></article><article><span>Critical Issues</span><strong class="danger">${activeWorkspace?.issues?.filter(item => !/no room-specific issues/i.test(item.label || '')).length || 0}</strong><small>${activeWorkspace?.issues?.[0]?.label || 'No room-specific issues'}</small></article><article><span>Open Questions</span><strong>${activeWorkspace?.nextSteps?.length || 0}</strong><small>${activeWorkspace?.relatedRooms?.length || 0} related rooms</small></article><article><span>Related Documents</span><strong>${(activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0)}</strong><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets</small></article></div></header>
+        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article><span>Overall Readiness</span><strong class="${readinessScore === null ? 'danger' : readinessScore >= 75 ? 'watch' : readinessScore > 0 ? 'watch' : 'danger'}">${readinessScore === null ? 'No data' : `${readinessScore}%`}</strong><small>${readinessScore === null ? 'No checklist data' : `${checklistDoneCount} of ${checklistItems.length} checklist items complete`}</small></article><article><span>Critical Issues</span><strong class="danger">${activeWorkspace?.issues?.filter(item => !/no room-specific issues/i.test(item.label || '')).length || 0}</strong><small>${activeWorkspace?.issues?.[0]?.label || 'No room-specific issues'}</small></article><article><span>Open Questions</span><strong>${activeWorkspace?.nextSteps?.length || 0}</strong><small>${activeWorkspace?.relatedRooms?.length || 0} related rooms</small></article><article><span>Related Documents</span><strong>${(activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0)}</strong><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets</small></article></div></header>
+        <section class="mc-ws-project-clock" aria-label="Project milestone context">
+          <div><small>PROJECT PHASE</small><strong>${esc(projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
+          <div><small>NTP</small><strong>${esc(projectMilestoneContext?.ntpDateLabel || 'Aug 13, 2026')}</strong></div>
+          <div><small>CONTRACT COMPLETION</small><strong>${esc(projectMilestoneContext?.contractCompletionDateLabel || 'Aug 14, 2028')}</strong></div>
+          <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
+        </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
         <section class="mc-ws-upper">
-          <article class="mc-ws-drawing"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
-          <aside class="mc-ws-evidence"><section><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">View All</button></header><ul>${specificationItems}</ul></section><section><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">View All</button></header><ul>${relatedDocumentItems}</ul></section></aside>
+          <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
+          <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
         </section>
         <section class="mc-ws-lower">
-          <article><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${(activeWorkspace?.issues || []).map(item => `<li><i>●</i><div><b>${esc(item.label)}</b><span>${esc(item.detail)}</span></div><em class="${/no room-specific issues/i.test(item.label || '') ? 'low' : 'high'}">${/no room-specific issues/i.test(item.label || '') ? 'Low' : 'High'}</em></li>`).join('')}</ul></article>
-          <article><header><strong>TRACEABILITY MAP</strong></header><div class="mc-ws-trace">${(activeWorkspace?.traceabilityMap || []).flatMap(item => [`<div><b>Source</b><span>${esc(item.from)}</span></div>`, '<i>→</i>', `<div><b>Requirement</b><span>${esc(item.requirement)}</span></div>`, '<i>→</i>', `<div><b>Impact</b><span>${esc(item.impact)}</span></div>`]).join('')}</div></article>
-          <article><header><strong>CHECKLIST BUILDER</strong></header><p class="mc-ws-muted">Plan-derived checklist grounded in the current workspace evidence.</p><div class="mc-ws-progress"><span style="width:${Math.min(100, 28 + (activeWorkspace?.checklist?.filter(item => item.done).length || 0) * 14)}%"></span></div><small>${activeWorkspace?.checklist?.filter(item => item.done).length || 0} of ${(activeWorkspace?.checklist || []).length} items scored</small><ul class="mc-ws-check">${(activeWorkspace?.checklist || []).map(item => `<li>${item.done ? '☑' : '☐'} ${esc(item.label)}</li>`).join('')}</ul><button class="mc-ws-wide" data-ws-action="specs">View Workspace Specifications</button></article>
-          <article><header><strong>NEXT STEPS</strong></header><ul class="mc-ws-next">${(activeWorkspace?.nextSteps || []).map(item => `<li><span>${esc(item.label)}</span><em>${item.label.includes('Chief') ? 'High' : 'Medium'}</em></li>`).join('')}</ul><button class="mc-ws-wide" data-ws-action="drawings">Open Drawing Viewer</button></article>
+          <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${(activeWorkspace?.issues || []).map(item => `<li><i>●</i><div><b>${esc(item.label)}</b><span>${esc(item.detail)}</span></div><em class="${/no room-specific issues/i.test(item.label || '') ? 'low' : 'high'}">${/no room-specific issues/i.test(item.label || '') ? 'Low' : 'High'}</em></li>`).join('')}</ul></article>
+          <article id="workspaceComparisonsPanel"><header><strong>TRACEABILITY MAP</strong><button type="button" data-ws-section="comparisons">Focus</button></header><div class="mc-ws-trace">${(activeWorkspace?.traceabilityMap || []).flatMap(item => [`<div><b>Source</b><span>${esc(item.from)}</span></div>`, '<i>→</i>', `<div><b>Requirement</b><span>${esc(item.requirement)}</span></div>`, '<i>→</i>', `<div><b>Impact</b><span>${esc(item.impact)}</span></div>`]).join('')}</div></article>
+          <article id="workspaceChecklistPanel"><header><strong>CHECKLIST BUILDER</strong><button type="button" data-ws-section="checklist">Focus</button></header><p class="mc-ws-muted">Plan-derived checklist grounded in the current workspace evidence.</p><div class="mc-ws-progress"><span style="width:${Math.min(100, 28 + (checklistItems.filter(item => item.done).length || 0) * 14)}%"></span></div><small>${checklistItems.filter(item => item.done).length || 0} of ${checklistItems.length} items scored</small><ul class="mc-ws-check">${checklistItems.map(item => `<li><label><input type="checkbox" data-ws-checklist-toggle="${esc(item.label)}" ${item.done ? 'checked' : ''}> ${esc(item.label)}</label></li>`).join('')}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
+          <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.label)}</b><span>${esc(item.dueDateLabel || item.status || '')}</span><small>${esc(item.detail || item.notes || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button><details class="mc-ws-notes" id="workspaceNotesPanel"><summary>Workspace notes</summary><textarea data-ws-note="${esc(activeWorkspace?.id || '')}" rows="4" placeholder="Add temporary workspace notes for this session.">${esc(notesValue)}</textarea></details></article>
         </section>
       </main>
     </section>`;
@@ -5018,20 +5126,67 @@ $('#missionControlContent').onclick = async event => {
     activeBedfordWorkspaceId = button.dataset.wsSelect;
     const selectedWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace;
     activeBedfordWorkspaceSheetNumber = selectedWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
+    activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return;
   }
   if (button.dataset.wsSheet) {
     activeBedfordWorkspaceSheetNumber = button.dataset.wsSheet;
+    activeBedfordWorkspaceSection = 'documents';
     await showMissionControlView('workspace');
     return;
   }
-  if (button.dataset.wsAction === 'chief') return showMissionControlView('home');
-  if (button.dataset.wsAction === 'drawings') return showMissionControlView('plans');
-  if (button.dataset.wsAction === 'specs') return showMissionControlView('home');
+  if (button.dataset.wsSourceSheet) {
+    const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
+    const selectedSheet = (activeWorkspace?.sourceSheets || []).find(sheet => sheet.sheetNumber === button.dataset.wsSourceSheet) || null;
+    if (selectedSheet) {
+      drawingTarget = buildWorkspaceDrawingTarget(activeWorkspace, selectedSheet.sheetNumber);
+      activeBedfordWorkspaceSheetNumber = selectedSheet.sheetNumber;
+      activeBedfordWorkspaceSection = 'documents';
+      await showMissionControlView('plans');
+    }
+    return;
+  }
+  if (button.dataset.wsSpecSection) {
+    activeBedfordWorkspaceSection = 'documents';
+    await openChiefSpecificationViewer(button.dataset.wsSpecSection, { returnTarget: 'chat' });
+    return;
+  }
+  if (button.dataset.wsChecklistToggle) {
+    const workspaceId = activeBedfordWorkspaceId || '';
+    const checklistState = workspaceChecklistStateFor(workspaceId);
+    if (button.closest('li')?.querySelector('input')?.checked) checklistState.add(button.dataset.wsChecklistToggle);
+    else checklistState.delete(button.dataset.wsChecklistToggle);
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsSection) {
+    activeBedfordWorkspaceSection = button.dataset.wsSection;
+    await showMissionControlView('workspace');
+    window.setTimeout(() => {
+      const anchor = document.getElementById(workspaceSectionAnchor(activeBedfordWorkspaceSection));
+      anchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+    return;
+  }
+  if (button.dataset.wsAction === 'drawings') {
+    const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
+    const target = buildWorkspaceDrawingTarget(activeWorkspace, activeBedfordWorkspaceSheetNumber);
+    if (target) drawingTarget = target;
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('plans');
+    return;
+  }
+  if (button.dataset.wsAction === 'specs') {
+    const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
+    const firstSpec = activeWorkspace?.applicableSpecifications?.[0]?.sectionNumber || '';
+    if (firstSpec) return openChiefSpecificationViewer(firstSpec, { returnTarget: 'chat' });
+    return showMissionControlView('home');
+  }
   if (button.dataset.wsAction === 'new') {
     activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
     activeBedfordWorkspaceSheetNumber = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
+    activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return;
   }
@@ -5049,6 +5204,19 @@ $('#missionControlContent').onclick = async event => {
   }
   if (button.dataset.controlAction === 'open-specifications') {
     return showMissionControlView('library');
+  }
+  if (button.dataset.wsAction === 'chief') {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('home');
+    const prompt = $('#missionControlPrompt');
+    if (prompt) {
+      prompt.value = buildWorkspaceChiefPrompt(activeWorkspace, activeWorkspace?.pmisBuilding || '', projectMilestoneContext);
+      prompt.focus();
+    }
+    return;
   }
   if (button.dataset.chiefDrawingCard) {
     console.log('CHIEF_DRAWING_DELEGATED_HANDLER', {
@@ -5529,6 +5697,21 @@ app.addEventListener('change', async event => {
       await renderDrawingWorkspace(shell);
     } catch (error) { alert(error.message); }
   }
+});
+$('#missionControlContent').addEventListener('change', event => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  if (!target.matches('input[data-ws-checklist-toggle]')) return;
+  const checklistState = workspaceChecklistStateFor(activeBedfordWorkspaceId || '');
+  if (target.checked) checklistState.add(target.dataset.wsChecklistToggle || '');
+  else checklistState.delete(target.dataset.wsChecklistToggle || '');
+  void renderMissionControlWorkspace();
+});
+$('#missionControlContent').addEventListener('input', event => {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) return;
+  if (!target.matches('textarea[data-ws-note]')) return;
+  setWorkspaceNotesState(target.dataset.wsNote || '', target.value);
 });
 
 app.addEventListener('click', event => {
@@ -13495,9 +13678,10 @@ engine.initialize()
     }
     updateLandingReadiness({ projectSettled: true, project: Boolean(state().projects.find(p => p.id === BEDFORD_PROJECT_ID)) });
     
-    // Ensure built-in Bedford drawing documents have source files registered
+    // Ensure built-in Bedford source documents have source files registered
     const bedfordDocs = await engine.documents();
     const bedfordDrawingDocs = bedfordDocs.filter(d => bedfordDrawingSets.some(set => set.documentId === d.id));
+    const bedfordNtpDoc = bedfordDocs.find(d => d.id === BEDFORD_NTP_SOURCE_DOCUMENT.id);
     const specDoc = bedfordDocs.find(d => d.id === BEDFORD_SPEC_DOCUMENT_ID);
     
     // Register source files for built-in drawing documents if they don't exist
@@ -13541,6 +13725,50 @@ engine.initialize()
           }
         } catch (error) {
           console.error('Failed to register Bedford specification source:', error);
+        }
+      }
+    }
+
+    if (bedfordNtpDoc && bedfordNtpDoc.builtIn && bedfordNtpDoc.staticPath) {
+      const existingSource = await engine.sourceFile(bedfordNtpDoc.id);
+      if (!existingSource) {
+        try {
+          const response = await fetch(new URL(bedfordNtpDoc.staticPath, document.baseURI).toString());
+          if (response.ok) {
+            const blob = await response.blob();
+            await engine.putMany('sourceFiles', [{
+              documentId: bedfordNtpDoc.id,
+              projectId: bedfordNtpDoc.projectId,
+              sourceBlob: blob,
+              sourcePath: bedfordNtpDoc.staticPath,
+              contentHash: ''
+            }]);
+            console.log('Bedford NTP source file registered');
+          }
+        } catch (error) {
+          console.error('Failed to register Bedford NTP source:', error);
+        }
+      }
+    }
+
+    if (bedfordNtpDoc && bedfordNtpDoc.builtIn && bedfordNtpDoc.staticPath) {
+      const existingSource = await engine.sourceFile(bedfordNtpDoc.id);
+      if (!existingSource) {
+        try {
+          const response = await fetch(bedfordNtpDoc.staticPath);
+          if (response.ok) {
+            const blob = await response.blob();
+            await engine.putMany('sourceFiles', [{
+              documentId: bedfordNtpDoc.id,
+              projectId: bedfordNtpDoc.projectId,
+              sourceBlob: blob,
+              sourcePath: bedfordNtpDoc.staticPath,
+              contentHash: ''
+            }]);
+            console.log('Bedford NTP source file registered');
+          }
+        } catch (error) {
+          console.error('Failed to register Bedford NTP source:', error);
         }
       }
     }

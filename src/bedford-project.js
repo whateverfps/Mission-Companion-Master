@@ -1,3 +1,5 @@
+import { BEDFORD_NTP_SOURCE_DOCUMENT } from './workspace-milestones.js';
+
 export const BEDFORD_PROJECT_ID = 'bedford';
 export const BEDFORD_PROJECT_NAME = 'Bedford Veterans Affairs Hospital';
 export const BEDFORD_DRAWING_DOCUMENT_ID = 'bedford-b61-drawings';
@@ -121,6 +123,20 @@ const fixture = {
       role: 'specification',
       documentType: 'specification'
     }
+    ,
+    {
+      ...BEDFORD_NTP_SOURCE_DOCUMENT,
+      projectId: BEDFORD_PROJECT_ID,
+      libraryId: 'bedford-lib-main',
+      category: 'Contractual',
+      tags: ['Bedford', 'Notice to Proceed', 'Contract', 'Milestone'],
+      status: 'verified',
+      parser: 'built-in bundle',
+      hierarchyVersion: 'mc-hierarchy-v2',
+      builtIn: true,
+      role: 'report',
+      documentType: 'report'
+    }
   ],
   sections: [],
   inspectionRecords: [],
@@ -146,6 +162,7 @@ export function validateBedfordProject(value = BEDFORD_PROJECT) {
   if (!documentIds.has(BEDFORD_DRAWING_DOCUMENT_ID)) errors.push('Missing Building 61 drawing document');
   if (!documentIds.has(BEDFORD_DRAWING_DOCUMENT_ID_B62)) errors.push('Missing Building 62 drawing document');
   if (!documentIds.has(BEDFORD_SPEC_DOCUMENT_ID)) errors.push('Missing Bedford specification document');
+  if (!documentIds.has(BEDFORD_NTP_SOURCE_DOCUMENT.id)) errors.push('Missing Bedford Notice to Proceed document');
   
   return { valid: errors.length === 0, errors };
 }

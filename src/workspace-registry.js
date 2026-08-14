@@ -1,4 +1,5 @@
 import { BUILDING_61_DRAWING_CATALOG } from './building-61-drawing-catalog.js';
+import { buildBedfordProjectMilestoneContext } from './workspace-milestones.js';
 
 const text = value => value === null || value === undefined ? '' : String(value).trim();
 const list = value => Array.isArray(value) ? value : [];
@@ -169,6 +170,39 @@ function buildNextSteps({ sourceSheets, applicableSpecifications, relatedRooms, 
   return steps;
 }
 
+function buildChiefInsight({
+  id,
+  room,
+  name,
+  type,
+  level,
+  disciplineFocus,
+  sourceSheets,
+  relatedSheets,
+  applicableSpecifications,
+  relatedRooms,
+  pmisBuilding,
+  projectMilestoneContext = null
+}) {
+  const sheetCount = list(sourceSheets).length;
+  const relatedSheetCount = list(relatedSheets).length;
+  const specCount = list(applicableSpecifications).length;
+  const relatedRoomCount = list(relatedRooms).length;
+  const parts = [
+    `${room || id || 'This workspace'} is the ${name || 'Bedford workspace'} for ${disciplineFocus || 'project evidence review'} at ${level || 'the recorded level'} in ${pmisBuilding || 'Bedford'}.`,
+    `It is supported by ${sheetCount} source sheet${sheetCount === 1 ? '' : 's'}${relatedSheetCount ? ` and ${relatedSheetCount} related sheet${relatedSheetCount === 1 ? '' : 's'}` : ''}.`,
+    specCount ? `The workspace maps to ${specCount} applicable specification section${specCount === 1 ? '' : 's'}${relatedRoomCount ? ` and ${relatedRoomCount} related room${relatedRoomCount === 1 ? '' : 's'}` : ''}.` : 'No applicable specification sections are currently recorded.',
+    type === 'EXISTING_TRANSITION'
+      ? 'This is an existing-transition room; compare it against current inventory conditions.'
+      : 'Use the source sheets and specification links to verify the current room condition.'
+  ];
+  if (projectMilestoneContext) {
+    parts.push(`The project is in ${projectMilestoneContext.projectPhase || 'Preconstruction'} phase under Notice to Proceed on ${projectMilestoneContext.ntpDateLabel || projectMilestoneContext.ntpDate || 'the NTP date'}.`);
+    parts.push(`The interim contractor schedule is ${projectMilestoneContext.scheduleStatus ? projectMilestoneContext.scheduleStatus.toLowerCase() : 'awaiting submission'}, while room-level construction dates remain ${projectMilestoneContext.roomScheduleStatus ? projectMilestoneContext.roomScheduleStatus.toLowerCase() : 'awaiting contractor schedule'}.`);
+  }
+  return parts.slice(0, 4).join(' ');
+}
+
 function buildWorkspaceRecord({
   id,
   building,
@@ -203,7 +237,7 @@ function buildWorkspaceRecord({
     applicableSpecifications,
     pmisBuilding: text(pmisBuilding),
     sourceEvidence: list(sourceEvidence).length ? list(sourceEvidence) : buildSourceEvidence(sourceSheets, name),
-    chiefInsight: text(chiefInsight),
+    chiefInsight: buildChiefInsight({ id, room, name, type, level, disciplineFocus, sourceSheets, relatedSheets, applicableSpecifications, relatedRooms, pmisBuilding }) || text(chiefInsight),
     issues: buildIssues({ room, name, type }),
     traceabilityMap: buildTraceabilityMap({ sourceSheets, applicableSpecifications, name, level, disciplineFocus }),
     checklist: buildChecklist({ sourceSheets, disciplineFocus, level, room }),
@@ -303,6 +337,9 @@ export function buildBedfordWorkspaceModel(id = '') {
   return {
     activeWorkspaceId: activeRecord?.id || '',
     activeWorkspace: activeRecord,
-    workspaces: listBedfordWorkspaceRecords()
+    workspaces: listBedfordWorkspaceRecords(),
+    projectMilestoneContext: buildBedfordProjectMilestoneContext({ workspace: activeRecord })
   };
 }
+
+export { buildChiefInsight };

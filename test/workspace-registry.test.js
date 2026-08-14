@@ -2,10 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildBedfordWorkspaceModel,
+  buildChiefInsight,
   getBedfordWorkspaceDefaultId,
   getBedfordWorkspaceRecord,
   listBedfordWorkspaceRecords
 } from '../src/workspace-registry.js';
+import {
+  buildBedfordProjectMilestoneContext,
+  BEDFORD_NTP_SOURCE_DOCUMENT
+} from '../src/workspace-milestones.js';
 
 test('Bedford workspace registry exposes the four plan-derived Building 61 records', () => {
   const records = listBedfordWorkspaceRecords();
@@ -22,7 +27,9 @@ test('Bedford workspace registry grounds each record in live B61 sheet metadata'
   assert.equal(b13.sourceSheets[0].sheetTitle, 'TELECOMMUNICATION PLAN - BASEMENT LEVEL');
   assert.match(b13.sourceSheets[0].pageId, /^drawing-page:bedford-b61-drawings:/);
   assert.equal(b13.applicableSpecifications[0].sectionNumber, '27 10 00');
-  assert.match(b13.chiefInsight, /telecom backbone/i);
+  assert.match(b13.chiefInsight, /B13 is .*Primary Telecommunications Room for Telecommunication \/ OIT/i);
+  assert.match(b13.chiefInsight, /2 source sheets/i);
+  assert.match(b13.chiefInsight, /6 applicable specification sections/i);
 });
 
 test('Bedford workspace registry preserves the 137 transition room grounding', () => {
@@ -41,4 +48,62 @@ test('Bedford workspace model keeps the active record and returns all records', 
   assert.equal(model.activeWorkspace?.room, '226');
   assert.equal(model.workspaces.length, 4);
   assert.deepEqual(model.workspaces.map(item => item.id), ['B13', '124', '226', '137']);
+  assert.equal(model.projectMilestoneContext?.sourceDocument?.id, BEDFORD_NTP_SOURCE_DOCUMENT.id);
+});
+
+test('Bedford workspace chief insight is derived from the active record rather than canned prose', () => {
+  const insight = buildChiefInsight({
+    id: '137',
+    room: '137',
+    name: 'Existing / Transition Telecom-Computer Room',
+    type: 'EXISTING_TRANSITION',
+    level: 'First Level',
+    disciplineFocus: 'Telecommunication / OIT',
+    sourceSheets: ['61T-402', '61T-501'],
+    relatedSheets: ['61T-100', '61T-101', '61T-102', '61T-601', '61T-701'],
+    applicableSpecifications: [{ sectionNumber: '27 15 00', sectionTitle: 'COMMUNICATIONS HORIZONTAL CABLING' }],
+    relatedRooms: ['B13', '124', '226'],
+    pmisBuilding: 'Building 61'
+  });
+  assert.match(insight, /137 is .*Existing \/ Transition Telecom-Computer Room for Telecommunication \/ OIT/);
+  assert.match(insight, /2 source sheets/i);
+  assert.match(insight, /5 related sheets/i);
+  assert.match(insight, /1 applicable specification section/i);
+  assert.match(insight, /existing-transition room/i);
+});
+
+test('Bedford project milestone context is deterministic and shared across workspace records', () => {
+  const context = buildBedfordProjectMilestoneContext({ workspace: { id: '137', room: '137', building: '61' } });
+  assert.equal(context.sourceDocument.id, BEDFORD_NTP_SOURCE_DOCUMENT.id);
+  assert.equal(context.sourceType, 'NTP / Contractual');
+  assert.equal(context.contractNumber, '518-22-700');
+  assert.equal(context.ntpDate, '2026-08-13');
+  assert.equal(context.contractCompletionDate, '2028-08-14');
+  assert.equal(context.contractDurationCalendarDays, 730);
+  assert.equal(context.projectPhase, 'Preconstruction');
+  assert.equal(context.scheduleStatus, 'Awaiting Interim Schedule');
+  assert.equal(context.roomScheduleStatus, 'Awaiting Contractor Schedule');
+  assert.match(context.summary, /Notice to Proceed dated Aug 13, 2026/);
+  assert.match(context.summary, /room-level construction dates remain awaiting contractor schedule/i);
+  assert.deepEqual(context.milestones.map(item => item.id), [
+    'ntp-issued',
+    'insurance-certificate',
+    'performance-payment-bonds',
+    'quality-control-plan',
+    'interim-project-schedule',
+    'final-project-schedule',
+    'accident-prevention-plan',
+    'contract-completion'
+  ]);
+  assert.equal(context.milestones.find(item => item.id === 'quality-control-plan')?.dueDate, '2026-08-28');
+  assert.equal(context.milestones.find(item => item.id === 'interim-project-schedule')?.dueDate, '2026-09-03');
+  assert.equal(context.milestones.find(item => item.id === 'final-project-schedule')?.dueDate, '2026-09-28');
+  assert.equal(context.milestones.find(item => item.id === 'accident-prevention-plan')?.status, 'pending-date');
+  assert.equal(context.milestones.find(item => item.id === 'insurance-certificate')?.status, 'complete');
+  assert.equal(context.milestones.find(item => item.id === 'performance-payment-bonds')?.status, 'complete');
+  assert.ok(context.timeline.length >= 5);
+  assert.ok(context.nextSteps.some(item => /COR coordination/i.test(item.label)));
+  const model = buildBedfordWorkspaceModel('137');
+  assert.equal(model.projectMilestoneContext.ntpDate, '2026-08-13');
+  assert.equal(model.workspaces.every(record => !Object.prototype.hasOwnProperty.call(record, 'projectMilestones')), true);
 });

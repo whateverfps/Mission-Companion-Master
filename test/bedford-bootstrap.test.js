@@ -22,6 +22,8 @@ const { loadBedfordDrawingSpecMappings } = await import('../src/specification-kn
 const { createChiefSpecificationSME } = await import('../src/chief-specification-sme.js');
 const { createChiefIntelligenceBridge } = await import('../src/chief-intelligence-bridge.js');
 const { getBedfordDrawingSetForReference } = await import('../src/bedford-project.js');
+const { BEDFORD_PROJECT } = await import('../src/bedford-project.js');
+const { BEDFORD_NTP_SOURCE_DOCUMENT } = await import('../src/workspace-milestones.js');
 
 test('Bedford bootstrap loads the authoritative relationship graph before Chief asks questions', async () => {
   const specificationIndex = createSpecificationIndex();
@@ -98,6 +100,11 @@ test('Bedford bootstrap loads the authoritative relationship graph before Chief 
     ['01 33 23', '07 84 00', '09 91 00', '21 08 00', '21 13 13', '28 31 00'].sort()
   );
   assert.equal(context.specificationAnswer?.drawings?.some(item => item.sheetNumber === '61FX100'), true);
+});
+
+test('Bedford project fixture includes the contractual Notice to Proceed source document', () => {
+  assert.ok(BEDFORD_PROJECT.documents.some(document => document.id === BEDFORD_NTP_SOURCE_DOCUMENT.id));
+  assert.equal(BEDFORD_PROJECT.documents.find(document => document.id === BEDFORD_NTP_SOURCE_DOCUMENT.id)?.staticPath, BEDFORD_NTP_SOURCE_DOCUMENT.staticPath);
 });
 
 test('Bedford drawing catalog bootstrap seeds the authoritative sheet map and stays idempotent', async () => {

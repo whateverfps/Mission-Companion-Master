@@ -192,10 +192,29 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /<strong>TRACEABILITY MAP<\/strong>/);
   assert.match(workspace, /<strong>CHECKLIST BUILDER<\/strong>/);
   assert.match(workspace, /<strong>NEXT STEPS<\/strong>/);
+  assert.match(workspace, /mc-ws-project-clock/);
+  assert.match(workspace, /PROJECT PHASE/);
+  assert.match(workspace, /NTP/);
+  assert.match(workspace, /CONTRACT COMPLETION/);
+  assert.match(workspace, /SCHEDULE STATUS/);
+  assert.match(workspace, /mc-ws-timeline/);
+  assert.match(workspace, /combinedNextSteps\.slice\(0, 5\)/);
+  assert.match(workspace, /mc-ws-next-summary/);
   assert.match(workspace, /RELATED DOCUMENTS \/ SOURCE SHEETS/);
+  assert.match(workspace, /data-ws-section="overview"/);
+  assert.match(workspace, /data-ws-source-sheet=/);
+  assert.match(workspace, /data-ws-spec-section=/);
+  assert.match(workspace, /data-ws-checklist-toggle=/);
+  assert.match(workspace, /data-ws-note=/);
+  assert.match(workspace, /Create RFI is not configured yet/);
   assert.match(css, /\.mc-ws\{grid-template-columns:232px minmax\(0,1fr\)\}/);
   assert.match(css, /\.mc-ws-upper\{grid-template-columns:minmax\(0,2\.55fr\) minmax\(300px,1fr\)/);
   assert.match(css, /\.mc-ws-lower\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.mc-ws-lower > article\{min-height:320px;max-height:380px;display:grid;grid-template-rows:auto minmax\(0,1fr\) auto auto;overflow:hidden\}/);
+  assert.match(css, /\.mc-ws-risks,\.mc-ws-check,\.mc-ws-next,\.mc-ws-timeline\{min-height:0;overflow:auto;max-height:160px\}/);
+  assert.match(css, /\.mc-ws-notes/);
+  assert.match(css, /\.mc-ws-project-clock/);
+  assert.match(css, /\.mc-ws-timeline/);
 });
 
 test('Professional Workspace remains available through the gear launcher without a visible top-nav entry', () => {
