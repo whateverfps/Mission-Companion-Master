@@ -6,6 +6,18 @@ const list = value => Array.isArray(value) ? value : [];
 
 const BUILDING_61_SHEET_INDEX = new Map(BUILDING_61_DRAWING_CATALOG.map(sheet => [sheet.sheetNumber, sheet]));
 
+const DRAWING_CATEGORY_ORDER = [
+  'PRIMARY SOURCE SHEETS',
+  'EXISTING / TRANSITION',
+  'TELECOMMUNICATIONS / OIT',
+  'ELECTRICAL / POWER',
+  'MECHANICAL / PLUMBING',
+  'FIRE PROTECTION',
+  'ARCHITECTURAL / INTERIORS',
+  'DETAILS / SCHEDULES',
+  'GENERAL / REFERENCE'
+];
+
 const specificationMap = new Map([
   ['61T-100', [
     ['27 10 00', 'INFORMATION TRANSPORT INFRASTRUCTURE'],
@@ -77,6 +89,131 @@ function sheetRecord(sheetNumber) {
     pdfPageNumber: 0,
     pageId: ''
   };
+}
+
+function sheetCategoryLabel(sheet = {}, type = '', primarySheetNumbers = new Set()) {
+  const discipline = text(sheet.discipline).toUpperCase();
+  const title = text(sheet.sheetTitle).toUpperCase();
+  const drawingType = text(sheet.drawingType).toUpperCase();
+  const roomType = text(type).toUpperCase();
+
+  if (primarySheetNumbers.has(text(sheet.sheetNumber))) return 'PRIMARY SOURCE SHEETS';
+
+  if (roomType === 'EXISTING_TRANSITION' && (
+    discipline === 'HAZARDOUS' ||
+    /EXISTING|DEMOLITION|INVENTORY|ABATEMENT/.test(title)
+  )) return 'EXISTING / TRANSITION';
+
+  if (drawingType === 'DETAILS / BASIS OF DESIGN' || drawingType === 'DETAILS / SCHEDULES' || drawingType === 'DETAILS' || drawingType === 'SCHEDULE' || /DETAIL|SCHEDULE|DIAGRAM|CUTSHEET|BASIS OF DESIGN/.test(title)) return 'DETAILS / SCHEDULES';
+  if (discipline === 'TELECOMMUNICATION') return 'TELECOMMUNICATIONS / OIT';
+  if (discipline === 'ELECTRICAL') return 'ELECTRICAL / POWER';
+  if (discipline === 'MECHANICAL' || discipline === 'PLUMBING') return 'MECHANICAL / PLUMBING';
+  if (discipline === 'FIRE PROTECTION') return 'FIRE PROTECTION';
+  if (discipline === 'ARCHITECTURAL' || discipline === 'INTERIORS') return 'ARCHITECTURAL / INTERIORS';
+  return 'GENERAL / REFERENCE';
+}
+
+function workspaceLevelTokens(level = '') {
+  const value = text(level).toUpperCase();
+  if (!value) return [];
+  if (value.includes('BASEMENT')) return ['BASEMENT LEVEL', 'BASEMENT AND FIRST LEVEL', 'BASEMENT'];
+  if (value.includes('FIRST LEVEL')) return ['FIRST LEVEL', 'BASEMENT AND FIRST LEVEL', 'FIRST LEVEL - OVERALL'];
+  if (value.includes('SECOND LEVEL')) return ['SECOND LEVEL', 'SECOND LEVEL - OVERALL'];
+  return [value];
+}
+
+function sheetMatchesWorkspaceContext(sheet = {}, { type = '', level = '', room = '' } = {}) {
+  const sheetNumber = text(sheet.sheetNumber).toUpperCase();
+  const title = text(sheet.sheetTitle).toUpperCase();
+  const drawingType = text(sheet.drawingType).toUpperCase();
+  const roomType = text(type).toUpperCase();
+  const levelTokens = workspaceLevelTokens(level);
+
+  if (roomType === 'EXISTING_TRANSITION' && (
+    /^61H-/.test(sheetNumber) ||
+    /EXISTING|TRANSITION|DEMOLITION|INVENTORY|ABATEMENT/.test(title)
+  )) return true;
+
+  if (/GENERAL|DETAIL|SCHEDULE|CUTSHEET|BASIS OF DESIGN|REFERENCE|DIAGRAM|ELEVATION/.test(title)) return true;
+  if (/GENERAL INFORMATION|DETAILS|SCHEDULE|CUTSHEETS \/ BASIS OF DESIGN|COVER SHEET|DRAWING INDEX|REFERENCE/.test(drawingType)) return true;
+
+  if (levelTokens.some(token => title.includes(token))) return true;
+
+  if (roomType !== 'EXISTING_TRANSITION' && room && /^61T-(100|101|102|402|501)$/.test(sheetNumber)) {
+    return title.includes(levelTokens[0] || '') || sheetNumber === `61T-${room === 'B13' ? '100' : room === '124' ? '101' : room === '226' ? '102' : '402'}`;
+  }
+
+  return false;
+}
+
+function buildDrawingCategories({ sourceSheets = [], type = '', level = '', room = '' } = {}) {
+  const primarySheetNumbers = new Set(list(sourceSheets).map(sheetNumber => text(sheetNumber)));
+  const categories = new Map();
+  const sourceRecords = list(sourceSheets).map(sheetNumber => ({
+    ...sheetRecord(sheetNumber),
+    relevance: 'PRIMARY',
+    category: 'PRIMARY SOURCE SHEETS'
+  }));
+
+  for (const record of sourceRecords) {
+    if (!categories.has('PRIMARY SOURCE SHEETS')) {
+      categories.set('PRIMARY SOURCE SHEETS', {
+        id: 'primary-source-sheets',
+        label: 'Primary Source Sheets',
+        relationship: 'Primary Source',
+        items: []
+      });
+    }
+    categories.get('PRIMARY SOURCE SHEETS').items.push(record);
+  }
+
+  for (const sheet of BUILDING_61_DRAWING_CATALOG) {
+    const sheetNumber = text(sheet.sheetNumber);
+    if (!sheetNumber || primarySheetNumbers.has(sheetNumber)) continue;
+    if (!sheetMatchesWorkspaceContext(sheet, { type, level, room })) continue;
+    const categoryLabel = sheetCategoryLabel(sheet, type, primarySheetNumbers);
+    if (!categories.has(categoryLabel)) {
+      categories.set(categoryLabel, {
+        id: categoryLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+        label: categoryLabel.split(' / ').join(' / '),
+        relationship: categoryLabel === 'EXISTING / TRANSITION'
+          ? 'Existing / Transition'
+          : categoryLabel === 'PRIMARY SOURCE SHEETS'
+            ? 'Primary Source'
+            : 'Related Evidence',
+        items: []
+      });
+    }
+    categories.get(categoryLabel).items.push({
+      ...sheet,
+      relevance: categoryLabel === 'DETAILS / SCHEDULES' || categoryLabel === 'GENERAL / REFERENCE'
+        ? 'SUPPORTING'
+        : 'DIRECT',
+      category: categoryLabel
+    });
+  }
+
+  const orderedCategories = DRAWING_CATEGORY_ORDER
+    .map(label => categories.get(label))
+    .filter(category => category && category.items.length);
+
+  return orderedCategories.map(category => ({
+    ...category,
+    sheets: category.items,
+    items: category.items
+      .slice()
+      .sort((left, right) => String(left.sheetNumber).localeCompare(String(right.sheetNumber), undefined, { numeric: true }))
+      .map(item => ({
+        sheetNumber: item.sheetNumber,
+        sheetTitle: item.sheetTitle,
+        discipline: item.discipline,
+        drawingType: item.drawingType,
+        pdfPageNumber: Number(item.pdfPageNumber) || 0,
+        pageId: item.pageId || `drawing-page:bedford-b61-drawings:${Number(item.pdfPageNumber) || 0}`,
+        relevance: item.relevance || 'DIRECT',
+        category: item.category || category.label
+      }))
+  }));
 }
 
 function specRecord(sectionNumber, sectionTitle) {
@@ -220,7 +357,17 @@ function buildWorkspaceRecord({
   sourceEvidence
 }) {
   const resolvedSourceSheets = list(sourceSheets).map(sheetNumber => sheetRecord(sheetNumber));
-  const resolvedRelatedSheets = list(relatedSheets).map(sheetNumber => sheetRecord(sheetNumber));
+  const drawingCategories = buildDrawingCategories({ sourceSheets, type, level, room });
+  const resolvedRelatedSheets = (() => {
+    const seen = new Set(resolvedSourceSheets.map(item => item.sheetNumber));
+    const records = [];
+    for (const entry of list(relatedSheets).map(sheetNumber => sheetRecord(sheetNumber))) {
+      if (!entry.sheetNumber || seen.has(entry.sheetNumber)) continue;
+      seen.add(entry.sheetNumber);
+      records.push(entry);
+    }
+    return records;
+  })();
   const applicableSpecifications = buildApplicableSpecifications(sourceSheets);
   return Object.freeze({
     id: text(id),
@@ -233,6 +380,7 @@ function buildWorkspaceRecord({
     disciplineFocus: text(disciplineFocus),
     sourceSheets: resolvedSourceSheets,
     relatedSheets: resolvedRelatedSheets,
+    drawingCategories,
     relatedRooms: list(relatedRooms).map(item => text(item)).filter(Boolean),
     applicableSpecifications,
     pmisBuilding: text(pmisBuilding),

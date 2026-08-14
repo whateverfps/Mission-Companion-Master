@@ -107,6 +107,19 @@ test('Bedford project fixture includes the contractual Notice to Proceed source 
   assert.equal(BEDFORD_PROJECT.documents.find(document => document.id === BEDFORD_NTP_SOURCE_DOCUMENT.id)?.staticPath, BEDFORD_NTP_SOURCE_DOCUMENT.staticPath);
 });
 
+test('Bedford built-in PDF source documents keep canonical packaged source paths without duplicates', () => {
+  const builtInPdfDocs = BEDFORD_PROJECT.documents.filter(document => document.builtIn && document.staticPath && document.mimeType === 'application/pdf');
+  const paths = builtInPdfDocs.map(document => document.staticPath);
+
+  assert.equal(new Set(paths).size, paths.length);
+  assert.deepEqual(paths.sort(), [
+    'project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf',
+    'project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B62.20260316.pdf',
+    'project-documents/bedford/drawings/518-22-700.Bedford.MA.EHRM.Specifications.IFC.20260413.pdf',
+    'project-documents/bedford/drawings/C08 - Notice to Proceed Sawtooth - EHRM Upgrades Bedford MA.pdf'
+  ].sort());
+});
+
 test('Bedford drawing catalog bootstrap seeds the authoritative sheet map and stays idempotent', async () => {
   const catalog = createDrawingCatalog({ storage: null });
   const document = {

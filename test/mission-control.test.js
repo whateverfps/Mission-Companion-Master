@@ -222,6 +222,12 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /data-ws-issue-id=/);
   assert.match(app, /data-ws-timeline-filter=/);
   assert.match(app, /data-ws-timeline-id=/);
+  assert.match(app, /function workspaceSelectableSheets\(workspace = null\)/);
+  assert.match(app, /const selectableSheets = workspaceSelectableSheets\(workspace\);/);
+  assert.match(app, /const previewSheet = selectableSheets\.find\(sheet => sheet\.sheetNumber === activeBedfordWorkspaceSheetNumber\)\s*\|\|\s*selectableSheets\[0\]\s*\|\|\s*null;/);
+  assert.match(app, /if \(button\.dataset\.wsSheet\) \{\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsSheet;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
+  assert.match(app, /if \(button\.dataset\.wsDrawingSheet\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, button\.dataset\.wsDrawingSheet\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsDrawingSheet;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
+  assert.match(app, /if \(button\.dataset\.wsAction === 'drawings'\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, activeBedfordWorkspaceSheetNumber\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('plans'\);/);
   assert.match(app, /mc-ws-documents/);
   assert.match(app, /mc-ws-documents-grid/);
   assert.match(workspaceDocuments, /PRIMARY SOURCE DRAWINGS/);
@@ -305,6 +311,17 @@ test('Mission Control uses a single Chief workspace for heading, composer, messa
   assert.match(app, /chiefAssets\.idle/);
   assert.match(app, /mc-chief-evidence/);
   assert.doesNotMatch(app, /showMissionControlView\('chat'\).*renderMissionControlChat/);
+});
+
+test('Source Inspector maps built-in PDFs to their packaged source file paths', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  assert.match(app, /function buildDrawingSourceVerification\(document, drawingAnalysis = null, sourcePdfRecord = null\)/);
+  assert.match(app, /function documentSourcePath\(document = null, sourcePdfRecord = null\)/);
+  assert.match(app, /const sourcePath = documentSourcePath\(selected, sourcePdfRecord\);/);
+  assert.match(app, /const verification = isDrawingDocumentRole\(selected\)\s*\?\s*buildDrawingSourceVerification\(selected, sourceDrawingAnalysis, sourcePdfRecord\)\s*:\s*verifyExtraction\(/);
+  assert.match(app, /Source file mapped/);
+  assert.match(app, /Source file path/);
+  assert.doesNotMatch(app, /verifyExtraction\(selected,\s*sections,\s*documents\)[\s\S]*buildDrawingSourceVerification/);
 });
 
 test('Mission Control presents synchronized deterministic work packages without dead graphical claims', () => {

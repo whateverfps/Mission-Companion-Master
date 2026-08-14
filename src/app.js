@@ -1362,10 +1362,9 @@ function renderWorkspaceDocumentsView(workspaceModel, activeWorkspace, projectMi
 }
 
 function buildWorkspaceDrawingTarget(workspace = null, sheetNumber = '') {
-  const sheet = (workspace?.sourceSheets || []).find(item => item.sheetNumber === sheetNumber)
-    || (workspace?.relatedSheets || []).find(item => item.sheetNumber === sheetNumber)
-    || workspace?.sourceSheets?.[0]
-    || workspace?.relatedSheets?.[0]
+  const selectableSheets = workspaceSelectableSheets(workspace);
+  const sheet = selectableSheets.find(item => item.sheetNumber === sheetNumber)
+    || selectableSheets[0]
     || null;
   if (!workspace || !sheet) return null;
   const documentId = workspaceDrawingDocumentIdForPage(sheet.pageId) || BEDFORD_DRAWING_DOCUMENT_ID;
@@ -1380,6 +1379,33 @@ function buildWorkspaceDrawingTarget(workspace = null, sheetNumber = '') {
     origin: 'workspace',
     returnTarget: 'workspace'
   });
+}
+
+function workspaceSelectableSheets(workspace = null) {
+  const seen = new Set();
+  const sheets = [];
+  const push = sheet => {
+    if (!sheet) return;
+    const sheetNumber = String(sheet.sheetNumber || '').trim();
+    const pageId = String(sheet.pageId || '').trim();
+    const key = pageId || sheetNumber;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    sheets.push({
+      sheetNumber,
+      sheetTitle: String(sheet.sheetTitle || '').trim(),
+      discipline: String(sheet.discipline || '').trim(),
+      drawingType: String(sheet.drawingType || '').trim(),
+      pdfPageNumber: Number(sheet.pdfPageNumber) || 0,
+      pageId
+    });
+  };
+  for (const sheet of workspace?.sourceSheets || []) push(sheet);
+  for (const sheet of workspace?.relatedSheets || []) push(sheet);
+  for (const category of workspace?.drawingCategories || []) {
+    for (const sheet of category?.items || []) push(sheet);
+  }
+  return sheets;
 }
 
 function workspaceNextStepPriority(item = {}) {
@@ -4323,6 +4349,10 @@ function isPdfDocument(document) {
   return String(document?.mimeType || '').toLowerCase() === 'application/pdf' || String(document?.extension || document?.type || '').toLowerCase().replace(/^\./, '') === 'pdf' || /\.pdf$/i.test(document?.name || '');
 }
 
+function documentSourcePath(document = null, sourcePdfRecord = null) {
+  return textValue(sourcePdfRecord?.sourcePath || document?.staticPath || '');
+}
+
 function drawingStatusCopy(document, source, analysis) {
   if (!source) return { label: 'Original PDF unavailable', detail: 'Reattach the exact original PDF to view its sheets. Extracted text remains available.' };
   if (!analysis) return { label: 'Analysis unavailable', detail: 'The authoritative PDF is stored, but deterministic sheet analysis is unavailable.' };
@@ -5912,8 +5942,9 @@ async function renderMissionControlWorkspace() {
   if (!issueState.selectedIssueId) issueState.selectedIssueId = issuesModel.selectedIssueId || '';
   const pmisBuilding = missionPmisSelectedBuilding?.() || null;
   const pmisContext = pmisBuilding?.Building || pmisBuilding?.building || pmisBuilding?.name || pmisBuilding?.label || activeWorkspace?.pmisBuilding || 'Unavailable';
-  const previewSheet = activeWorkspace?.sourceSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
-    || activeWorkspace?.sourceSheets?.[0]
+  const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+  const previewSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+    || selectableSheets[0]
     || null;
   const previewUrl = previewSheet?.pdfPageNumber
     ? new URL(`project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf#page=${previewSheet.pdfPageNumber}&view=FitH`, document.baseURI).toString()
@@ -6038,13 +6069,32 @@ async function renderMissionControlWorkspace() {
       <small>${esc(record.name)}</small>
     </button>
   `).join('');
-  const sourceSheetButtons = (activeWorkspace?.sourceSheets || []).map(sheet => `
-    <button type="button" class="${sheet.sheetNumber === previewSheet?.sheetNumber ? 'active' : ''}" data-ws-sheet="${esc(sheet.sheetNumber)}">
-      <strong>${esc(sheet.sheetNumber)}</strong>
-      <span>${esc(sheet.sheetTitle)}</span>
-      <small>${esc(sheet.discipline || 'Source')}</small>
-    </button>
-  `).join('') || '<span class="mc-ws-empty-inline">No source sheets available.</span>';
+  const workspaceDrawingCategories = activeWorkspace?.drawingCategories || [];
+  const sourceSheetButtons = workspaceDrawingCategories.length
+    ? `<div class="mc-ws-sheet-groups">${workspaceDrawingCategories.map((category, index) => `
+        <details class="mc-ws-sheet-group" ${index === 0 ? 'open' : ''}>
+          <summary>
+            <strong>${esc(category.label)}</strong>
+            <span>${fmt(category.items.length)}</span>
+          </summary>
+          <div class="mc-ws-sheet-grid">
+            ${category.items.map(sheet => `
+              <button type="button" class="${sheet.sheetNumber === previewSheet?.sheetNumber ? 'active' : ''}" data-ws-sheet="${esc(sheet.sheetNumber)}">
+                <strong>${esc(sheet.sheetNumber)}</strong>
+                <span>${esc(sheet.sheetTitle)}</span>
+                <small>${esc(sheet.relevance || sheet.discipline || 'Source')}</small>
+              </button>
+            `).join('')}
+          </div>
+        </details>
+      `).join('')}</div>`
+    : (activeWorkspace?.sourceSheets || []).map(sheet => `
+        <button type="button" class="${sheet.sheetNumber === previewSheet?.sheetNumber ? 'active' : ''}" data-ws-sheet="${esc(sheet.sheetNumber)}">
+          <strong>${esc(sheet.sheetNumber)}</strong>
+          <span>${esc(sheet.sheetTitle)}</span>
+          <small>${esc(sheet.discipline || 'Source')}</small>
+        </button>
+      `).join('') || '<span class="mc-ws-empty-inline">No source sheets available.</span>';
   const relatedDocumentItems = (activeWorkspace?.sourceEvidence || []).slice(0, 4).map(item => `
     <li>
       <button type="button" data-ws-source-sheet="${esc(item.sheetNumber)}" aria-label="Open source sheet ${esc(item.sheetNumber)}">
@@ -6134,6 +6184,23 @@ async function renderMissionControlWorkspace() {
         <div class="mc-ws-side-head"><span>WORKSPACE</span><button type="button" data-ws-action="new">Select Workspace</button></div>
         <div class="mc-ws-side-section"><small>ACTIVE WORKSPACE</small><strong>${esc(activeWorkspace?.id || 'Unavailable')} — ${esc(activeWorkspace?.room || 'Unknown')} · ${esc(activeWorkspace?.name || 'Workspace')}</strong><span>Level: <b>${esc(activeWorkspace?.level || 'Unavailable')}</b></span><span>Discipline Focus: ${esc(activeWorkspace?.disciplineFocus || 'Unavailable')}</span><span>PMIS Context: ${esc(pmisContext)}</span></div>
         <div class="mc-ws-side-section"><small>WORKSPACE RECORDS</small><nav class="mc-ws-side-nav" aria-label="Workspace records">${workspaceButtons}</nav></div>
+        ${workspaceDrawingCategories.length ? `<div class="mc-ws-side-section mc-ws-side-expand"><small>DRAWING CATEGORIES</small><div class="mc-ws-sheet-groups">${workspaceDrawingCategories.map((category, index) => `
+          <details class="mc-ws-sheet-group" ${index === 0 ? 'open' : ''}>
+            <summary>
+              <strong>${esc(category.label)}</strong>
+              <span>${fmt(category.items.length)}</span>
+            </summary>
+            <div class="mc-ws-sheet-grid">
+              ${category.items.map(sheet => `
+                <button type="button" class="${sheet.sheetNumber === previewSheet?.sheetNumber ? 'active' : ''}" data-ws-sheet="${esc(sheet.sheetNumber)}">
+                  <strong>${esc(sheet.sheetNumber)}</strong>
+                  <span>${esc(sheet.sheetTitle)}</span>
+                  <small>${esc(sheet.relevance || sheet.discipline || 'Source')}</small>
+                </button>
+              `).join('')}
+            </div>
+          </details>
+        `).join('')}</div></div>` : ''}
         <nav class="mc-ws-side-nav" aria-label="Workspace sections">
           <button type="button" class="${activeBedfordWorkspaceSection === 'overview' ? 'active' : ''}" data-ws-section="overview">⌂ Overview</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'documents' ? 'active' : ''}" data-ws-section="documents">▣ Documents</button>
@@ -6509,7 +6576,7 @@ $('#missionControlContent').onclick = async event => {
   }
   if (button.dataset.wsSheet) {
     activeBedfordWorkspaceSheetNumber = button.dataset.wsSheet;
-    activeBedfordWorkspaceSection = 'documents';
+    activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return;
   }
@@ -6518,8 +6585,8 @@ $('#missionControlContent').onclick = async event => {
     const target = buildWorkspaceDrawingTarget(activeWorkspace, button.dataset.wsDrawingSheet);
     if (target) drawingTarget = target;
     activeBedfordWorkspaceSheetNumber = button.dataset.wsDrawingSheet;
-    activeBedfordWorkspaceSection = 'documents';
-    await showMissionControlView('plans');
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('workspace');
     return;
   }
   if (button.dataset.wsSourceSheet) {
@@ -13058,6 +13125,114 @@ async function renderSpecificationSourceEvidence() {
   if (!result.ok) host.insertAdjacentHTML('beforeend', `<p role="status">Source page unavailable: ${esc(result.status)}</p>`);
 }
 
+function buildDrawingSourceVerification(document, drawingAnalysis = null, sourcePdfRecord = null) {
+  const sourcePath = documentSourcePath(document, sourcePdfRecord);
+  const sheets = Array.isArray(drawingAnalysis?.sheets)
+    ? drawingAnalysis.sheets
+    : [];
+  const registry = Array.isArray(drawingAnalysis?.drawingRegistry)
+    ? drawingAnalysis.drawingRegistry
+    : [];
+  const sheetRecords = sheets.length
+    ? sheets
+    : registry.map((entry, index) => ({
+        ...entry,
+        id: entry.sheetId || entry.drawingId || `${document.id}:${index}`,
+        heading: entry.sheetNumber || entry.sheetTitle || `Sheet ${index + 1}`,
+        title: entry.sheetTitle || entry.sheetNumber || `Sheet ${index + 1}`,
+        location: [entry.discipline, entry.level].filter(Boolean).join(' · '),
+        sourceLabel: entry.sheetNumber || entry.sheetTitle || `Sheet ${index + 1}`,
+        text: '',
+        content: '',
+        wordCount: 0,
+        characters: 0,
+        parentId: null,
+        path: [],
+        crossReferences: []
+      }));
+  const sheetCount = sheetRecords.length;
+  const pdfAvailable = Boolean(sourcePath);
+  const retrievalReadiness = pdfAvailable
+    ? `Source file mapped at ${sourcePath}`
+    : 'Source file unavailable';
+  const verificationStatus = pdfAvailable
+    ? 'Source file mapped'
+    : 'Source file unavailable';
+  const checks = [
+    {
+      status: pdfAvailable ? 'PASS' : 'FAIL',
+      label: 'Source PDF',
+      detail: pdfAvailable
+        ? `Source file mapped at ${sourcePath}.`
+        : 'Source file unavailable.'
+    },
+    {
+      status: sheetCount > 0 ? 'PASS' : 'FAIL',
+      label: 'Deterministic sheet records',
+      detail: sheetCount > 0
+        ? `${fmt(sheetCount)} deterministic sheet record${sheetCount === 1 ? '' : 's'} available for direct source review.`
+        : 'No deterministic sheet records are available.'
+    },
+    {
+      status: sheetCount > 0 ? 'PASS' : 'WARNING',
+      label: 'Drawing catalog',
+      detail: sheetCount > 0
+        ? 'Drawing catalog ready.'
+        : 'Drawing catalog not yet resolved.'
+    },
+    {
+      status: 'INFO',
+      label: 'Text extraction',
+      detail: 'Not required for drawing source inspection.'
+    }
+  ];
+
+  return {
+    checks,
+    duplicateSectionIds: [],
+    emptyRatio: 0,
+    emptySections: [],
+    failCount: checks.filter(item => item.status === 'FAIL').length,
+    hierarchyDetected: sheetCount > 0,
+    indexed: sheetCount > 0,
+    invalidDocumentLinks: [],
+    littleText: false,
+    orphanedSections: [],
+    pageMetadataAvailable: pdfAvailable,
+    parser: pdfAvailable ? 'built-in drawing catalog' : 'Unavailable',
+    sourcePath,
+    previews: sheetRecords.map((sheet, index) => ({
+      characters: 0,
+      empty: false,
+      excerpt: [
+        sheet.sheetNumber,
+        sheet.sheetTitle,
+        sheet.pageNumber ? `Page ${fmt(sheet.pageNumber)}` : ''
+      ].filter(Boolean).join(' · '),
+      hierarchyLevel: null,
+      id: sheet.id || sheet.sheetId || sheet.drawingId || `${document.id}:${index}`,
+      order: Number.isFinite(Number(sheet.pageNumber))
+        ? Number(sheet.pageNumber) - 1
+        : index,
+      parentTitle: '',
+      title: sheet.sheetTitle || sheet.sheetNumber || sheet.title || `Sheet ${index + 1}`,
+      untitled: false
+    })),
+    recordedCharacters: null,
+    recordedSectionCount: sheetCount,
+    retrievalReadiness,
+    sectionCountMismatch: false,
+    sections: sheetRecords,
+    storedCharacters: 0,
+    untitledSections: [],
+    usableSections: sheetRecords,
+    usableText: sheetCount > 0,
+    verificationStatus,
+    warningCount: 0,
+    warnings: drawingAnalysis?.warnings ? [...drawingAnalysis.warnings] : []
+  };
+}
+
 async function renderSources() {
   const documents = await engine.documents();
   const sections = await engine.sections();
@@ -13169,20 +13344,25 @@ async function renderSources() {
     selected.name,
     'Untitled document'
   );
-
-  const verification = verifyExtraction(
-    selected,
-    sections,
-    documents
-  );
-  const selectedSections = verification.sections;
   const sourceLibraries = engine.libraries();
   const library = sourceLibraries.find(item =>
     item.id === selected.libraryId
   );
-  const [sourceDrawingAnalysis, sourcePdfRecord] = isPdfDocument(selected)
-    ? await Promise.all([isDrawingDocumentRole(selected) ? engine.drawingAnalysis(selected.id) : null, engine.sourceFile(selected.id)])
-    : [null, null];
+    const sourcePdfRecord = isPdfDocument(selected)
+    ? await engine.sourceFile(selected.id)
+    : null;
+  const sourcePath = documentSourcePath(selected, sourcePdfRecord);
+  const sourceDrawingAnalysis = isDrawingDocumentRole(selected)
+    ? (await currentDrawingAnalyses()).find(item => item.documentId === selected.id) || await engine.drawingAnalysis(selected.id)
+    : null;
+  const verification = isDrawingDocumentRole(selected)
+    ? buildDrawingSourceVerification(selected, sourceDrawingAnalysis, sourcePdfRecord)
+    : verifyExtraction(
+        selected,
+        sections,
+        documents
+      );
+  const selectedSections = verification.sections;
   const sourceTargetResolution = sourceNavigationTarget?.destination === 'sources' &&
     sourceNavigationTarget.documentId === selected.id
     ? resolveSourceTarget(sourceNavigationTarget, {
@@ -13303,7 +13483,7 @@ async function renderSources() {
       </p>
     </div>
 
-    ${isDrawingDocumentRole(selected) ? `<section class="mc-drawing-source-status"><div><span>AUTHORITATIVE DRAWING SOURCE</span><h3>${sourcePdfRecord ? 'Original PDF available' : 'Original PDF unavailable'}</h3><p>${sourcePdfRecord ? `${fmt(sourceDrawingAnalysis?.sheets?.length || 0)} deterministic sheet records are available.` : 'Reattach the exact original PDF to enable visual sheet review. Extracted text remains available.'}</p></div>${sourcePdfRecord ? '<button data-source-open-drawing>Open Drawing</button>' : '<label class="mc-drawing-reattach"><input id="sourcePdfReattach" type="file" accept="application/pdf,.pdf">Reattach Original PDF</label>'}</section>` : isSpecificationDocument(selected) ? `<section class="mc-drawing-source-status"><div><span>AUTHORITATIVE SPECIFICATION SOURCE</span><h3>${sourcePdfRecord ? 'Source PDF available on demand' : 'Source PDF unavailable'}</h3><p>Specification sections and articles are the primary interface. Source pages load only through exact evidence navigation.</p></div></section>` : ''}
+    ${isPdfDocument(selected) ? `<section class="mc-drawing-source-status"><div><span>${isDrawingDocumentRole(selected) ? 'AUTHORITATIVE DRAWING SOURCE' : isSpecificationDocument(selected) ? 'AUTHORITATIVE SPECIFICATION SOURCE' : 'AUTHORITATIVE SOURCE FILE'}</span><h3>${sourcePath ? 'Source PDF mapped' : 'Source PDF unavailable'}</h3><p>${sourcePath ? `${esc(sourcePath)}${isDrawingDocumentRole(selected) ? ` · ${fmt(sourceDrawingAnalysis?.sheets?.length || 0)} deterministic sheet records are available.` : ''}` : 'Reattach the exact original PDF to map the source file directly.'}</p></div>${isDrawingDocumentRole(selected) && sourcePath ? '<button data-source-open-drawing>Open Drawing</button>' : sourcePath ? '' : '<label class="mc-drawing-reattach"><input id="sourcePdfReattach" type="file" accept="application/pdf,.pdf">Reattach Original PDF</label>'}</section>` : ''}
 
     <section class="mc-relationship-source-summary" aria-labelledby="sourceRelationshipTitle">
       <div>
@@ -13351,6 +13531,7 @@ async function renderSources() {
         <div><dt>Filename</dt><dd>${esc(selected.name)}</dd></div>
         <div><dt>Library</dt><dd>${library ? esc(library.name) : 'Unavailable'}</dd></div>
         <div><dt>File type</dt><dd>${esc(documentType(selected))}</dd></div>
+        ${isPdfDocument(selected) ? `<div><dt>Source file path</dt><dd>${sourcePath ? esc(sourcePath) : 'Unavailable'}</dd></div>` : ''}
         <div><dt>Parser used</dt><dd>${verification.parser ? esc(verification.parser) : 'Unavailable'}</dd></div>
         <div><dt>Import status</dt><dd>${esc(documentStatus(selected).label)}</dd></div>
         <div><dt>Retrieval readiness</dt><dd>${esc(verification.retrievalReadiness)}</dd></div>

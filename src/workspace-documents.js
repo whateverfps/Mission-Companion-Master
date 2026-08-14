@@ -102,6 +102,22 @@ function buildRelatedEvidenceRecord(item = {}) {
   };
 }
 
+function primaryDrawingRecord(sheet = {}) {
+  return buildDrawingRecord({
+    ...sheet,
+    relevance: 'PRIMARY',
+    category: 'Primary Source Sheets'
+  }, 'Primary Source');
+}
+
+function groupedDrawingRecord(sheet = {}, categoryLabel = 'Related Source') {
+  return buildDrawingRecord({
+    ...sheet,
+    relevance: categoryLabel === 'Primary Source Sheets' ? 'PRIMARY' : categoryLabel === 'DETAILS / SCHEDULES' || categoryLabel === 'GENERAL / REFERENCE' ? 'SUPPORTING' : 'DIRECT',
+    category: categoryLabel
+  }, categoryLabel === 'Primary Source Sheets' ? 'Primary Source' : 'Related Source');
+}
+
 export function buildWorkspaceDocumentsModel({ workspace = null, projectMilestoneContext = null } = {}) {
   const sourceSheets = list(workspace?.sourceSheets);
   const relatedSheets = list(workspace?.relatedSheets);
@@ -111,7 +127,7 @@ export function buildWorkspaceDocumentsModel({ workspace = null, projectMileston
 
   const drawings = [];
   const seenDrawings = new Set();
-  for (const sheet of sourceSheets) pushUnique(drawings, seenDrawings, buildDrawingRecord(sheet, 'Primary Source'), drawingDocumentKey);
+  for (const sheet of sourceSheets) pushUnique(drawings, seenDrawings, primaryDrawingRecord(sheet), drawingDocumentKey);
   for (const sheet of relatedSheets) pushUnique(drawings, seenDrawings, buildDrawingRecord(sheet, 'Related Source'), drawingDocumentKey);
 
   const specifications = [];
@@ -133,13 +149,13 @@ export function buildWorkspaceDocumentsModel({ workspace = null, projectMileston
     drawings.length ? {
       id: 'drawings',
       label: 'Drawings',
-      summary: 'Primary source drawings and related drawings.',
+      summary: 'Primary source drawings and related trade categories.',
       groups: [
         {
           id: 'primary-drawings',
           label: 'PRIMARY SOURCE DRAWINGS',
           relationship: 'Primary Source',
-          items: sourceSheets.map(sheet => buildDrawingRecord(sheet, 'Primary Source')).filter(item => item.openTarget),
+          items: sourceSheets.map(sheet => primaryDrawingRecord(sheet)).filter(item => item.openTarget),
           emptyState: 'No primary source drawings have been linked to this Workspace.'
         },
         {
