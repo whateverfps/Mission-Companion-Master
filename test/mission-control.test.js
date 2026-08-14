@@ -172,6 +172,17 @@ test('Mission Control uses Dashboard, Chief, Drawings, and Workspace as the prim
   assert.match(app, /id="openProfessionalWorkspace"[^>]*aria-label="Open Professional Workspace"/);
 });
 
+test('Mission Control workspace is registry-backed and no longer hard-codes Room 107 prototype content', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
+  assert.match(workspace, /buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)/);
+  assert.match(workspace, /data-ws-select=/);
+  assert.match(workspace, /Select Workspace/);
+  assert.match(workspace, /PMIS Context:/);
+  assert.doesNotMatch(workspace, /Telecom Room 107/);
+  assert.doesNotMatch(workspace, /B61 – Telecom Room 107/);
+});
+
 test('Professional Workspace remains available through the gear launcher without a visible top-nav entry', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /id="professionalWorkspaceShell"/);
@@ -372,12 +383,11 @@ test('Mission Control explicitly isolates inactive shells from layout and focus'
   assert.match(css, /\[hidden\],\.mc-shell-inactive\{display:none!important\}/);
 });
 
-test('Mission Control owns native chat, conversation history, attachments, and precise source actions', () => {
+test('Mission Control owns native chat, conversation history, and precise source actions', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /function renderMissionControlChat/);
   assert.match(app, /function renderConversationHistory/);
   assert.match(app, /id="missionControlComposer"/);
-  assert.match(app, /id="missionControlFiles"/);
   assert.match(app, /data-control-source-document/);
   assert.doesNotMatch(app.slice(app.indexOf('if \(button\.dataset\.controlPrompt\)'), app.indexOf('const action = button.dataset.controlAction')), /openProfessionalDestination\(\{ view: 'chat'/);
 });

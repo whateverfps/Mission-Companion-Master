@@ -106,6 +106,10 @@ import {
   validateBedfordProject
 } from './bedford-project.js';
 import {
+  buildBedfordWorkspaceModel,
+  getBedfordWorkspaceDefaultId
+} from './workspace-registry.js';
+import {
   buildMissionControlModel,
   normalizeStartupExperience,
   resolvePreviousProject,
@@ -245,6 +249,7 @@ let lastProfessionalView = '';
 let missionControlView = 'landing';
 let missionControlAttachments = [];
 let chiefHistoryVisible = false;
+let activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
 let previousUserProjectId = null;
 let selectedDoc = null;
 let selectedKnowledgeSection = 'all';
@@ -4738,30 +4743,67 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
 
 
 async function renderMissionControlWorkspace() {
-  const b61DrawingUrl = new URL('project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf#page=14&view=FitH', document.baseURI).toString();
+  const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
+  const activeWorkspace = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
+  const pmisBuilding = missionPmisSelectedBuilding?.() || null;
+  const pmisContext = pmisBuilding?.Building || pmisBuilding?.building || pmisBuilding?.name || pmisBuilding?.label || activeWorkspace?.pmisBuilding || 'Unavailable';
+  const previewSheet = activeWorkspace?.sourceSheets?.[0] || null;
+  const previewUrl = previewSheet?.pdfPageNumber
+    ? new URL(`project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf#page=${previewSheet.pdfPageNumber}&view=FitH`, document.baseURI).toString()
+    : '';
+  const workspaceButtons = workspaceModel.workspaces.map(record => `
+    <button type="button" class="${record.id === activeWorkspace?.id ? 'active' : ''}" data-ws-select="${esc(record.id)}">
+      <strong>${esc(record.id)}</strong>
+      <span>${esc(record.room)} · ${esc(record.level)}</span>
+      <small>${esc(record.name)}</small>
+    </button>
+  `).join('');
+  const sourceSheetItems = (activeWorkspace?.sourceSheets || []).map(sheet => `
+    <li>
+      <b>${esc(sheet.sheetNumber)}</b>
+      <span>${esc(sheet.sheetTitle)}</span>
+      <em>${esc(sheet.discipline || 'Source')}</em>
+    </li>
+  `).join('') || '<li><b>No source sheets</b><span>Workspace data unavailable.</span><em>Unavailable</em></li>';
+  const relatedSheetItems = (activeWorkspace?.relatedSheets || []).map(sheet => `
+    <li>
+      <b>${esc(sheet.sheetNumber)}</b>
+      <span>${esc(sheet.sheetTitle)}</span>
+      <em>Related</em>
+    </li>
+  `).join('') || '<li><b>No related sheets</b><span>Workspace data unavailable.</span><em>Unavailable</em></li>';
+  const specificationItems = (activeWorkspace?.applicableSpecifications || []).map(spec => `
+    <li>
+      <b>${esc(spec.sectionNumber)} – ${esc(spec.sectionTitle)}</b>
+      <span>Supported by ${esc(activeWorkspace?.sourceSheets?.[0]?.sheetNumber || activeWorkspace?.room || 'workspace evidence')}</span>
+      <em>${spec.sectionNumber === '28 31 00' ? 'Primary' : 'Relevant'}</em>
+    </li>
+  `).join('') || '<li><b>No applicable specifications</b><span>Workspace data unavailable.</span><em>Unavailable</em></li>';
+  const relatedRoomItems = (activeWorkspace?.relatedRooms || []).map(room => `<li><span>${esc(room)}</span></li>`).join('') || '<li><span>No related rooms recorded.</span></li>';
+  const openDrawingLabel = previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawings';
   $('#missionControlContent').innerHTML = `
     <section class="mc-ws" aria-labelledby="missionControlTitle">
       <aside class="mc-ws-sidebar">
-        <div class="mc-ws-side-head"><span>WORKSPACE</span><button type="button" data-ws-action="new">＋ New Workspace</button></div>
-        <div class="mc-ws-side-section"><small>ACTIVE WORKSPACE</small><strong>B61 – Telecom Room 107</strong><span>Readiness Impact: <b>High</b></span><span>Discipline Focus: Telecom / OIT</span><span>Source: Bedford project data</span></div>
+        <div class="mc-ws-side-head"><span>WORKSPACE</span><button type="button" data-ws-action="new">Select Workspace</button></div>
+        <div class="mc-ws-side-section"><small>ACTIVE WORKSPACE</small><strong>${esc(activeWorkspace?.id || 'Unavailable')} – ${esc(activeWorkspace?.room || 'Unknown')}</strong><span>Level: <b>${esc(activeWorkspace?.level || 'Unavailable')}</b></span><span>Discipline Focus: ${esc(activeWorkspace?.disciplineFocus || 'Unavailable')}</span><span>PMIS Context: ${esc(pmisContext)}</span></div>
+        <div class="mc-ws-side-section"><small>WORKSPACE RECORDS</small><nav class="mc-ws-side-nav" aria-label="Workspace records">${workspaceButtons}</nav></div>
         <nav class="mc-ws-side-nav" aria-label="Workspace sections">
           <button class="active">⌂ Overview</button><button>▣ Documents</button><button>◇ Issues</button><button>☑ Checklist</button><button>⇄ Comparisons</button><button>◷ Timeline</button><button>✎ Notes</button>
         </nav>
         <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="specs">Compare to Spec</button><button data-ws-action="rfi">Create RFI</button><button data-ws-action="observation">Create Observation</button><button data-ws-action="package">Export Package</button></div>
-        <div class="mc-ws-chief"><div class="mc-ws-chief-avatar">👷</div><strong>Chief Insight</strong><p>Telecom Room 107 is a critical path work area for Building 61 activation. Use the evidence panels to trace requirements before field acceptance.</p><button data-ws-action="chief">Ask Chief</button></div>
+        <div class="mc-ws-chief"><div class="mc-ws-chief-avatar">👷</div><strong>Chief Insight</strong><p>${esc(activeWorkspace?.chiefInsight || 'Workspace evidence is available for review.')}</p><button data-ws-action="chief">Ask Chief</button></div>
       </aside>
       <main class="mc-ws-main">
-        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B61 – Telecom Room 107</h1><p>Investigate, analyze, and build the work package.</p></div><div class="mc-ws-kpis"><article><span>Overall Readiness</span><strong class="watch">55%</strong><small>● Watch</small></article><article><span>Critical Issues</span><strong class="danger">3</strong><small>● High</small></article><article><span>Open Questions</span><strong>2</strong><small>● Medium</small></article><article><span>Related Documents</span><strong>24</strong><small>● In Workspace</small></article></div></header>
-        <div class="mc-ws-breadcrumb"><button>Building 61</button><span>›</span><button>First Floor</button><span>›</span><button>Room 107 – Telecom</button><em>Primary</em></div>
+        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">${esc(activeWorkspace?.id || 'Workspace')} – ${esc(activeWorkspace?.name || 'Plan-Derived Workspace')}</h1><p>${esc(activeWorkspace?.building === '61' ? 'Building 61 plan-derived workspace.' : 'Plan-derived workspace.')}</p></div><div class="mc-ws-kpis"><article><span>Source Sheets</span><strong>${activeWorkspace?.sourceSheets?.length || 0}</strong><small>${activeWorkspace?.room || 'No room'}</small></article><article><span>Related Sheets</span><strong>${activeWorkspace?.relatedSheets?.length || 0}</strong><small>${esc(activeWorkspace?.level || 'Unavailable')}</small></article><article><span>Applicable Specs</span><strong>${activeWorkspace?.applicableSpecifications?.length || 0}</strong><small>${esc(activeWorkspace?.disciplineFocus || 'Unavailable')}</small></article><article><span>Related Rooms</span><strong>${activeWorkspace?.relatedRooms?.length || 0}</strong><small>${esc(pmisContext)}</small></article></div></header>
+        <div class="mc-ws-breadcrumb"><button>${esc(activeWorkspace?.building ? `Building ${activeWorkspace.building}` : 'Building 61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>${esc(activeWorkspace?.room || 'Workspace')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
         <section class="mc-ws-upper">
-          <article class="mc-ws-drawing"><header><strong>DRAWING: BUILDING 61 – TELECOM / FIRST FLOOR</strong><div><button data-ws-action="drawings">Open Drawings</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf"><object data="${b61DrawingUrl}" type="application/pdf" aria-label="Building 61 drawing"><div class="mc-ws-pdf-fallback"><strong>Building 61 Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">Open Drawing Viewer</button></div></object><div class="mc-ws-markups"><span>MARKUPS & ITEMS</span><label>🟣 Equipment <b>4</b></label><label>🔵 Racks / Cabinets <b>2</b></label><label>🟢 Power <b>3</b></label><label>🔴 Penetrations <b>2</b></label><label>🟠 Notes <b>1</b></label></div></div></article>
-          <aside class="mc-ws-evidence"><section><header><strong>APPLICABLE SPECIFICATIONS (6)</strong><button data-ws-action="specs">View All</button></header><ul><li><b>28 31 00 – Telecommunications</b><span>Sections 1.05, 2.03, 3.10</span><em>Relevant</em></li><li><b>26 27 26 – Wiring Devices</b><span>Part 1, 2.02, 2.05</span><em>Relevant</em></li><li><b>26 05 19 – Low Voltage Electrical Power</b><span>Part 1, 2.01, 3.02</span><em>Relevant</em></li><li><b>26 24 16 – Panelboards</b><span>Part 1, 2.03, 3.04</span><em>Relevant</em></li><li><b>07 84 00 – Firestopping</b><span>Part 1, 2.02, 3.01</span><em class="related">Related</em></li><li><b>01 45 35 – Quality Control</b><span>Part 1, 1.03, 1.05</span><em class="related">Related</em></li></ul></section><section><header><strong>RELATED DOCUMENTS (4)</strong><button>View All</button></header><ul><li><b>RFI-061-017 – Door Hardware</b><span>RFI · Open</span></li><li><b>Submittal-145 – Firestopping</b><span>Submittal · In Review</span></li><li><b>Telecom Equipment Room Standards</b><span>Document</span></li><li><b>Room 107 Field Photos</b><span>Photo Set</span></li></ul></section></aside>
+          <article class="mc-ws-drawing"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} – ${activeWorkspace.disciplineFocus || 'Workspace'} / ${activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div></article>
+          <aside class="mc-ws-evidence"><section><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">View All</button></header><ul>${specificationItems}</ul></section><section><header><strong>SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">View All</button></header><ul>${sourceSheetItems}</ul></section></aside>
         </section>
         <section class="mc-ws-lower">
-          <article><header><strong>ISSUES & RISKS (5)</strong><button>View All</button></header><ul class="mc-ws-risks"><li><i>●</i><div><b>Penetrations not firestopped</b><span>Verify conduit cluster conditions.</span></div><em class="high">High</em></li><li><i>●</i><div><b>UPS location coordination</b><span>Confirm clearance and maintenance access.</span></div><em>Medium</em></li><li><i>●</i><div><b>Cable pathway capacity</b><span>Verify available capacity for new circuits.</span></div><em>Medium</em></li><li><i>●</i><div><b>Door hardware coordination</b><span>Open RFI requires resolution.</span></div><em>Low</em></li></ul></article>
-          <article><header><strong>TRACEABILITY MAP</strong></header><div class="mc-ws-trace"><div><b>Spec</b><span>28 31 00 3.21</span></div><i>→</i><div><b>Requirement</b><span>Telecom Room Performance</span></div><i>→</i><div><b>PMIS Gate</b><span>OIT Activation Readiness</span></div><div><b>Spec</b><span>07 84 00 3.01</span></div><i>→</i><div><b>Requirement</b><span>Firestop All Penetrations</span></div><i>→</i><div><b>Impact</b><span>Activation / Acceptance</span></div></div></article>
-          <article><header><strong>CHECKLIST BUILDER</strong></header><p class="mc-ws-muted">Based on project specifications and readiness gates</p><div class="mc-ws-progress"><span style="width:43%"></span></div><small>6 of 14 Complete · 43%</small><ul class="mc-ws-check"><li>☑ Verify room dimensions and clearances</li><li>☑ Confirm rack locations and elevations</li><li>☑ Verify power circuits and labeling</li><li>☐ Inspect cable pathway and supports</li><li>☐ Verify grounding and bonding</li><li>☐ Inspect firestop at all penetrations</li></ul><button class="mc-ws-wide">Open Full Checklist</button></article>
-          <article><header><strong>NEXT STEPS</strong></header><ul class="mc-ws-next"><li><span>Verify firestopping at conduit cluster</span><em class="high">High</em></li><li><span>Resolve RFI-061-017 – Door Hardware</span><em class="high">High</em></li><li><span>Confirm UPS/PDU coordination</span><em>Medium</em></li><li><span>Review OIT activation prerequisites</span><em>Medium</em></li><li><span>Cable testing and documentation</span><em>Low</em></li></ul><button class="mc-ws-wide">View Full Action Plan</button></article>
+          <article><header><strong>RELATED ROOMS (${activeWorkspace?.relatedRooms?.length || 0})</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${relatedRoomItems}</ul></article>
+          <article><header><strong>CHIEF INSIGHT</strong></header><p class="mc-ws-muted">Plan-derived summary grounded in Bedford source sheets and the shared specification index.</p><div class="mc-ws-progress"><span style="width:${Math.min(100, 30 + (activeWorkspace?.applicableSpecifications?.length || 0) * 8)}%"></span></div><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets · ${activeWorkspace?.relatedSheets?.length || 0} related sheets · ${activeWorkspace?.applicableSpecifications?.length || 0} specifications</small><ul class="mc-ws-check">${(activeWorkspace?.sourceEvidence || []).slice(0, 5).map(item => `<li>☑ ${esc(item.sheetNumber)} — ${esc(item.sheetTitle)}</li>`).join('')}</ul><button class="mc-ws-wide" data-ws-action="specs">View Workspace Specifications</button></article>
+          <article><header><strong>PMIS CONTEXT</strong></header><ul class="mc-ws-next"><li><span>${esc(activeWorkspace?.pmisBuilding || 'Building 61')} readiness context available</span><em>Aligned</em></li><li><span>Use Mission PMIS for building-level status and trade attention</span><em>Current</em></li><li><span>Use Chief for questions against the same Bedford project evidence</span><em>Shared</em></li></ul><button class="mc-ws-wide" data-ws-action="drawings">Open Drawing Viewer</button></article>
         </section>
       </main>
     </section>`;
@@ -4954,10 +4996,19 @@ $$('[data-control-view]').forEach(button => button.onclick = () => showMissionCo
 $('#missionControlContent').onclick = async event => {
   const button = event.target.closest('button');
   if (!button) return;
+  if (button.dataset.wsSelect) {
+    activeBedfordWorkspaceId = button.dataset.wsSelect;
+    await showMissionControlView('workspace');
+    return;
+  }
   if (button.dataset.wsAction === 'chief') return showMissionControlView('home');
   if (button.dataset.wsAction === 'drawings') return showMissionControlView('plans');
   if (button.dataset.wsAction === 'specs') return showMissionControlView('home');
-  if (button.dataset.wsAction === 'new') return;
+  if (button.dataset.wsAction === 'new') {
+    activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
+    await showMissionControlView('workspace');
+    return;
+  }
   if (button.dataset.controlAction === 'enter-mission-control') {
     return showMissionControlView('home');
   }
