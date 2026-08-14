@@ -160,12 +160,13 @@ test('Mission Control retains the shared dark visual system without white surfac
   assert.doesNotMatch(refinement, /background(?:-color)?:#fff(?:fff)?(?:[;}]|$)/i);
 });
 
-test('Mission Control uses Dashboard, Chief, Drawings, and Workspace as the primary shell navigation', () => {
+test('Mission Control uses Dashboard, Chief, and Workspace as the primary shell navigation', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  assert.match(app, /data-control-view="dashboard">Dashboard<\/button>/);
-  assert.match(app, /data-control-home[^>]*>Chief<\/button>/);
-  assert.match(app, /data-control-view="plans">Drawings<\/button>/);
-  assert.match(app, /data-control-view="workspace">Workspace<\/button>/);
+  const nav = app.slice(app.indexOf('<nav class="mc-control-nav"'), app.indexOf('<main id="missionControlMain"'));
+  assert.match(nav, /data-control-view="dashboard">Dashboard<\/button>/);
+  assert.match(nav, /data-control-home[^>]*>Chief<\/button>/);
+  assert.match(nav, /data-control-view="workspace">Workspace<\/button>/);
+  assert.doesNotMatch(nav, /data-control-view="plans">Drawings<\/button>/);
   assert.doesNotMatch(app, /data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /data-control-more-tools/);
   assert.doesNotMatch(app, /aria-label="More Tools"/);
@@ -409,6 +410,8 @@ test('Professional Workspace remains available through the gear launcher without
   assert.match(app, /data-view="chat">Command Desk/);
   assert.match(app, /data-view="knowledge">Knowledge Workspace/);
   assert.match(app, /data-view="sources">Source Inspector/);
+  assert.match(app, /Drawing \/ Engineering/);
+  assert.match(app, /data-view="drawings">Drawings<\/button>/);
   assert.match(app, /data-view="engineering">Engineering Workspace/);
   assert.match(app, /data-view="workflow">Workflow Workspace/);
   assert.match(app, /data-view="relationships">Relationship Explorer/);
@@ -418,6 +421,8 @@ test('Professional Workspace remains available through the gear launcher without
   assert.match(app, /data-view="diagnostics">Diagnostics/);
   assert.match(app, /showMissionControlView\('home'\)/);
   assert.match(app, /id="openProfessionalWorkspace"/);
+  assert.doesNotMatch(app, /LEGACY DRAWINGS WORKSPACE/);
+  assert.doesNotMatch(app, /Legacy src\/app\.js workspace running/);
   assert.doesNotMatch(app, /data-control-experience="professional-workspace"/);
 });
 
@@ -599,8 +604,9 @@ test('Phase 24B makes Chief construction-first with one synchronized drawing sta
 
 test('Mission Control hides built-in demo entry points and opens to Chief by default', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  assert.match(app, /data-control-home[^>]*>Chief<\/button>/);
-  assert.match(app, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
+  const nav = app.slice(app.indexOf('<nav class="mc-control-nav"'), app.indexOf('<main id="missionControlMain"'));
+  assert.match(nav, /data-control-home[^>]*>Chief<\/button>/);
+  assert.doesNotMatch(nav, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
   assert.doesNotMatch(app, /<button[^>]*data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /Explore Demonstration Project/);
   assert.doesNotMatch(app, /Load Demonstration Project/);
@@ -611,9 +617,10 @@ test('Mission Control hides built-in demo entry points and opens to Chief by def
 
 test('Mission Control uses the compact primary navigation without the compatibility drawer', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  assert.match(app, /data-control-view="dashboard">Dashboard<\/button>/);
-  assert.match(app, /data-control-home[^>]*>Chief<\/button>/);
-  assert.match(app, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
+  const nav = app.slice(app.indexOf('<nav class="mc-control-nav"'), app.indexOf('<main id="missionControlMain"'));
+  assert.match(nav, /data-control-view="dashboard">Dashboard<\/button>/);
+  assert.match(nav, /data-control-home[^>]*>Chief<\/button>/);
+  assert.doesNotMatch(nav, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
   assert.doesNotMatch(app, /<button[^>]*data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /<button[^>]*data-control-more-tools[^>]*>More Tools<\/button>/);
   assert.doesNotMatch(app, /aria-label="More Tools"/);

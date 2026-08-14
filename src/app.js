@@ -2492,9 +2492,7 @@ app.innerHTML = `
   <nav class="mc-control-nav" aria-label="Mission Control navigation">
     <button data-control-view="dashboard">Dashboard</button>
     <button data-control-home aria-current="page">Chief</button>
-    <button data-control-view="plans">Drawings</button>
     <button data-control-view="workspace">Workspace</button>
-    <span style="position:absolute;left:-9999px;clip:rect(0 0 0 0);"><button data-control-view="plans">Open Plans</button></span>
   </nav>
 <main id="missionControlMain" tabindex="-1">
   <div id="missionControlContent" aria-live="polite"></div>
@@ -2536,6 +2534,7 @@ app.innerHTML = `
         <div class="mc-workspace-tools-group">
           <h3>Drawing / Engineering</h3>
           <div class="mc-workspace-tools-list">
+            <button type="button" data-view="drawings">Drawings</button>
             <button type="button" data-view="engineering">Engineering Workspace</button>
             <button type="button" data-view="workflow">Workflow Workspace</button>
             <button type="button" data-view="relationships">Relationship Explorer</button>
@@ -3139,7 +3138,6 @@ app.innerHTML = `
           <button data-settings-tab="developer">Developer</button>
           <button data-settings-tab="about">About</button>
         </div>
-
         <div class="settings-pane" data-settings-pane="experience">
           <fieldset class="mc-control-startup-setting">
             <legend>Startup Experience</legend>
@@ -3406,8 +3404,8 @@ function show(name) {
     else button.removeAttribute('aria-current');
   });
 
-  $('#pageTitle').textContent = name === 'drawings' ? 'LEGACY DRAWINGS WORKSPACE' : titles[name][0];
-  $('#pageSub').textContent = name === 'drawings' ? 'Legacy src/app.js workspace running' : titles[name][1];
+  $('#pageTitle').textContent = name === 'drawings' ? 'Drawings' : titles[name][0];
+  $('#pageSub').textContent = name === 'drawings' ? 'Standalone drawing viewer with sheet navigation, filters, and viewer controls.' : titles[name][1];
   void renderContextBusBanner(name);
 
   if (name === 'knowledge') {
@@ -3476,6 +3474,10 @@ $$('.rail nav button[data-view]').forEach(button => {
   button.onclick = () => {
     if (button.dataset.view === 'engineering' && activeContextActivation) {
       void openEngineeringWorkspace({ source: CONTEXT_ACTIVATION_SOURCES.engineeringWorkspace });
+      return;
+    }
+    if (button.dataset.view === 'drawings') {
+      void openProfessionalDestination({ view: 'drawings' });
       return;
     }
     const panel = $('#professionalWorkspaceTools');
