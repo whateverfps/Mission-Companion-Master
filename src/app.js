@@ -108,12 +108,19 @@ import {
 import {
   buildBedfordWorkspaceModel,
   buildChiefInsight,
+  listBedfordWorkspaceRecords,
   getBedfordWorkspaceDefaultId
 } from './workspace-registry.js';
 import { buildWorkspaceDocumentsModel, workspaceDrawingDocumentIdForPage } from './workspace-documents.js';
 import { buildWorkspaceIssuesModel, issueFilterMatches } from './workspace-issues.js';
 import { buildWorkspaceChecklistModel, checklistFilterMatches } from './workspace-checklist.js';
 import { buildWorkspaceTimelineModel, timelineFilterMatches } from './workspace-timeline.js';
+import {
+  buildWorkspaceComparisonsModel,
+  resolveWorkspaceComparisonRightWorkspaceId,
+  workspaceComparisonModeLabel,
+  WORKSPACE_COMPARISON_MODES
+} from './workspace-comparisons.js';
 import {
   BEDFORD_NTP_SOURCE_DOCUMENT,
   buildBedfordProjectMilestoneContext
@@ -825,6 +832,233 @@ function renderWorkspaceTimelineView(timelineModel = {}, activeWorkspace = null,
     </section>`;
 }
 
+function renderWorkspaceComparisonCountCard(label, value, detail = '', tone = 'neutral') {
+  return `<article class="mc-ws-comparison-kpi ${esc(tone)}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></article>`;
+}
+
+function renderWorkspaceComparisonChoice(item = {}, labelKey = 'label', detailKey = 'detail') {
+  const label = String(item?.[labelKey] || item?.label || item?.title || item?.name || item?.id || '').trim();
+  const detail = String(item?.[detailKey] || item?.detail || item?.description || item?.status || '').trim();
+  const sheetNumber = String(item?.sheetNumber || '').trim();
+  const sectionNumber = String(item?.sectionNumber || '').trim();
+  const issueId = String(item?.id || '').trim();
+  if (sheetNumber) {
+    return `<button type="button" class="mc-ws-comparison-choice" data-ws-drawing-sheet="${esc(sheetNumber)}" aria-label="Open drawing ${esc(sheetNumber)}"><strong>${esc(label || sheetNumber)}</strong><span>${esc(detail || item?.sheetTitle || 'Drawing')}</span><small>${esc(item?.sheetTitle || item?.discipline || item?.level || 'Source drawing')}</small></button>`;
+  }
+  if (sectionNumber) {
+    return `<button type="button" class="mc-ws-comparison-choice" data-ws-spec-section="${esc(sectionNumber)}" aria-label="Open specification ${esc(sectionNumber)}"><strong>${esc(label || sectionNumber)}</strong><span>${esc(detail || item?.sectionTitle || 'Specification')}</span><small>${esc(item?.sectionTitle || item?.sourceLabel || 'Applicable specification')}</small></button>`;
+  }
+  if (issueId && item?.severity !== undefined) {
+    return `<button type="button" class="mc-ws-comparison-choice" data-ws-issue-id="${esc(issueId)}" aria-label="Open issue ${esc(label || issueId)}"><strong>${esc(label || issueId)}</strong><span>${esc(detail || `${item?.scope || 'PROJECT'} · ${item?.severity || 'INFO'}`)}</span><small>${esc(item?.description || item?.source || 'Issue')}</small></button>`;
+  }
+  if (issueId && item?.id && item?.dueDateLabel !== undefined) {
+    return `<div class="mc-ws-comparison-ref"><strong>${esc(label || issueId)}</strong><span>${esc(detail || item?.dueDateLabel || item?.status || '')}</span><small>${esc(item?.category || 'Milestone')}</small></div>`;
+  }
+  if (item?.roomId || item?.room) {
+    return `<div class="mc-ws-comparison-ref"><strong>${esc(label || item?.roomId || item?.room)}</strong><span>${esc(detail || 'Related room')}</span><small>${esc(item?.relationship || 'Workspace')}</small></div>`;
+  }
+  return `<div class="mc-ws-comparison-ref"><strong>${esc(label || 'Reference')}</strong><span>${esc(detail || 'No additional detail available.')}</span><small>${esc(item?.relationship || item?.kind || 'Reference')}</small></div>`;
+}
+
+function renderWorkspaceComparisonRefGroup(title, items = [], emptyText = 'No items recorded.') {
+  return `
+    <section class="mc-ws-comparison-panel">
+      <header><strong>${esc(title)}</strong><small>${esc(items.length)}</small></header>
+      ${items.length ? `<div class="mc-ws-comparison-items">${items.map(item => renderWorkspaceComparisonChoice(item)).join('')}</div>` : `<div class="mc-ws-empty-inline">${esc(emptyText)}</div>`}
+    </section>`;
+}
+
+function renderWorkspaceComparisonDimensionRows(rows = []) {
+  return rows.length ? `<div class="mc-ws-comparison-fields">${rows.map(row => `
+    <div class="mc-ws-comparison-field ${esc(row.status || 'same')}">
+      <strong>${esc(row.label)}</strong>
+      <div><b>Left</b><span>${esc(row.left || '—')}</span></div>
+      <div><b>Right</b><span>${esc(row.right || '—')}</span></div>
+      ${row.notes ? `<small>${esc(row.notes)}</small>` : ''}
+      <em>${esc(row.status || 'same')}</em>
+    </div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No comparison rows recorded.</div>';
+}
+
+function renderWorkspaceComparisonsView(comparisonModel = {}, activeWorkspace = null, projectMilestoneContext = null, comparisonState = {}) {
+  const mode = comparisonModel.mode || WORKSPACE_COMPARISON_MODES.WORKSPACE;
+  const comparisonModeLabelText = workspaceComparisonModeLabel(mode);
+  if (mode === WORKSPACE_COMPARISON_MODES.REQUIREMENT) {
+    const requirements = Array.isArray(comparisonModel.requirements) ? comparisonModel.requirements : [];
+    const selected = requirements.find(item => item.id === comparisonModel.selectedRequirementId) || requirements[0] || null;
+    const evidenceWorkspace = comparisonModel.left || null;
+    return `
+      <section class="mc-ws-comparisons" aria-label="Workspace Comparisons">
+        <header class="mc-ws-comparisons-header">
+          <div>
+            <span class="mc-ws-back">← Bedford Workspaces</span>
+            <h1 id="missionControlTitle" tabindex="-1">Comparisons</h1>
+            <p>${esc(activeWorkspace ? `${activeWorkspace.id} · ${activeWorkspace.room} · ${activeWorkspace.name}` : 'Select a workspace to compare requirements against evidence.')}</p>
+          </div>
+          <div class="mc-ws-comparison-modes" role="tablist" aria-label="Comparison modes">
+            <button type="button" class="${mode === WORKSPACE_COMPARISON_MODES.WORKSPACE ? 'active' : ''}" data-ws-comparison-mode="${WORKSPACE_COMPARISON_MODES.WORKSPACE}">Workspace vs Workspace</button>
+            <button type="button" class="${mode === WORKSPACE_COMPARISON_MODES.REQUIREMENT ? 'active' : ''}" data-ws-comparison-mode="${WORKSPACE_COMPARISON_MODES.REQUIREMENT}">Requirement vs Evidence</button>
+          </div>
+        </header>
+        <section class="mc-ws-comparison-selectors">
+          <article class="mc-ws-comparison-card">
+            <span>Active Workspace</span>
+            <strong>${esc(activeWorkspace?.id || 'Unavailable')}</strong>
+            <small>${esc(activeWorkspace?.room || 'Unknown')} · ${esc(activeWorkspace?.name || 'Workspace')} · ${esc(activeWorkspace?.level || 'Unavailable')}</small>
+          </article>
+          <article class="mc-ws-comparison-card">
+            <span>Evidence Scope</span>
+            <strong>${esc(projectMilestoneContext?.projectPhase || 'Project evidence')}</strong>
+            <small>${esc(`${comparisonModel.summary?.requirements || 0} requirements · ${comparisonModel.summary?.evidenceAvailable || 0} evidence available · ${comparisonModel.summary?.blocked || 0} blocked`)}</small>
+          </article>
+        </section>
+        <section class="mc-ws-comparison-summary">
+          ${renderWorkspaceComparisonCountCard('Requirements', comparisonModel.summary?.requirements ?? 0, 'Deterministic checklist requirements')}
+          ${renderWorkspaceComparisonCountCard('Evidence Available', comparisonModel.summary?.evidenceAvailable ?? 0, 'Session verified or authoritative')}
+          ${renderWorkspaceComparisonCountCard('Evidence Missing', comparisonModel.summary?.evidenceMissing ?? 0, 'No authoritative evidence linked')}
+          ${renderWorkspaceComparisonCountCard('Blocked', comparisonModel.summary?.blocked ?? 0, 'Open dependency or blocker')}
+          ${renderWorkspaceComparisonCountCard('Unknown', comparisonModel.summary?.unknown ?? 0, 'Not yet resolved')}
+        </section>
+        <div class="mc-ws-comparison-layout mc-ws-comparison-layout-requirement">
+          <section class="mc-ws-comparison-list" aria-label="Requirement list">
+            <div class="mc-ws-comparison-group">
+              <header><strong>WHAT APPLIES</strong><small>${esc(requirements.length)}</small></header>
+              <ul>${requirements.length ? requirements.map(item => `
+                <li class="mc-ws-comparison-item ${item.id === selected?.id ? 'active' : ''}">
+                  <button type="button" data-ws-comparison-requirement="${esc(item.id)}">
+                    <span>${esc(item.category || 'CHECKLIST')}</span>
+                    <strong>${esc(item.title || item.id)}</strong>
+                    <small>${esc(item.evidenceStatus || item.status || 'Evidence Missing')}</small>
+                    <em>${esc(item.sourceLabel || item.sourceType || 'Checklist requirement')}</em>
+                  </button>
+                </li>`).join('') : ''}</ul>
+            </div>
+          </section>
+          <aside class="mc-ws-comparison-detail-shell" aria-label="Requirement evidence detail">
+            ${selected ? `
+              <header>
+                <div>
+                  <span>${esc(selected.category || 'CHECKLIST')}</span>
+                  <strong>${esc(selected.title || 'Selected requirement')}</strong>
+                  <small>${esc(selected.scope || 'WORKSPACE')} · ${esc(selected.evidenceStatus || 'Evidence Missing')} · ${esc(selected.status || 'NOT_VERIFIED')}</small>
+                </div>
+                <div class="mc-ws-comparison-state ${selected.evidenceStatus === 'Evidence Available' ? 'same' : selected.evidenceStatus === 'Blocked' ? 'blocked' : 'pending'}">
+                  <strong>${esc(selected.evidenceStatus || 'Evidence Missing')}</strong>
+                  <span>${selected.evidenceStatus === 'Blocked' ? 'Related issue or dependency is open' : selected.evidenceStatus === 'Evidence Available' ? 'Authoritative or session evidence exists' : 'No authoritative evidence linked yet'}</span>
+                </div>
+              </header>
+              <p>${esc(selected.description || 'No description recorded.')}</p>
+              <section class="mc-ws-comparison-panel">
+                <header><strong>LEFT / REQUIREMENT</strong><small>${esc(selected.required ? 'Required' : 'Helpful')}</small></header>
+                <div class="mc-ws-empty-inline">${esc(selected.title || 'Requirement')}${selected.notes ? ` — ${selected.notes}` : ''}</div>
+              </section>
+              <section class="mc-ws-comparison-panel">
+                <header><strong>RIGHT / EVIDENCE</strong><small>${esc(selected.evidenceStatus || 'Evidence Missing')}</small></header>
+                <div class="mc-ws-empty-inline">${esc(selected.evidenceStatus === 'Evidence Available' ? 'Evidence is linked to the active Workspace records.' : selected.evidenceStatus === 'Blocked' ? 'Evidence is blocked by an open issue or dependency.' : 'Authoritative evidence is not linked yet.')}</div>
+              </section>
+              ${renderWorkspaceComparisonRefGroup('SOURCE', selected.sourceRefs || [], 'No source references recorded.')}
+              ${renderWorkspaceComparisonRefGroup('RELATED DRAWINGS', selected.relatedDrawings || [], 'No related drawings recorded.')}
+              ${renderWorkspaceComparisonRefGroup('RELATED SPECS', selected.relatedSpecifications || [], 'No related specifications recorded.')}
+              ${renderWorkspaceComparisonRefGroup('RELATED ISSUES', selected.relatedIssues || [], 'No related issues recorded.')}
+              ${renderWorkspaceComparisonRefGroup('RELATED CHECKLIST ITEMS', selected.relatedChecklistItems || [], 'No related checklist items recorded.')}
+              ${renderWorkspaceComparisonRefGroup('RELATED TIMELINE', selected.relatedMilestones || [], 'No related timeline context recorded.')}
+              <section class="mc-ws-comparison-panel">
+                <header><strong>NOTES</strong><small>${esc(selected.sourceType || '')}</small></header>
+                <div class="mc-ws-empty-inline">${esc(selected.notes || 'No notes recorded.')}</div>
+              </section>
+            ` : '<div class="mc-ws-empty-inline">No deterministic requirements available for this workspace yet.</div>'}
+          </aside>
+        </div>
+      </section>`;
+  }
+
+  const dimensions = Array.isArray(comparisonModel.dimensions) ? comparisonModel.dimensions : [];
+  const selected = dimensions.find(item => item.id === comparisonModel.selectedDimensionId) || dimensions[0] || null;
+  const rightOptions = listBedfordWorkspaceRecords().filter(record => record.id !== (activeWorkspace?.id || ''));
+  return `
+    <section class="mc-ws-comparisons" aria-label="Workspace Comparisons">
+      <header class="mc-ws-comparisons-header">
+        <div>
+          <span class="mc-ws-back">← Bedford Workspaces</span>
+          <h1 id="missionControlTitle" tabindex="-1">Comparisons</h1>
+          <p>${esc(activeWorkspace ? `${activeWorkspace.id} · ${activeWorkspace.room} · ${activeWorkspace.name}` : 'Select a workspace to compare against another workspace.')}</p>
+        </div>
+        <div class="mc-ws-comparison-modes" role="tablist" aria-label="Comparison modes">
+          <button type="button" class="${mode === WORKSPACE_COMPARISON_MODES.WORKSPACE ? 'active' : ''}" data-ws-comparison-mode="${WORKSPACE_COMPARISON_MODES.WORKSPACE}">Workspace vs Workspace</button>
+          <button type="button" class="${mode === WORKSPACE_COMPARISON_MODES.REQUIREMENT ? 'active' : ''}" data-ws-comparison-mode="${WORKSPACE_COMPARISON_MODES.REQUIREMENT}">Requirement vs Evidence</button>
+        </div>
+      </header>
+      <section class="mc-ws-comparison-selectors">
+        <article class="mc-ws-comparison-card">
+          <span>Active Workspace</span>
+          <strong>${esc(activeWorkspace?.id || 'Unavailable')}</strong>
+          <small>${esc(activeWorkspace?.room || 'Unknown')} · ${esc(activeWorkspace?.name || 'Workspace')} · ${esc(activeWorkspace?.level || 'Unavailable')}</small>
+        </article>
+        <label class="mc-ws-comparison-card">
+          <span>Select Workspace</span>
+          <select data-ws-comparison-workspace>
+            ${rightOptions.map(record => `<option value="${esc(record.id)}" ${record.id === comparisonModel.rightWorkspaceId ? 'selected' : ''}>${esc(record.id)} — ${esc(record.room)} · ${esc(record.name)}</option>`).join('')}
+          </select>
+          <small>${esc(comparisonModeLabelText)}</small>
+        </label>
+      </section>
+      <section class="mc-ws-comparison-summary">
+        ${renderWorkspaceComparisonCountCard('Shared', comparisonModel.summary?.shared ?? 0, 'Matched across the selected comparison dimensions')}
+        ${renderWorkspaceComparisonCountCard('Different', comparisonModel.summary?.different ?? 0, 'Same dimension, different records or values', comparisonModel.summary?.different ? 'watch' : 'neutral')}
+        ${renderWorkspaceComparisonCountCard('Left Only', comparisonModel.summary?.leftOnly ?? 0, 'Available only on the active workspace')}
+        ${renderWorkspaceComparisonCountCard('Right Only', comparisonModel.summary?.rightOnly ?? 0, 'Available only on the comparison workspace')}
+      </section>
+      <div class="mc-ws-comparison-layout">
+        <section class="mc-ws-comparison-list" aria-label="Comparison dimensions">
+          <div class="mc-ws-comparison-group">
+            <header><strong>DIMENSIONS</strong><small>${esc(dimensions.length)}</small></header>
+            <ul>${dimensions.map(dimension => `
+              <li class="mc-ws-comparison-item ${dimension.id === selected?.id ? 'active' : ''}">
+                <button type="button" data-ws-comparison-dimension="${esc(dimension.id)}">
+                  <span>${esc(dimension.label)}</span>
+                  <strong>${esc(dimension.summary || 'Comparison ready')}</strong>
+                  <small>${esc(dimension.counts?.shared ?? 0)} shared · ${esc(dimension.counts?.different ?? 0)} different · ${esc(dimension.counts?.leftOnly ?? 0)} left only · ${esc(dimension.counts?.rightOnly ?? 0)} right only</small>
+                  <em class="${dimension.status === 'same' ? 'same' : dimension.status === 'different' ? 'watch' : 'pending'}">${esc(dimension.status || 'not-available')}</em>
+                </button>
+              </li>`).join('')}</ul>
+          </div>
+        </section>
+        <aside class="mc-ws-comparison-detail-shell" aria-label="Comparison detail">
+          ${selected ? `
+            <header>
+              <div>
+                <span>${esc(selected.label || selected.id || 'Comparison')}</span>
+                <strong>${esc(selected.summary || 'Selected comparison dimension')}</strong>
+                <small>${esc(selected.kind === 'fields' ? 'Field comparison' : 'Record comparison')} · ${esc(selected.status || 'not-available')}</small>
+              </div>
+              <div class="mc-ws-comparison-state ${selected.status === 'same' ? 'same' : selected.status === 'different' ? 'watch' : 'pending'}">
+                <strong>${esc(selected.status || 'not-available')}</strong>
+                <span>${selected.status === 'same' ? 'Records match across both workspaces.' : selected.status === 'different' ? 'Records differ and should be reviewed.' : 'No matching records available.'}</span>
+              </div>
+            </header>
+            ${selected.kind === 'fields' ? renderWorkspaceComparisonDimensionRows(selected.rows || []) : `
+              <section class="mc-ws-comparison-panel">
+                <header><strong>SHARED</strong><small>${esc(selected.shared?.length || 0)}</small></header>
+                ${selected.shared?.length ? `<div class="mc-ws-comparison-items">${selected.shared.map(item => renderWorkspaceComparisonChoice(item)).join('')}</div>` : '<div class="mc-ws-empty-inline">No shared records recorded.</div>'}
+              </section>
+              <section class="mc-ws-comparison-panel">
+                <header><strong>DIFFERENT</strong><small>${esc(selected.different?.length || 0)}</small></header>
+                ${selected.different?.length ? `<div class="mc-ws-comparison-items">${selected.different.map(item => renderWorkspaceComparisonChoice(item)).join('')}</div>` : '<div class="mc-ws-empty-inline">No differing records recorded.</div>'}
+              </section>
+              <section class="mc-ws-comparison-panel">
+                <header><strong>LEFT ONLY</strong><small>${esc(selected.leftOnly?.length || 0)}</small></header>
+                ${selected.leftOnly?.length ? `<div class="mc-ws-comparison-items">${selected.leftOnly.map(item => renderWorkspaceComparisonChoice(item)).join('')}</div>` : '<div class="mc-ws-empty-inline">No left-only records recorded.</div>'}
+              </section>
+              <section class="mc-ws-comparison-panel">
+                <header><strong>RIGHT ONLY</strong><small>${esc(selected.rightOnly?.length || 0)}</small></header>
+                ${selected.rightOnly?.length ? `<div class="mc-ws-comparison-items">${selected.rightOnly.map(item => renderWorkspaceComparisonChoice(item)).join('')}</div>` : '<div class="mc-ws-empty-inline">No right-only records recorded.</div>'}
+              </section>
+            `}
+          ` : '<div class="mc-ws-empty-inline">No comparison dimension is currently selected.</div>'}
+        </aside>
+      </div>
+    </section>`;
+}
+
 function renderWorkspaceDocumentsView(workspaceModel, activeWorkspace, projectMilestoneContext) {
   const documentsModel = buildWorkspaceDocumentsModel({ workspace: activeWorkspace, projectMilestoneContext });
   const categoryMarkup = documentsModel.categories.map(category => `
@@ -906,6 +1140,12 @@ const workspaceChecklistSessionState = new Map();
 const workspaceTimelineSessionState = new Map();
 const workspaceNotesSessionState = new Map();
 const workspaceIssuesSessionState = new Map();
+const workspaceComparisonsSessionState = {
+  mode: WORKSPACE_COMPARISON_MODES.WORKSPACE,
+  rightWorkspaceId: '',
+  selectedDimensionId: 'identity',
+  selectedRequirementId: ''
+};
 let previousUserProjectId = null;
 let selectedDoc = null;
 let selectedKnowledgeSection = 'all';
@@ -5402,7 +5642,8 @@ async function renderMissionControlWorkspace() {
   const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
   const activeWorkspace = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
   const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
-  const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() });
+  const pmisRuntime = missionPmisRuntimeData();
+  const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
   const issueState = workspaceIssuesStateFor(activeWorkspace?.id || '');
   if (!issuesModel.filters.some(filter => String(filter.id) === String(issueState.filter))) issueState.filter = 'all';
   if (issueState.selectedIssueId && !issuesModel.issues.some(issue => issue.id === issueState.selectedIssueId)) issueState.selectedIssueId = '';
@@ -5433,7 +5674,7 @@ async function renderMissionControlWorkspace() {
     workspace: activeWorkspace,
     projectMilestoneContext,
     issuesModel,
-    pmisRuntime: missionPmisRuntimeData()
+    pmisRuntime
   });
   const timelineModel = buildWorkspaceTimelineModel({
     workspace: activeWorkspace,
@@ -5453,6 +5694,24 @@ async function renderMissionControlWorkspace() {
   if (!timelineModel.filters.some(filter => String(filter.id) === String(timelineState.filter))) timelineState.filter = 'all';
   if (timelineState.selectedItemId && !timelineModel.items.some(item => item.id === timelineState.selectedItemId)) timelineState.selectedItemId = '';
   if (!timelineState.selectedItemId) timelineState.selectedItemId = timelineModel.selectedItemId || '';
+  const resolvedComparisonRightWorkspaceId = resolveWorkspaceComparisonRightWorkspaceId(activeWorkspace?.id || '', workspaceComparisonsSessionState.rightWorkspaceId);
+  if (resolvedComparisonRightWorkspaceId !== workspaceComparisonsSessionState.rightWorkspaceId) workspaceComparisonsSessionState.rightWorkspaceId = resolvedComparisonRightWorkspaceId;
+  const comparisonsModel = activeBedfordWorkspaceSection === 'comparisons'
+    ? buildWorkspaceComparisonsModel({
+      mode: workspaceComparisonsSessionState.mode,
+      leftWorkspaceId: activeWorkspace?.id || '',
+      rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId,
+      selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId,
+      selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId,
+      pmisRuntime
+    })
+    : null;
+  if (comparisonsModel) {
+    workspaceComparisonsSessionState.mode = comparisonsModel.mode || workspaceComparisonsSessionState.mode;
+    workspaceComparisonsSessionState.rightWorkspaceId = comparisonsModel.rightWorkspaceId || workspaceComparisonsSessionState.rightWorkspaceId;
+    workspaceComparisonsSessionState.selectedDimensionId = comparisonsModel.selectedDimensionId || workspaceComparisonsSessionState.selectedDimensionId;
+    workspaceComparisonsSessionState.selectedRequirementId = comparisonsModel.selectedRequirementId || workspaceComparisonsSessionState.selectedRequirementId;
+  }
   const checklistDoneCount = checklistItems.filter(item => item.checked).length;
   const checklistApplicableCount = checklistModel.counts?.applicableItems ?? checklistItems.length;
   const checklistBlockedCount = checklistModel.counts?.blocked ?? checklistItems.filter(item => item.status === 'BLOCKED').length;
@@ -5602,7 +5861,7 @@ async function renderMissionControlWorkspace() {
           <button type="button" class="${activeBedfordWorkspaceSection === 'timeline' ? 'active' : ''}" data-ws-section="timeline">◷ Timeline</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'notes' ? 'active' : ''}" data-ws-section="notes">✎ Notes</button>
         </nav>
-        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="specs">Compare to Spec</button><button data-ws-action="rfi" disabled title="Create RFI is not configured yet">Create RFI</button><button data-ws-action="observation" disabled title="Create Observation is not configured yet">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
+        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="compare-spec">Compare to Spec</button><button data-ws-action="rfi" disabled title="Create RFI is not configured yet">Create RFI</button><button data-ws-action="observation" disabled title="Create Observation is not configured yet">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
         <div class="mc-ws-chief" id="workspaceChiefInsightPanel"><div class="mc-ws-chief-avatar">👷</div><strong>Chief Insight</strong><p>${esc(chiefInsight)}</p><button data-ws-action="chief">Ask Chief</button></div>
       </aside>
       <main class="mc-ws-main">
@@ -5614,7 +5873,7 @@ async function renderMissionControlWorkspace() {
           <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(timelineModel.summary?.roomScheduleStatus || projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
         </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
-        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : `
+        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : `
         <section class="mc-ws-upper">
           <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
@@ -5908,6 +6167,41 @@ $('#missionControlContent').onclick = async event => {
       const anchor = document.getElementById(workspaceSectionAnchor(activeBedfordWorkspaceSection));
       anchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 0);
+    return;
+  }
+  if (button.dataset.wsComparisonMode) {
+    workspaceComparisonsSessionState.mode = button.dataset.wsComparisonMode === WORKSPACE_COMPARISON_MODES.REQUIREMENT
+      ? WORKSPACE_COMPARISON_MODES.REQUIREMENT
+      : WORKSPACE_COMPARISON_MODES.WORKSPACE;
+    if (workspaceComparisonsSessionState.mode === WORKSPACE_COMPARISON_MODES.REQUIREMENT) workspaceComparisonsSessionState.selectedRequirementId = '';
+    else workspaceComparisonsSessionState.selectedDimensionId = 'identity';
+    activeBedfordWorkspaceSection = 'comparisons';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsComparisonWorkspace) {
+    workspaceComparisonsSessionState.rightWorkspaceId = button.dataset.wsComparisonWorkspace;
+    activeBedfordWorkspaceSection = 'comparisons';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsComparisonDimension) {
+    workspaceComparisonsSessionState.selectedDimensionId = button.dataset.wsComparisonDimension;
+    activeBedfordWorkspaceSection = 'comparisons';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsComparisonRequirement) {
+    workspaceComparisonsSessionState.selectedRequirementId = button.dataset.wsComparisonRequirement;
+    activeBedfordWorkspaceSection = 'comparisons';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsAction === 'compare-spec') {
+    workspaceComparisonsSessionState.mode = WORKSPACE_COMPARISON_MODES.REQUIREMENT;
+    workspaceComparisonsSessionState.selectedRequirementId = '';
+    activeBedfordWorkspaceSection = 'comparisons';
+    await showMissionControlView('workspace');
     return;
   }
   if (button.dataset.wsAction === 'drawings') {

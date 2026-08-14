@@ -207,6 +207,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /RELATED DOCUMENTS \/ SOURCE SHEETS/);
   assert.match(workspace, /data-ws-section="overview"/);
   assert.match(workspace, /data-ws-section="documents"/);
+  assert.match(workspace, /data-ws-section="comparisons"/);
+  assert.match(workspace, /data-ws-action="compare-spec"/);
   assert.match(app, /data-ws-checklist-toggle=/);
   assert.match(app, /data-ws-checklist-id=/);
   assert.match(workspace, /data-ws-note=/);
@@ -237,12 +239,25 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(css, /\.mc-ws-checklist-layout\{/);
   assert.match(css, /\.mc-ws-timeline-view\{/);
   assert.match(css, /\.mc-ws-timeline-layout\{/);
+  assert.match(css, /\.mc-ws-comparisons\{/);
+  assert.match(css, /\.mc-ws-comparison-summary\{/);
+  assert.match(css, /\.mc-ws-comparison-layout\{/);
+  assert.match(css, /\.mc-ws-comparison-field\{/);
   assert.match(css, /\.mc-ws-notes/);
   assert.match(css, /\.mc-ws-project-clock/);
   assert.match(css, /\.mc-ws-timeline/);
   assert.match(css, /\.mc-ws-documents/);
   assert.match(css, /\.mc-ws-documents-grid/);
   assert.match(css, /\.mc-ws-document-card/);
+});
+
+test('Mission Control workspace comparison card rendering uses local string normalization instead of an undeclared text helper', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  const start = app.indexOf('function renderWorkspaceComparisonChoice');
+  const end = app.indexOf('function renderWorkspaceComparisonRefGroup');
+  const renderChoice = app.slice(start, end);
+  assert.match(renderChoice, /String\(item\?\.[^)]*\)\.trim\(\)/);
+  assert.doesNotMatch(renderChoice, /\btext\(/);
 });
 
 test('Professional Workspace remains available through the gear launcher without a visible top-nav entry', () => {
