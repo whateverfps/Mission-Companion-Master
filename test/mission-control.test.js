@@ -186,6 +186,7 @@ test('Mission Control workspace is registry-backed and no longer hard-codes Room
 test('Mission Control workspace preserves the approved wide composition and four-panel lower grid', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
+  const workspaceDocuments = fs.readFileSync(new URL('../src/workspace-documents.js', import.meta.url), 'utf8');
   const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
   assert.match(workspace, /<h1 id="missionControlTitle" tabindex="-1">B\$\{esc\(activeWorkspace\?\.building \|\| '61'\)\} — Telecom Room \$\{esc\(activeWorkspace\?\.room \|\| 'Workspace'\)\}<\/h1>/);
   assert.match(workspace, /<strong>ISSUES & RISKS<\/strong>/);
@@ -202,10 +203,18 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /mc-ws-next-summary/);
   assert.match(workspace, /RELATED DOCUMENTS \/ SOURCE SHEETS/);
   assert.match(workspace, /data-ws-section="overview"/);
-  assert.match(workspace, /data-ws-source-sheet=/);
-  assert.match(workspace, /data-ws-spec-section=/);
+  assert.match(workspace, /data-ws-section="documents"/);
   assert.match(workspace, /data-ws-checklist-toggle=/);
   assert.match(workspace, /data-ws-note=/);
+  assert.match(app, /data-ws-source-sheet=/);
+  assert.match(app, /data-ws-drawing-sheet=/);
+  assert.match(app, /data-ws-spec-section=/);
+  assert.match(app, /data-ws-project-document=/);
+  assert.match(app, /mc-ws-documents/);
+  assert.match(app, /mc-ws-documents-grid/);
+  assert.match(workspaceDocuments, /PRIMARY SOURCE DRAWINGS/);
+  assert.match(workspaceDocuments, /RELATED DRAWINGS/);
+  assert.match(workspaceDocuments, /PROJECT \/ CONTRACTUAL DOCUMENTS/);
   assert.match(workspace, /Create RFI is not configured yet/);
   assert.match(css, /\.mc-ws\{grid-template-columns:232px minmax\(0,1fr\)\}/);
   assert.match(css, /\.mc-ws-upper\{grid-template-columns:minmax\(0,2\.55fr\) minmax\(300px,1fr\)/);
@@ -215,6 +224,9 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(css, /\.mc-ws-notes/);
   assert.match(css, /\.mc-ws-project-clock/);
   assert.match(css, /\.mc-ws-timeline/);
+  assert.match(css, /\.mc-ws-documents/);
+  assert.match(css, /\.mc-ws-documents-grid/);
+  assert.match(css, /\.mc-ws-document-card/);
 });
 
 test('Professional Workspace remains available through the gear launcher without a visible top-nav entry', () => {

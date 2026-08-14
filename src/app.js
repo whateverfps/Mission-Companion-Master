@@ -110,6 +110,7 @@ import {
   buildChiefInsight,
   getBedfordWorkspaceDefaultId
 } from './workspace-registry.js';
+import { buildWorkspaceDocumentsModel, workspaceDrawingDocumentIdForPage } from './workspace-documents.js';
 import {
   BEDFORD_NTP_SOURCE_DOCUMENT,
   buildBedfordProjectMilestoneContext
@@ -282,13 +283,103 @@ function buildWorkspaceChiefPrompt(workspace = null, pmisContext = '', projectMi
   return `What should I focus on for ${workspace.building ? `Building ${workspace.building}` : 'this workspace'}${workspace.room ? ` room ${workspace.room}` : ''}? Source sheets: ${sourceSheetNumbers.join(', ') || 'None recorded'}. Applicable specs: ${specNumbers.join(', ') || 'None recorded'}. PMIS context: ${pmisContext || workspace.pmisBuilding || 'Unavailable'}. ${milestoneSummary}`;
 }
 
+function renderWorkspaceDocumentItem(item = {}, categoryId = '') {
+  if (item.kind === 'drawing') {
+    return `
+      <li class="mc-ws-document-card">
+        <button type="button" data-ws-drawing-sheet="${esc(item.sheetNumber)}" aria-label="Open drawing ${esc(item.sheetNumber)}">
+          <strong>${esc(item.sheetNumber)}</strong>
+          <span>${esc(item.sheetTitle)}</span>
+          <small>${esc(item.discipline || 'Drawing')} · ${esc(item.level || 'Workspace')}</small>
+          <em>${esc(item.relationship)}</em>
+        </button>
+      </li>`;
+  }
+  if (item.kind === 'specification') {
+    return `
+      <li class="mc-ws-document-card">
+        <button type="button" data-ws-spec-section="${esc(item.sectionNumber)}" aria-label="Open specification ${esc(item.sectionNumber)}">
+          <strong>${esc(item.sectionNumber)}</strong>
+          <span>${esc(item.sectionTitle)}</span>
+          <small>${esc(item.sourceLabel)}</small>
+          <em>${esc(item.relationship)}</em>
+        </button>
+      </li>`;
+  }
+  if (item.kind === 'project-document') {
+    return `
+      <li class="mc-ws-document-card">
+        <button type="button" data-ws-project-document="${esc(item.documentId)}" aria-label="Open document ${esc(item.title)}">
+          <strong>${esc(item.title)}</strong>
+          <span>${esc(item.sourceLabel)}</span>
+          <small>${item.metadata?.ntpDateLabel || item.metadata?.contractCompletionDateLabel ? `NTP ${esc(item.metadata.ntpDateLabel || 'n/a')} · Completion ${esc(item.metadata.contractCompletionDateLabel || 'n/a')}` : 'Project / Contractual'}</small>
+          <em>${esc(item.relationship)}</em>
+        </button>
+      </li>`;
+  }
+  return `
+    <li class="mc-ws-document-card">
+      <div>
+        <strong>${esc(item.label)}</strong>
+        <span>${esc(item.detail)}</span>
+        <small>${esc(item.relationship || categoryId || 'Related Evidence')}</small>
+      </div>
+    </li>`;
+}
+
+function renderWorkspaceDocumentsView(workspaceModel, activeWorkspace, projectMilestoneContext) {
+  const documentsModel = buildWorkspaceDocumentsModel({ workspace: activeWorkspace, projectMilestoneContext });
+  const categoryMarkup = documentsModel.categories.map(category => `
+    <section class="mc-ws-documents-category" data-doc-category="${esc(category.id)}">
+      <header>
+        <div>
+          <span>${esc(category.label)}</span>
+          <small>${esc(category.summary)}</small>
+        </div>
+      </header>
+      ${category.groups.length ? category.groups.map(group => `
+        <article class="mc-ws-documents-group" data-doc-group="${esc(group.id)}">
+          <header>
+            <strong>${esc(group.label)}</strong>
+            <small>${esc(group.relationship)}</small>
+          </header>
+          <ul>${group.items.map(item => renderWorkspaceDocumentItem(item, category.id)).join('')}</ul>
+        </article>
+      `).join('') : `<div class="mc-ws-documents-empty">${esc(category.emptyState || 'No documents are currently available for this category.')}</div>`}
+    </section>
+  `).join('');
+  return `
+    <section class="mc-ws-documents" aria-label="Workspace Documents">
+      <header class="mc-ws-documents-header">
+        <div>
+          <span class="mc-ws-back">← Bedford Workspaces</span>
+          <h1 id="missionControlTitle" tabindex="-1">Documents</h1>
+          <p>${esc(activeWorkspace ? `${activeWorkspace.id} · ${activeWorkspace.room} · ${activeWorkspace.name}` : 'Select a workspace to see governing documents.')}</p>
+        </div>
+        <div class="mc-ws-documents-summary">
+          <article><span>Drawings</span><strong>${documentsModel.counts.drawings}</strong></article>
+          <article><span>Specifications</span><strong>${documentsModel.counts.specifications}</strong></article>
+          <article><span>Project Docs</span><strong>${documentsModel.counts.projectDocuments}</strong></article>
+          <article><span>Related Evidence</span><strong>${documentsModel.counts.relatedEvidence}</strong></article>
+        </div>
+      </header>
+      <p class="mc-ws-documents-intro">Documents are derived from the selected workspace record, its source sheets, applicable specifications, and project milestones.</p>
+      ${categoryMarkup || `<div class="mc-ws-empty-inline">${esc(documentsModel.emptyState || 'No Workspace documents available for this record.')}</div>`}
+    </section>`;
+}
+
 function buildWorkspaceDrawingTarget(workspace = null, sheetNumber = '') {
-  const sheet = (workspace?.sourceSheets || []).find(item => item.sheetNumber === sheetNumber) || workspace?.sourceSheets?.[0] || null;
+  const sheet = (workspace?.sourceSheets || []).find(item => item.sheetNumber === sheetNumber)
+    || (workspace?.relatedSheets || []).find(item => item.sheetNumber === sheetNumber)
+    || workspace?.sourceSheets?.[0]
+    || workspace?.relatedSheets?.[0]
+    || null;
   if (!workspace || !sheet) return null;
+  const documentId = workspaceDrawingDocumentIdForPage(sheet.pageId) || BEDFORD_DRAWING_DOCUMENT_ID;
   return createDrawingTarget({
     projectId: state().activeProject,
-    documentId: BEDFORD_DRAWING_DOCUMENT_ID,
-    drawingSetId: BEDFORD_DRAWING_DOCUMENT_ID,
+    documentId,
+    drawingSetId: documentId,
     pageId: sheet.pageId,
     sheetId: sheet.sheetNumber,
     sheetNumber: sheet.sheetNumber,
@@ -4846,6 +4937,7 @@ async function renderMissionControlWorkspace() {
   const combinedNextSteps = [...milestoneNextSteps, ...(activeWorkspace?.nextSteps || [])];
   const compactNextSteps = combinedNextSteps.slice(0, 5);
   const remainingNextSteps = Math.max(0, combinedNextSteps.length - compactNextSteps.length);
+  const documentsModel = buildWorkspaceDocumentsModel({ workspace: activeWorkspace, projectMilestoneContext });
   const workspaceButtons = workspaceModel.workspaces.map(record => `
     <button type="button" class="${record.id === activeWorkspace?.id ? 'active' : ''}" data-ws-select="${esc(record.id)}">
       <strong>${esc(record.id)}</strong>
@@ -4894,6 +4986,54 @@ async function renderMissionControlWorkspace() {
   `).join('') || '<li><b>No applicable specifications</b><span>Workspace data unavailable.</span><em>Unavailable</em></li>';
   const relatedRoomItems = (activeWorkspace?.relatedRooms || []).map(room => `<li><span>${esc(room)}</span></li>`).join('') || '<li><span>No related rooms recorded.</span></li>';
   const openDrawingLabel = previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawings';
+  const documentsViewMarkup = documentsModel.categories.length ? `
+        <section class="mc-ws-documents" aria-label="Workspace Documents">
+          <header class="mc-ws-documents-header">
+            <div>
+              <span class="mc-ws-back">← Bedford Workspaces</span>
+              <h1 id="missionControlTitle" tabindex="-1">Documents</h1>
+              <p>${esc(activeWorkspace ? `${activeWorkspace.id} · ${activeWorkspace.room} · ${activeWorkspace.name}` : 'Select a workspace to see governing documents.')}</p>
+            </div>
+            <div class="mc-ws-documents-summary">
+              <article><span>Drawings</span><strong>${documentsModel.counts.drawings}</strong></article>
+              <article><span>Specifications</span><strong>${documentsModel.counts.specifications}</strong></article>
+              <article><span>Project Docs</span><strong>${documentsModel.counts.projectDocuments}</strong></article>
+              <article><span>Related Evidence</span><strong>${documentsModel.counts.relatedEvidence}</strong></article>
+            </div>
+          </header>
+          <p class="mc-ws-documents-intro">Documents are derived from the selected workspace record, its source sheets, applicable specifications, and project milestones.</p>
+          <div class="mc-ws-documents-grid">
+            ${documentsModel.categories.map(category => `
+              <section class="mc-ws-documents-category" data-doc-category="${esc(category.id)}">
+                <header>
+                  <div>
+                    <span>${esc(category.label)}</span>
+                    <small>${esc(category.summary)}</small>
+                  </div>
+                </header>
+                ${category.groups.map(group => `
+                  <article class="mc-ws-documents-group" data-doc-group="${esc(group.id)}">
+                    <header>
+                      <strong>${esc(group.label)}</strong>
+                      <small>${esc(group.relationship)}</small>
+                    </header>
+                    <ul>${group.items.map(item => renderWorkspaceDocumentItem(item, category.id)).join('')}</ul>
+                  </article>
+                `).join('')}
+              </section>
+            `).join('')}
+          </div>
+        </section>` : `
+        <section class="mc-ws-documents mc-ws-documents-empty" aria-label="Workspace Documents">
+          <header class="mc-ws-documents-header">
+            <div>
+              <span class="mc-ws-back">← Bedford Workspaces</span>
+              <h1 id="missionControlTitle" tabindex="-1">Documents</h1>
+              <p>${esc(activeWorkspace ? `${activeWorkspace.id} · ${activeWorkspace.room} · ${activeWorkspace.name}` : 'Select a workspace to see governing documents.')}</p>
+            </div>
+          </header>
+          <div class="mc-ws-empty-inline">${esc(documentsModel.emptyState || 'No Workspace documents available for this record.')}</div>
+        </section>`;
   $('#missionControlContent').innerHTML = `
     <section class="mc-ws" aria-labelledby="missionControlTitle">
       <aside class="mc-ws-sidebar">
@@ -4921,6 +5061,7 @@ async function renderMissionControlWorkspace() {
           <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
         </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
+        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : `
         <section class="mc-ws-upper">
           <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
@@ -4930,7 +5071,7 @@ async function renderMissionControlWorkspace() {
           <article id="workspaceComparisonsPanel"><header><strong>TRACEABILITY MAP</strong><button type="button" data-ws-section="comparisons">Focus</button></header><div class="mc-ws-trace">${(activeWorkspace?.traceabilityMap || []).flatMap(item => [`<div><b>Source</b><span>${esc(item.from)}</span></div>`, '<i>→</i>', `<div><b>Requirement</b><span>${esc(item.requirement)}</span></div>`, '<i>→</i>', `<div><b>Impact</b><span>${esc(item.impact)}</span></div>`]).join('')}</div></article>
           <article id="workspaceChecklistPanel"><header><strong>CHECKLIST BUILDER</strong><button type="button" data-ws-section="checklist">Focus</button></header><p class="mc-ws-muted">Plan-derived checklist grounded in the current workspace evidence.</p><div class="mc-ws-progress"><span style="width:${Math.min(100, 28 + (checklistItems.filter(item => item.done).length || 0) * 14)}%"></span></div><small>${checklistItems.filter(item => item.done).length || 0} of ${checklistItems.length} items scored</small><ul class="mc-ws-check">${checklistItems.map(item => `<li><label><input type="checkbox" data-ws-checklist-toggle="${esc(item.label)}" ${item.done ? 'checked' : ''}> ${esc(item.label)}</label></li>`).join('')}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
           <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.label)}</b><span>${esc(item.dueDateLabel || item.status || '')}</span><small>${esc(item.detail || item.notes || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button><details class="mc-ws-notes" id="workspaceNotesPanel"><summary>Workspace notes</summary><textarea data-ws-note="${esc(activeWorkspace?.id || '')}" rows="4" placeholder="Add temporary workspace notes for this session.">${esc(notesValue)}</textarea></details></article>
-        </section>
+        </section>`}
       </main>
     </section>`;
 }
@@ -5136,9 +5277,20 @@ $('#missionControlContent').onclick = async event => {
     await showMissionControlView('workspace');
     return;
   }
+  if (button.dataset.wsDrawingSheet) {
+    const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
+    const target = buildWorkspaceDrawingTarget(activeWorkspace, button.dataset.wsDrawingSheet);
+    if (target) drawingTarget = target;
+    activeBedfordWorkspaceSheetNumber = button.dataset.wsDrawingSheet;
+    activeBedfordWorkspaceSection = 'documents';
+    await showMissionControlView('plans');
+    return;
+  }
   if (button.dataset.wsSourceSheet) {
     const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
-    const selectedSheet = (activeWorkspace?.sourceSheets || []).find(sheet => sheet.sheetNumber === button.dataset.wsSourceSheet) || null;
+    const selectedSheet = (activeWorkspace?.sourceSheets || []).find(sheet => sheet.sheetNumber === button.dataset.wsSourceSheet)
+      || (activeWorkspace?.relatedSheets || []).find(sheet => sheet.sheetNumber === button.dataset.wsSourceSheet)
+      || null;
     if (selectedSheet) {
       drawingTarget = buildWorkspaceDrawingTarget(activeWorkspace, selectedSheet.sheetNumber);
       activeBedfordWorkspaceSheetNumber = selectedSheet.sheetNumber;
@@ -5150,6 +5302,11 @@ $('#missionControlContent').onclick = async event => {
   if (button.dataset.wsSpecSection) {
     activeBedfordWorkspaceSection = 'documents';
     await openChiefSpecificationViewer(button.dataset.wsSpecSection, { returnTarget: 'chat' });
+    return;
+  }
+  if (button.dataset.wsProjectDocument) {
+    activeBedfordWorkspaceSection = 'documents';
+    await openProfessionalDestination({ view: 'sources', documentId: button.dataset.wsProjectDocument, projectId: state().activeProject, origin: 'workspace-documents' });
     return;
   }
   if (button.dataset.wsChecklistToggle) {
