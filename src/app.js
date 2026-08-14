@@ -111,6 +111,7 @@ import {
   getBedfordWorkspaceDefaultId
 } from './workspace-registry.js';
 import { buildWorkspaceDocumentsModel, workspaceDrawingDocumentIdForPage } from './workspace-documents.js';
+import { buildWorkspaceIssuesModel, issueFilterMatches } from './workspace-issues.js';
 import {
   BEDFORD_NTP_SOURCE_DOCUMENT,
   buildBedfordProjectMilestoneContext
@@ -263,6 +264,16 @@ function setWorkspaceNotesState(workspaceId = '', notes = '') {
   workspaceNotesSessionState.set(workspaceId, String(notes ?? ''));
 }
 
+function workspaceIssuesStateFor(workspaceId = '') {
+  if (!workspaceIssuesSessionState.has(workspaceId)) {
+    workspaceIssuesSessionState.set(workspaceId, {
+      filter: 'all',
+      selectedIssueId: ''
+    });
+  }
+  return workspaceIssuesSessionState.get(workspaceId);
+}
+
 function workspaceSectionAnchor(section = 'overview') {
   return ({
     overview: 'workspaceOverviewPanel',
@@ -325,6 +336,131 @@ function renderWorkspaceDocumentItem(item = {}, categoryId = '') {
         <small>${esc(item.relationship || categoryId || 'Related Evidence')}</small>
       </div>
     </li>`;
+}
+
+function renderWorkspaceIssueBadge(label, value, tone = 'neutral') {
+  return `<article class="mc-ws-issue-kpi ${esc(tone)}"><span>${esc(label)}</span><strong>${esc(value)}</strong></article>`;
+}
+
+function renderWorkspaceIssueTarget(item = {}) {
+  if (item.sourceDocumentId) {
+    return `
+      <button type="button" data-ws-project-document="${esc(item.sourceDocumentId)}" aria-label="Open document ${esc(item.sourceDocument?.title || item.sourceDocumentId)}">
+        Open ${esc(item.sourceDocument?.title || item.sourceDocumentId)}
+      </button>`;
+  }
+  if (item.relatedMilestones?.length) {
+    return item.relatedMilestones.map(milestone => `
+      <div class="mc-ws-issue-target">
+        <strong>${esc(milestone.label || milestone.name || milestone.id)}</strong>
+        <span>${esc(milestone.dueDateLabel || milestone.status || milestone.source || '')}</span>
+      </div>
+    `).join('');
+  }
+  return '';
+}
+
+function renderWorkspaceIssueEvidence(item = {}) {
+  const relatedDrawings = item.relatedSheets || [];
+  const relatedSpecifications = item.relatedSpecifications || [];
+  const relatedRooms = item.relatedRooms || [];
+  const relatedMilestones = item.relatedMilestones || [];
+  const evidence = item.evidence || [];
+  return `
+    <section class="mc-ws-issue-detail-grid">
+      <article><strong>Source</strong><span>${esc(item.source || 'Workspace')}</span><small>${esc(item.sourceType || '')}</small></article>
+      <article><strong>Related Workspace</strong><span>${esc(item.room || item.workspaceId || 'Workspace')}</span><small>${esc(item.scope || 'PROJECT')}</small></article>
+      <article><strong>Impact</strong><span>${esc(item.impact || 'No impact recorded.')}</span></article>
+      <article><strong>Next Step</strong><span>${esc(item.recommendedNextStep || 'No next step recorded.')}</span></article>
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED MILESTONE</strong><small>${relatedMilestones.length}</small></header>
+      ${relatedMilestones.length ? `<div class="mc-ws-issue-links">${relatedMilestones.map(milestone => `<div class="mc-ws-issue-target"><strong>${esc(milestone.label || milestone.name || milestone.id)}</strong><span>${esc(milestone.dueDateLabel || milestone.status || milestone.source || '')}</span></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related milestone recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED DRAWINGS</strong><small>${relatedDrawings.length}</small></header>
+      ${relatedDrawings.length ? `<div class="mc-ws-issue-links">${relatedDrawings.map(sheet => `<button type="button" data-ws-drawing-sheet="${esc(sheet.sheetNumber)}" aria-label="Open drawing ${esc(sheet.sheetNumber)}"><strong>${esc(sheet.sheetNumber)}</strong><span>${esc(sheet.sheetTitle)}</span><small>${esc(sheet.relationship || 'Related')}${sheet.level ? ` · ${esc(sheet.level)}` : ''}</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related drawings recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED SPECIFICATIONS</strong><small>${relatedSpecifications.length}</small></header>
+      ${relatedSpecifications.length ? `<div class="mc-ws-issue-links">${relatedSpecifications.map(spec => `<button type="button" data-ws-spec-section="${esc(spec.sectionNumber)}" aria-label="Open specification ${esc(spec.sectionNumber)}"><strong>${esc(spec.sectionNumber)}</strong><span>${esc(spec.sectionTitle)}</span><small>${esc(spec.relationship || spec.sourceLabel || 'Applicable')}</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related specifications recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED ROOMS</strong><small>${relatedRooms.length}</small></header>
+      ${relatedRooms.length ? `<div class="mc-ws-issue-tags">${relatedRooms.map(room => `<span>${esc(room)}</span>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related rooms recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>EVIDENCE</strong><small>${evidence.length}</small></header>
+      ${evidence.length ? `<div class="mc-ws-issue-items">${evidence.map(item => `${item.openTarget?.documentId ? `<button type="button" data-ws-project-document="${esc(item.openTarget.documentId)}" aria-label="Open document ${esc(item.label || item.detail)}">` : '<div>'}<strong>${esc(item.label)}</strong><span>${esc(item.detail)}</span>${item.openTarget?.documentId ? '</button>' : '</div>'}`).join('')}</div>` : '<div class="mc-ws-empty-inline">No supporting evidence recorded.</div>'}
+    </section>`;
+}
+
+function renderWorkspaceIssueCard(item = {}, selected = false) {
+  return `
+    <li class="mc-ws-issue-card">
+      <button type="button" class="${selected ? 'active' : ''}" data-ws-issue-id="${esc(item.id)}">
+        <span>${esc(item.type || 'ISSUE')} · ${esc(item.scope || 'PROJECT')}</span>
+        <strong>${esc(item.title || 'Untitled issue')}</strong>
+        <small>${esc(item.severity || 'INFO')} · ${esc(item.status || 'OPEN')}</small>
+        <em>${esc(item.source || 'Workspace')}</em>
+        <p>${esc(item.description || 'No description recorded.')}</p>
+      </button>
+    </li>`;
+}
+
+function renderWorkspaceIssuesView(issuesModel = {}, activeWorkspace = null, projectMilestoneContext = null, selectedFilter = 'all', selectedIssueId = '') {
+  const filters = Array.isArray(issuesModel.filters) && issuesModel.filters.length ? issuesModel.filters : [];
+  const filteredIssues = Array.isArray(issuesModel.issues) ? issuesModel.issues.filter(issue => issueFilterMatches(issue, selectedFilter)) : [];
+  const selected = filteredIssues.find(item => item.id === selectedIssueId) || filteredIssues[0] || null;
+  const roomIssues = filteredIssues.filter(issue => issue.scope === 'ROOM');
+  const projectIssues = filteredIssues.filter(issue => issue.scope === 'PROJECT' || issue.scope === 'BUILDING');
+  return `
+    <section class="mc-ws-issues" aria-label="Workspace Issues">
+      <header class="mc-ws-issues-header">
+        <div>
+          <span class="mc-ws-back">← Bedford Workspaces</span>
+          <h1 id="missionControlTitle" tabindex="-1">Issues &amp; Risks</h1>
+          <p>${esc(activeWorkspace ? `B${activeWorkspace.building || '61'} — ${activeWorkspace.room || 'Workspace'} · ${activeWorkspace.name || 'Workspace'}` : 'Select a workspace to review issue context.')}</p>
+        </div>
+        <div class="mc-ws-issues-summary">
+          ${renderWorkspaceIssueBadge('Open', issuesModel.counts?.open ?? 0)}
+          ${renderWorkspaceIssueBadge('High/Critical', issuesModel.counts?.critical ?? 0, issuesModel.counts?.critical ? 'danger' : 'neutral')}
+          ${renderWorkspaceIssueBadge('Questions', issuesModel.counts?.questions ?? 0)}
+          ${renderWorkspaceIssueBadge('Dependencies', issuesModel.counts?.dependencies ?? 0)}
+        </div>
+      </header>
+      <nav class="mc-ws-issue-filters" aria-label="Issue filters">
+        ${filters.map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-issue-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+      </nav>
+      <div class="mc-ws-issues-layout">
+        <section class="mc-ws-issues-list" aria-label="Issue list">
+          <div class="mc-ws-issue-group">
+            <header><strong>ROOM-SPECIFIC ISSUES</strong><small>${issuesModel.roomIssues?.length || 0}</small></header>
+            ${roomIssues.length ? `<ul>${roomIssues.map(item => renderWorkspaceIssueCard(item, item.id === selected?.id)).join('')}</ul>` : '<div class="mc-ws-empty-inline">No room-specific issues recorded.</div>'}
+          </div>
+          <div class="mc-ws-issue-group">
+            <header><strong>PROJECT / BUILDING DEPENDENCIES</strong><small>${projectIssues.length}</small></header>
+            ${projectIssues.length ? `<ul>${projectIssues.map(item => renderWorkspaceIssueCard(item, item.id === selected?.id)).join('')}</ul>` : '<div class="mc-ws-empty-inline">No project-level dependencies recorded.</div>'}
+          </div>
+        </section>
+        <aside class="mc-ws-issue-detail" aria-label="Issue detail">
+          ${selected ? `
+            <header>
+              <div>
+                <span>${esc(selected.type || 'ISSUE')} · ${esc(selected.scope || 'PROJECT')}</span>
+                <strong>${esc(selected.title || 'Selected issue')}</strong>
+                <small>${esc(selected.severity || 'INFO')} · ${esc(selected.status || 'OPEN')} · ${esc(selected.source || 'Workspace')}</small>
+              </div>
+              ${renderWorkspaceIssueTarget(selected)}
+            </header>
+            <p>${esc(selected.description || 'No description recorded.')}</p>
+            ${renderWorkspaceIssueEvidence(selected)}
+          ` : `
+            <div class="mc-ws-empty-inline">${esc(issuesModel.emptyState || 'No room-specific issues recorded.')}</div>
+          `}
+        </aside>
+      </div>
+    </section>`;
 }
 
 function renderWorkspaceDocumentsView(workspaceModel, activeWorkspace, projectMilestoneContext) {
@@ -406,6 +542,7 @@ let activeBedfordWorkspaceSheetNumber = '';
 let activeBedfordWorkspaceSection = 'overview';
 const workspaceChecklistSessionState = new Map();
 const workspaceNotesSessionState = new Map();
+const workspaceIssuesSessionState = new Map();
 let previousUserProjectId = null;
 let selectedDoc = null;
 let selectedKnowledgeSection = 'all';
@@ -4902,6 +5039,11 @@ async function renderMissionControlWorkspace() {
   const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
   const activeWorkspace = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
   const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+  const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() });
+  const issueState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+  if (!issuesModel.filters.some(filter => String(filter.id) === String(issueState.filter))) issueState.filter = 'all';
+  if (issueState.selectedIssueId && !issuesModel.issues.some(issue => issue.id === issueState.selectedIssueId)) issueState.selectedIssueId = '';
+  if (!issueState.selectedIssueId) issueState.selectedIssueId = issuesModel.selectedIssueId || '';
   const pmisBuilding = missionPmisSelectedBuilding?.() || null;
   const pmisContext = pmisBuilding?.Building || pmisBuilding?.building || pmisBuilding?.name || pmisBuilding?.label || activeWorkspace?.pmisBuilding || 'Unavailable';
   const previewSheet = activeWorkspace?.sourceSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
@@ -4938,6 +5080,18 @@ async function renderMissionControlWorkspace() {
   const compactNextSteps = combinedNextSteps.slice(0, 5);
   const remainingNextSteps = Math.max(0, combinedNextSteps.length - compactNextSteps.length);
   const documentsModel = buildWorkspaceDocumentsModel({ workspace: activeWorkspace, projectMilestoneContext });
+  const issuesSummaryItems = issuesModel.compactIssues.length ? issuesModel.compactIssues : issuesModel.issues.slice(0, 3);
+  const issueSummaryMarkup = issuesSummaryItems.length
+    ? issuesSummaryItems.map(item => `
+      <li>
+        <i>●</i>
+        <div>
+          <b>${esc(item.title)}</b>
+          <span>${esc(item.description || item.impact || 'No description recorded.')}</span>
+        </div>
+        <em class="${item.severity === 'CRITICAL' || item.severity === 'HIGH' ? 'high' : item.severity === 'MEDIUM' ? 'medium' : 'low'}">${esc(item.scope || item.type || 'Issue')}</em>
+      </li>`).join('')
+    : '<li><i>●</i><div><b>No room-specific issues recorded.</b><span>No project-level dependencies recorded.</span></div><em class="low">Info</em></li>';
   const workspaceButtons = workspaceModel.workspaces.map(record => `
     <button type="button" class="${record.id === activeWorkspace?.id ? 'active' : ''}" data-ws-select="${esc(record.id)}">
       <strong>${esc(record.id)}</strong>
@@ -5053,7 +5207,7 @@ async function renderMissionControlWorkspace() {
         <div class="mc-ws-chief" id="workspaceChiefInsightPanel"><div class="mc-ws-chief-avatar">👷</div><strong>Chief Insight</strong><p>${esc(chiefInsight)}</p><button data-ws-action="chief">Ask Chief</button></div>
       </aside>
       <main class="mc-ws-main">
-        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article><span>Overall Readiness</span><strong class="${readinessScore === null ? 'danger' : readinessScore >= 75 ? 'watch' : readinessScore > 0 ? 'watch' : 'danger'}">${readinessScore === null ? 'No data' : `${readinessScore}%`}</strong><small>${readinessScore === null ? 'No checklist data' : `${checklistDoneCount} of ${checklistItems.length} checklist items complete`}</small></article><article><span>Critical Issues</span><strong class="danger">${activeWorkspace?.issues?.filter(item => !/no room-specific issues/i.test(item.label || '')).length || 0}</strong><small>${activeWorkspace?.issues?.[0]?.label || 'No room-specific issues'}</small></article><article><span>Open Questions</span><strong>${activeWorkspace?.nextSteps?.length || 0}</strong><small>${activeWorkspace?.relatedRooms?.length || 0} related rooms</small></article><article><span>Related Documents</span><strong>${(activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0)}</strong><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets</small></article></div></header>
+        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article><span>Overall Readiness</span><strong class="${readinessScore === null ? 'danger' : readinessScore >= 75 ? 'watch' : readinessScore > 0 ? 'watch' : 'danger'}">${readinessScore === null ? 'No data' : `${readinessScore}%`}</strong><small>${readinessScore === null ? 'No checklist data' : `${checklistDoneCount} of ${checklistItems.length} checklist items complete`}</small></article><article><span>Critical Issues</span><strong class="danger">${issuesModel.counts.critical}</strong><small>${issuesModel.counts.critical ? `${issuesModel.counts.critical} open issue${issuesModel.counts.critical === 1 ? '' : 's'}` : 'No room-specific critical issues recorded.'}</small></article><article><span>Open Questions</span><strong>${issuesModel.counts.questions}</strong><small>${issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.'}</small></article><article><span>Related Documents</span><strong>${(activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0)}</strong><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets</small></article></div></header>
         <section class="mc-ws-project-clock" aria-label="Project milestone context">
           <div><small>PROJECT PHASE</small><strong>${esc(projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
           <div><small>NTP</small><strong>${esc(projectMilestoneContext?.ntpDateLabel || 'Aug 13, 2026')}</strong></div>
@@ -5061,13 +5215,13 @@ async function renderMissionControlWorkspace() {
           <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
         </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
-        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : `
+        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : `
         <section class="mc-ws-upper">
           <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
         </section>
         <section class="mc-ws-lower">
-          <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${(activeWorkspace?.issues || []).map(item => `<li><i>●</i><div><b>${esc(item.label)}</b><span>${esc(item.detail)}</span></div><em class="${/no room-specific issues/i.test(item.label || '') ? 'low' : 'high'}">${/no room-specific issues/i.test(item.label || '') ? 'Low' : 'High'}</em></li>`).join('')}</ul></article>
+          <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${issueSummaryMarkup}</ul></article>
           <article id="workspaceComparisonsPanel"><header><strong>TRACEABILITY MAP</strong><button type="button" data-ws-section="comparisons">Focus</button></header><div class="mc-ws-trace">${(activeWorkspace?.traceabilityMap || []).flatMap(item => [`<div><b>Source</b><span>${esc(item.from)}</span></div>`, '<i>→</i>', `<div><b>Requirement</b><span>${esc(item.requirement)}</span></div>`, '<i>→</i>', `<div><b>Impact</b><span>${esc(item.impact)}</span></div>`]).join('')}</div></article>
           <article id="workspaceChecklistPanel"><header><strong>CHECKLIST BUILDER</strong><button type="button" data-ws-section="checklist">Focus</button></header><p class="mc-ws-muted">Plan-derived checklist grounded in the current workspace evidence.</p><div class="mc-ws-progress"><span style="width:${Math.min(100, 28 + (checklistItems.filter(item => item.done).length || 0) * 14)}%"></span></div><small>${checklistItems.filter(item => item.done).length || 0} of ${checklistItems.length} items scored</small><ul class="mc-ws-check">${checklistItems.map(item => `<li><label><input type="checkbox" data-ws-checklist-toggle="${esc(item.label)}" ${item.done ? 'checked' : ''}> ${esc(item.label)}</label></li>`).join('')}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
           <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.label)}</b><span>${esc(item.dueDateLabel || item.status || '')}</span><small>${esc(item.detail || item.notes || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button><details class="mc-ws-notes" id="workspaceNotesPanel"><summary>Workspace notes</summary><textarea data-ws-note="${esc(activeWorkspace?.id || '')}" rows="4" placeholder="Add temporary workspace notes for this session.">${esc(notesValue)}</textarea></details></article>
@@ -5314,6 +5468,19 @@ $('#missionControlContent').onclick = async event => {
     const checklistState = workspaceChecklistStateFor(workspaceId);
     if (button.closest('li')?.querySelector('input')?.checked) checklistState.add(button.dataset.wsChecklistToggle);
     else checklistState.delete(button.dataset.wsChecklistToggle);
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsIssueFilter) {
+    const issueState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+    issueState.filter = button.dataset.wsIssueFilter;
+    issueState.selectedIssueId = '';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsIssueId) {
+    const issueState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+    issueState.selectedIssueId = button.dataset.wsIssueId;
     await showMissionControlView('workspace');
     return;
   }

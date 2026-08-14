@@ -210,11 +210,16 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /data-ws-drawing-sheet=/);
   assert.match(app, /data-ws-spec-section=/);
   assert.match(app, /data-ws-project-document=/);
+  assert.match(app, /data-ws-issue-filter=/);
+  assert.match(app, /data-ws-issue-id=/);
   assert.match(app, /mc-ws-documents/);
   assert.match(app, /mc-ws-documents-grid/);
   assert.match(workspaceDocuments, /PRIMARY SOURCE DRAWINGS/);
   assert.match(workspaceDocuments, /RELATED DRAWINGS/);
   assert.match(workspaceDocuments, /PROJECT \/ CONTRACTUAL DOCUMENTS/);
+  assert.match(app, /mc-ws-issues/);
+  assert.match(app, /Issues &amp; Risks/);
+  assert.match(app, /No room-specific issues recorded\./);
   assert.match(workspace, /Create RFI is not configured yet/);
   assert.match(css, /\.mc-ws\{grid-template-columns:232px minmax\(0,1fr\)\}/);
   assert.match(css, /\.mc-ws-upper\{grid-template-columns:minmax\(0,2\.55fr\) minmax\(300px,1fr\)/);
