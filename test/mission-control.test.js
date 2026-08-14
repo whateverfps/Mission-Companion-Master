@@ -191,7 +191,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /<h1 id="missionControlTitle" tabindex="-1">B\$\{esc\(activeWorkspace\?\.building \|\| '61'\)\} — Telecom Room \$\{esc\(activeWorkspace\?\.room \|\| 'Workspace'\)\}<\/h1>/);
   assert.match(workspace, /<strong>ISSUES & RISKS<\/strong>/);
   assert.match(workspace, /<strong>TRACEABILITY MAP<\/strong>/);
-  assert.match(workspace, /<strong>CHECKLIST BUILDER<\/strong>/);
+  assert.match(workspace, /<strong>SESSION REVIEW PROGRESS<\/strong>/);
+  assert.match(workspace, /Open Full Checklist/);
   assert.match(workspace, /<strong>NEXT STEPS<\/strong>/);
   assert.match(workspace, /mc-ws-project-clock/);
   assert.match(workspace, /PROJECT PHASE/);
@@ -204,7 +205,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /RELATED DOCUMENTS \/ SOURCE SHEETS/);
   assert.match(workspace, /data-ws-section="overview"/);
   assert.match(workspace, /data-ws-section="documents"/);
-  assert.match(workspace, /data-ws-checklist-toggle=/);
+  assert.match(app, /data-ws-checklist-toggle=/);
+  assert.match(app, /data-ws-checklist-id=/);
   assert.match(workspace, /data-ws-note=/);
   assert.match(app, /data-ws-source-sheet=/);
   assert.match(app, /data-ws-drawing-sheet=/);
@@ -220,12 +222,15 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /mc-ws-issues/);
   assert.match(app, /Issues &amp; Risks/);
   assert.match(app, /No room-specific issues recorded\./);
+  assert.match(app, /Checklist Review/);
   assert.match(workspace, /Create RFI is not configured yet/);
   assert.match(css, /\.mc-ws\{grid-template-columns:232px minmax\(0,1fr\)\}/);
   assert.match(css, /\.mc-ws-upper\{grid-template-columns:minmax\(0,2\.55fr\) minmax\(300px,1fr\)/);
   assert.match(css, /\.mc-ws-lower\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(css, /\.mc-ws-lower > article\{min-height:320px;max-height:380px;display:grid;grid-template-rows:auto minmax\(0,1fr\) auto auto;overflow:hidden\}/);
   assert.match(css, /\.mc-ws-risks,\.mc-ws-check,\.mc-ws-next,\.mc-ws-timeline\{min-height:0;overflow:auto;max-height:160px\}/);
+  assert.match(css, /\.mc-ws-checklist\{/);
+  assert.match(css, /\.mc-ws-checklist-layout\{/);
   assert.match(css, /\.mc-ws-notes/);
   assert.match(css, /\.mc-ws-project-clock/);
   assert.match(css, /\.mc-ws-timeline/);

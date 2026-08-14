@@ -112,6 +112,7 @@ import {
 } from './workspace-registry.js';
 import { buildWorkspaceDocumentsModel, workspaceDrawingDocumentIdForPage } from './workspace-documents.js';
 import { buildWorkspaceIssuesModel, issueFilterMatches } from './workspace-issues.js';
+import { buildWorkspaceChecklistModel, checklistFilterMatches } from './workspace-checklist.js';
 import {
   BEDFORD_NTP_SOURCE_DOCUMENT,
   buildBedfordProjectMilestoneContext
@@ -251,8 +252,25 @@ function missionPmisSelectedBuilding() {
 }
 
 function workspaceChecklistStateFor(workspaceId = '') {
-  if (!workspaceChecklistSessionState.has(workspaceId)) workspaceChecklistSessionState.set(workspaceId, new Set());
-  return workspaceChecklistSessionState.get(workspaceId);
+  if (!workspaceChecklistSessionState.has(workspaceId)) {
+    workspaceChecklistSessionState.set(workspaceId, {
+      filter: 'all',
+      selectedItemId: '',
+      verifiedIds: new Set()
+    });
+  }
+  const state = workspaceChecklistSessionState.get(workspaceId);
+  if (state instanceof Set) {
+    const migrated = {
+      filter: 'all',
+      selectedItemId: '',
+      verifiedIds: new Set(state)
+    };
+    workspaceChecklistSessionState.set(workspaceId, migrated);
+    return migrated;
+  }
+  if (!(state.verifiedIds instanceof Set)) state.verifiedIds = new Set(list(state.verifiedIds));
+  return state;
 }
 
 function workspaceNotesStateFor(workspaceId = '') {
@@ -457,6 +475,186 @@ function renderWorkspaceIssuesView(issuesModel = {}, activeWorkspace = null, pro
             ${renderWorkspaceIssueEvidence(selected)}
           ` : `
             <div class="mc-ws-empty-inline">${esc(issuesModel.emptyState || 'No room-specific issues recorded.')}</div>
+          `}
+        </aside>
+      </div>
+    </section>`;
+}
+
+function renderWorkspaceChecklistSourceRefs(item = {}) {
+  const refs = Array.isArray(item.sourceRefs) ? item.sourceRefs : [];
+  if (!refs.length) return '<div class="mc-ws-empty-inline">No supporting source references recorded.</div>';
+  return `<div class="mc-ws-checklist-sources">${refs.map(ref => {
+    if (ref.kind === 'drawing' && ref.sheetNumber) {
+      return `<button type="button" data-ws-drawing-sheet="${esc(ref.sheetNumber)}" aria-label="Open drawing ${esc(ref.sheetNumber)}"><strong>${esc(ref.sheetNumber)}</strong><span>${esc(ref.sheetTitle || 'Source drawing')}</span><small>${esc(ref.relationship || ref.level || 'Source drawing')}</small></button>`;
+    }
+    if (ref.kind === 'specification' && ref.sectionNumber) {
+      return `<button type="button" data-ws-spec-section="${esc(ref.sectionNumber)}" aria-label="Open specification ${esc(ref.sectionNumber)}"><strong>${esc(ref.sectionNumber)}</strong><span>${esc(ref.sectionTitle || 'Applicable specification')}</span><small>${esc(ref.relationship || ref.sourceLabel || 'Specification')}</small></button>`;
+    }
+    if (ref.kind === 'milestone' && ref.id) {
+      return `<div class="mc-ws-checklist-ref"><strong>${esc(ref.label || ref.id)}</strong><span>${esc(ref.dueDateLabel || ref.status || ref.source || '')}</span><small>Milestone</small></div>`;
+    }
+    if (ref.kind === 'issue' && ref.id) {
+      return `<button type="button" data-ws-issue-id="${esc(ref.id)}" aria-label="Open issue ${esc(ref.title || ref.id)}"><strong>${esc(ref.title || ref.id)}</strong><span>${esc(ref.status || ref.severity || '')}</span><small>Related issue</small></button>`;
+    }
+    if (ref.roomId) {
+      return `<div class="mc-ws-checklist-ref"><strong>${esc(ref.label || ref.roomId)}</strong><span>Related room</span><small>Workspace</small></div>`;
+    }
+    return `<div class="mc-ws-checklist-ref"><strong>${esc(ref.label || ref.title || 'Reference')}</strong><span>${esc(ref.detail || ref.status || '')}</span><small>${esc(ref.relationship || ref.kind || 'Reference')}</small></div>`;
+  }).join('')}</div>`;
+}
+
+function renderWorkspaceChecklistItem(item = {}, { checked = false, selected = false } = {}) {
+  const sourceRefSummary = item.sourceRefs?.length
+    ? `${item.sourceRefs.length} source${item.sourceRefs.length === 1 ? '' : 's'}`
+    : 'No sources';
+  const sourceIndicator = item.sourceRefs?.[0]
+    ? item.sourceRefs[0].kind === 'drawing' && item.sourceRefs[0].sheetNumber
+      ? `Source: ${item.sourceRefs[0].sheetNumber}${item.sourceRefs[0].sheetTitle ? ` · ${item.sourceRefs[0].sheetTitle}` : ''}`
+      : item.sourceRefs[0].kind === 'specification' && item.sourceRefs[0].sectionNumber
+        ? `Source: ${item.sourceRefs[0].sectionNumber}${item.sourceRefs[0].sectionTitle ? ` · ${item.sourceRefs[0].sectionTitle}` : ''}`
+        : item.sourceRefs[0].kind === 'milestone' && item.sourceRefs[0].label
+          ? `Source: ${item.sourceRefs[0].label}`
+          : item.sourceRefs[0].kind === 'issue' && item.sourceRefs[0].title
+            ? `Source: ${item.sourceRefs[0].title}`
+            : 'Source available'
+    : 'Source unavailable';
+  return `
+    <li class="mc-ws-checklist-item ${selected ? 'active' : ''}" data-ws-checklist-id="${esc(item.id)}">
+      <label class="mc-ws-checklist-toggle">
+        <input type="checkbox" data-ws-checklist-toggle="${esc(item.id)}" ${checked ? 'checked' : ''} ${item.canToggle ? '' : 'disabled'} aria-label="Mark ${esc(item.title)} as reviewed this session">
+        <span>
+          <strong>${esc(item.title)}</strong>
+          <small>${esc(item.category)}</small>
+          <em>${esc(item.status || 'NOT_VERIFIED')}</em>
+        </span>
+      </label>
+      <button type="button" class="mc-ws-checklist-row" data-ws-checklist-id="${esc(item.id)}">
+        <strong>${esc(item.title)}</strong>
+        <span>${esc(item.description || 'No description recorded.')}</span>
+        <small>${esc(sourceRefSummary)}${item.blockedBy?.length ? ` · Blocked by ${esc(item.blockedBy.length)} item${item.blockedBy.length === 1 ? '' : 's'}` : ''}</small>
+        <em>${esc(sourceIndicator)}</em>
+      </button>
+    </li>`;
+}
+
+function renderWorkspaceChecklistDetail(item = {}) {
+  const sourceRefs = Array.isArray(item.sourceRefs) ? item.sourceRefs : [];
+  const sourceDrawings = sourceRefs.filter(ref => ref.kind === 'drawing');
+  const sourceSpecifications = sourceRefs.filter(ref => ref.kind === 'specification');
+  const sourceMilestones = sourceRefs.filter(ref => ref.kind === 'milestone');
+  const sourceIssues = sourceRefs.filter(ref => ref.kind === 'issue');
+  const relatedIssueIds = Array.isArray(item.relatedIssues) ? item.relatedIssues.map(issue => issue?.id || issue?.title).filter(Boolean) : [];
+  return `
+    <section class="mc-ws-checklist-detail" aria-label="Checklist detail">
+      <header>
+        <div>
+          <span>${esc(item.category || 'CHECKLIST')}</span>
+          <strong>${esc(item.title || 'Selected checklist item')}</strong>
+          <small>${esc(item.scope || 'WORKSPACE')} · ${esc(item.status || 'NOT_VERIFIED')} · ${esc(item.verificationState || 'NOT_VERIFIED')}</small>
+        </div>
+        <div class="mc-ws-checklist-state ${item.status === 'BLOCKED' ? 'blocked' : item.verificationState === 'VERIFIED_SESSION' ? 'verified' : 'open'}">
+          <strong>${esc(item.status || 'NOT_VERIFIED')}</strong>
+          <span>${item.status === 'BLOCKED' ? 'Blocked by dependency' : item.verificationState === 'VERIFIED_SESSION' ? 'Reviewed this session' : 'Not verified yet'}</span>
+        </div>
+      </header>
+      <p>${esc(item.description || 'No description recorded.')}</p>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>WHY THIS APPLIES</strong><small>${esc(item.required ? 'Required' : 'Helpful')}</small></header>
+        <div class="mc-ws-empty-inline">${esc(item.notes || item.description || 'No notes recorded.')}</div>
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>SOURCE DRAWINGS</strong><small>${sourceDrawings.length}</small></header>
+        ${sourceDrawings.length ? renderWorkspaceChecklistSourceRefs({ sourceRefs: sourceDrawings }) : '<div class="mc-ws-empty-inline">No source drawings recorded.</div>'}
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>SPECIFICATIONS</strong><small>${sourceSpecifications.length}</small></header>
+        ${sourceSpecifications.length ? renderWorkspaceChecklistSourceRefs({ sourceRefs: sourceSpecifications }) : '<div class="mc-ws-empty-inline">No governing specifications recorded.</div>'}
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>PMIS GATE</strong><small>${sourceMilestones.length}</small></header>
+        ${sourceMilestones.length ? `<div class="mc-ws-checklist-items">${sourceMilestones.map(ref => `<div class="mc-ws-checklist-ref"><strong>${esc(ref.label || ref.id)}</strong><span>${esc(ref.dueDateLabel || ref.status || ref.source || '')}</span><small>Milestone</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No PMIS gate recorded.</div>'}
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>RELATED ISSUE</strong><small>${sourceIssues.length || relatedIssueIds.length}</small></header>
+        ${sourceIssues.length ? renderWorkspaceChecklistSourceRefs({ sourceRefs: sourceIssues }) : relatedIssueIds.length ? `<div class="mc-ws-checklist-items">${relatedIssueIds.map(issueId => `<button type="button" data-ws-issue-id="${esc(issueId)}"><strong>${esc(issueId)}</strong><span>Open related issue</span><small>Workspace issue</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related issue recorded.</div>'}
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>BLOCKER</strong><small>${item.blockedBy?.length || 0}</small></header>
+        ${item.blockedBy?.length ? `<div class="mc-ws-checklist-items">${item.blockedBy.map(blocker => `<div class="mc-ws-checklist-ref"><strong>${esc(blocker)}</strong><span>Blocking dependency</span><small>Blocker</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No blocker recorded.</div>'}
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>VERIFICATION STATUS</strong><small>${esc(item.canToggle ? 'Session editable' : 'Read only')}</small></header>
+        <div class="mc-ws-checklist-items">
+          <div class="mc-ws-checklist-ref"><strong>${esc(item.verificationState || 'NOT_VERIFIED')}</strong><span>${item.authoritative ? 'Authoritative completion' : item.verificationState === 'VERIFIED_SESSION' ? 'Checked during this session' : 'Session review only'}</span><small>${esc(item.required ? 'Required item' : 'Informational item')}</small></div>
+        </div>
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>NOTES / SESSION CONTEXT</strong><small>${esc(item.sourceType || '')}</small></header>
+        <div class="mc-ws-empty-inline">${esc(item.notes || 'No additional notes recorded.')}</div>
+      </section>
+    </section>`;
+}
+
+function renderWorkspaceChecklistView(checklistModel = {}, activeWorkspace = null, projectMilestoneContext = null, selectedFilter = 'all', selectedItemId = '', sessionState = null) {
+  const filters = Array.isArray(checklistModel.filters) && checklistModel.filters.length ? checklistModel.filters : [];
+  const allItems = Array.isArray(checklistModel.items) ? checklistModel.items : [];
+  const filteredItems = allItems.filter(item => checklistFilterMatches(item, selectedFilter));
+  const checkedIds = sessionState?.verifiedIds instanceof Set ? sessionState.verifiedIds : new Set();
+  const withSessionState = filteredItems.map(item => ({
+    ...item,
+    checked: item.status === 'VERIFIED_SESSION' || checkedIds.has(item.id)
+  }));
+  const selected = withSessionState.find(item => item.id === selectedItemId) || withSessionState.find(item => item.status === 'BLOCKED') || withSessionState[0] || null;
+  const grouped = [];
+  for (const group of checklistModel.groups || []) {
+    const items = withSessionState.filter(item => item.category === group.label);
+    if (items.length) grouped.push({ ...group, items });
+  }
+  const reviewedCount = withSessionState.filter(item => item.checked).length;
+  return `
+    <section class="mc-ws-checklist" aria-label="Workspace Checklist">
+      <header class="mc-ws-checklist-header">
+        <div>
+          <span class="mc-ws-back">← Bedford Workspaces</span>
+          <h1 id="missionControlTitle" tabindex="-1">Checklist</h1>
+          <p>${esc(activeWorkspace ? `B${activeWorkspace.building || '61'} — ${activeWorkspace.room || 'Workspace'} · ${activeWorkspace.name || 'Workspace'}` : 'Select a workspace to review checklist evidence.')}</p>
+        </div>
+        <div class="mc-ws-checklist-summary">
+          <article><span>Applicable Items</span><strong>${checklistModel.counts?.applicableItems ?? withSessionState.length}</strong><small>${withSessionState.length ? 'Deterministic checklist items available' : 'No checklist items available'}</small></article>
+          <article><span>Verified This Session</span><strong>${reviewedCount}</strong><small>${withSessionState.length ? `${reviewedCount} of ${withSessionState.length} reviewed this session` : 'No session review recorded'}</small></article>
+          <article><span>Blocked</span><strong class="${checklistModel.counts?.blocked ? 'danger' : 'watch'}">${checklistModel.counts?.blocked ?? 0}</strong><small>${checklistModel.counts?.blocked ? 'Dependencies remain open' : 'No blocked items recorded'}</small></article>
+          <article><span>Unknown / Not Verified</span><strong>${checklistModel.counts?.unknown ?? 0}</strong><small>${checklistModel.counts?.unknown ? 'Review still needed' : 'No unknown items recorded'}</small></article>
+        </div>
+      </header>
+      <nav class="mc-ws-checklist-filters" aria-label="Checklist filters">
+        ${filters.map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-checklist-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+      </nav>
+      <div class="mc-ws-checklist-layout">
+        <section class="mc-ws-checklist-list" aria-label="Checklist items">
+          ${grouped.length ? grouped.map(group => `
+            <div class="mc-ws-checklist-group">
+              <header><strong>${esc(group.label)}</strong><small>${esc(group.items.length)}</small></header>
+              <ul>${group.items.map(item => renderWorkspaceChecklistItem(item, { checked: item.checked, selected: item.id === selected?.id })).join('')}</ul>
+            </div>
+          `).join('') : `<div class="mc-ws-empty-inline">${esc(checklistModel.emptyState || 'No deterministic checklist items are available for this Workspace yet.')}</div>`}
+        </section>
+        <aside class="mc-ws-checklist-detail-shell" aria-label="Checklist detail">
+          ${selected ? `
+            <header>
+              <div>
+                <span>${esc(selected.category || 'CHECKLIST')}</span>
+                <strong>${esc(selected.title || 'Selected checklist item')}</strong>
+                <small>${esc(selected.scope || 'WORKSPACE')} · ${esc(selected.verificationState || 'NOT_VERIFIED')} · ${esc(selected.status || 'NOT_VERIFIED')}</small>
+              </div>
+              <div class="mc-ws-checklist-state ${selected.status === 'BLOCKED' ? 'blocked' : selected.checked ? 'verified' : 'open'}">
+                <strong>${esc(selected.checked ? 'VERIFIED_SESSION' : selected.status || 'NOT_VERIFIED')}</strong>
+                <span>${selected.status === 'BLOCKED' ? 'Blocked by dependency' : selected.checked ? 'Reviewed this session' : 'Review pending'}</span>
+              </div>
+            </header>
+            ${renderWorkspaceChecklistDetail(selected)}
+          ` : `
+            <div class="mc-ws-empty-inline">${esc(checklistModel.emptyState || 'No deterministic checklist items are available for this Workspace yet.')}</div>
           `}
         </aside>
       </div>
@@ -5066,13 +5264,24 @@ async function renderMissionControlWorkspace() {
     pmisBuilding: activeWorkspace.pmisBuilding,
     projectMilestoneContext
   }) : 'Workspace evidence is available for review.';
+  const checklistModel = buildWorkspaceChecklistModel({
+    workspace: activeWorkspace,
+    projectMilestoneContext,
+    issuesModel,
+    pmisRuntime: missionPmisRuntimeData()
+  });
   const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
-  const checklistItems = (activeWorkspace?.checklist || []).map(item => ({
+  if (!checklistModel.filters.some(filter => String(filter.id) === String(checklistState.filter))) checklistState.filter = 'all';
+  const checklistItems = checklistModel.items.map(item => ({
     ...item,
-    done: checklistState.has(item.label) || Boolean(item.done)
+    checked: item.status === 'VERIFIED_SESSION' || checklistState.verifiedIds.has(item.id)
   }));
-  const checklistDoneCount = checklistItems.filter(item => item.done).length;
-  const readinessScore = checklistItems.length ? Math.round((checklistDoneCount / checklistItems.length) * 100) : null;
+  if (checklistState.selectedItemId && !checklistItems.some(item => item.id === checklistState.selectedItemId)) checklistState.selectedItemId = '';
+  if (!checklistState.selectedItemId) checklistState.selectedItemId = checklistModel.items.find(item => item.status === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
+  const checklistDoneCount = checklistItems.filter(item => item.checked).length;
+  const checklistApplicableCount = checklistModel.counts?.applicableItems ?? checklistItems.length;
+  const checklistBlockedCount = checklistModel.counts?.blocked ?? checklistItems.filter(item => item.status === 'BLOCKED').length;
+  const checklistUnknownCount = checklistModel.counts?.unknown ?? checklistItems.filter(item => item.status === 'UNKNOWN' || item.status === 'NOT_VERIFIED').length;
   const notesValue = workspaceNotesStateFor(activeWorkspace?.id || '');
   const milestoneTimeline = projectMilestoneContext?.timeline || [];
   const milestoneNextSteps = projectMilestoneContext?.nextSteps || [];
@@ -5081,6 +5290,10 @@ async function renderMissionControlWorkspace() {
   const remainingNextSteps = Math.max(0, combinedNextSteps.length - compactNextSteps.length);
   const documentsModel = buildWorkspaceDocumentsModel({ workspace: activeWorkspace, projectMilestoneContext });
   const issuesSummaryItems = issuesModel.compactIssues.length ? issuesModel.compactIssues : issuesModel.issues.slice(0, 3);
+  const checklistSummaryItems = (checklistModel.overviewItems.length ? checklistModel.overviewItems : checklistItems.slice(0, 3)).map(item => ({
+    ...item,
+    checked: item.status === 'VERIFIED_SESSION' || checklistState.verifiedIds.has(item.id)
+  }));
   const issueSummaryMarkup = issuesSummaryItems.length
     ? issuesSummaryItems.map(item => `
       <li>
@@ -5092,6 +5305,17 @@ async function renderMissionControlWorkspace() {
         <em class="${item.severity === 'CRITICAL' || item.severity === 'HIGH' ? 'high' : item.severity === 'MEDIUM' ? 'medium' : 'low'}">${esc(item.scope || item.type || 'Issue')}</em>
       </li>`).join('')
     : '<li><i>●</i><div><b>No room-specific issues recorded.</b><span>No project-level dependencies recorded.</span></div><em class="low">Info</em></li>';
+  const checklistSummaryMarkup = checklistSummaryItems.length
+    ? checklistSummaryItems.map(item => `
+      <li>
+        <i>☐</i>
+        <div>
+          <b>${esc(item.title)}</b>
+          <span>${esc(item.description || item.notes || 'No description recorded.')}</span>
+        </div>
+        <em class="${item.status === 'BLOCKED' ? 'high' : item.checked ? 'medium' : 'low'}">${esc(item.category || 'Checklist')}</em>
+      </li>`).join('')
+    : '<li><i>☐</i><div><b>No deterministic checklist items are available for this Workspace yet.</b><span>Checklist derivation will appear once workspace evidence is available.</span></div><em class="low">Info</em></li>';
   const workspaceButtons = workspaceModel.workspaces.map(record => `
     <button type="button" class="${record.id === activeWorkspace?.id ? 'active' : ''}" data-ws-select="${esc(record.id)}">
       <strong>${esc(record.id)}</strong>
@@ -5207,7 +5431,7 @@ async function renderMissionControlWorkspace() {
         <div class="mc-ws-chief" id="workspaceChiefInsightPanel"><div class="mc-ws-chief-avatar">👷</div><strong>Chief Insight</strong><p>${esc(chiefInsight)}</p><button data-ws-action="chief">Ask Chief</button></div>
       </aside>
       <main class="mc-ws-main">
-        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article><span>Overall Readiness</span><strong class="${readinessScore === null ? 'danger' : readinessScore >= 75 ? 'watch' : readinessScore > 0 ? 'watch' : 'danger'}">${readinessScore === null ? 'No data' : `${readinessScore}%`}</strong><small>${readinessScore === null ? 'No checklist data' : `${checklistDoneCount} of ${checklistItems.length} checklist items complete`}</small></article><article><span>Critical Issues</span><strong class="danger">${issuesModel.counts.critical}</strong><small>${issuesModel.counts.critical ? `${issuesModel.counts.critical} open issue${issuesModel.counts.critical === 1 ? '' : 's'}` : 'No room-specific critical issues recorded.'}</small></article><article><span>Open Questions</span><strong>${issuesModel.counts.questions}</strong><small>${issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.'}</small></article><article><span>Related Documents</span><strong>${(activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0)}</strong><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets</small></article></div></header>
+        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article><span>Checklist Review</span><strong class="${checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger'}">${checklistApplicableCount ? `${checklistDoneCount}/${checklistApplicableCount}` : 'No data'}</strong><small>${checklistApplicableCount ? `${checklistDoneCount} of ${checklistApplicableCount} reviewed this session` : 'No deterministic checklist items recorded'}</small></article><article><span>Blocked</span><strong class="${checklistBlockedCount ? 'danger' : 'watch'}">${checklistBlockedCount}</strong><small>${checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded'}</small></article><article><span>Open Questions</span><strong>${issuesModel.counts.questions}</strong><small>${issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.'}</small></article><article><span>Related Documents</span><strong>${(activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0)}</strong><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets</small></article></div></header>
         <section class="mc-ws-project-clock" aria-label="Project milestone context">
           <div><small>PROJECT PHASE</small><strong>${esc(projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
           <div><small>NTP</small><strong>${esc(projectMilestoneContext?.ntpDateLabel || 'Aug 13, 2026')}</strong></div>
@@ -5215,7 +5439,7 @@ async function renderMissionControlWorkspace() {
           <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
         </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
-        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : `
+        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : `
         <section class="mc-ws-upper">
           <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}<div class="mc-ws-markups"><span>MARKUPS & ITEMS</span>${activeWorkspace?.sourceEvidence?.length ? `<label>📄 Source Sheets <b>${activeWorkspace.sourceEvidence.length}</b></label>` : '<label>📄 Source Sheets <b>0</b></label>'}<label>🔵 Related Sheets <b>${activeWorkspace?.relatedSheets?.length || 0}</b></label><label>🟢 Applicable Specs <b>${activeWorkspace?.applicableSpecifications?.length || 0}</b></label><label>🟠 Related Rooms <b>${activeWorkspace?.relatedRooms?.length || 0}</b></label></div></div><div class="mc-ws-sheet-picker" aria-label="Workspace source sheets">${sourceSheetButtons}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
@@ -5223,7 +5447,7 @@ async function renderMissionControlWorkspace() {
         <section class="mc-ws-lower">
           <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${issueSummaryMarkup}</ul></article>
           <article id="workspaceComparisonsPanel"><header><strong>TRACEABILITY MAP</strong><button type="button" data-ws-section="comparisons">Focus</button></header><div class="mc-ws-trace">${(activeWorkspace?.traceabilityMap || []).flatMap(item => [`<div><b>Source</b><span>${esc(item.from)}</span></div>`, '<i>→</i>', `<div><b>Requirement</b><span>${esc(item.requirement)}</span></div>`, '<i>→</i>', `<div><b>Impact</b><span>${esc(item.impact)}</span></div>`]).join('')}</div></article>
-          <article id="workspaceChecklistPanel"><header><strong>CHECKLIST BUILDER</strong><button type="button" data-ws-section="checklist">Focus</button></header><p class="mc-ws-muted">Plan-derived checklist grounded in the current workspace evidence.</p><div class="mc-ws-progress"><span style="width:${Math.min(100, 28 + (checklistItems.filter(item => item.done).length || 0) * 14)}%"></span></div><small>${checklistItems.filter(item => item.done).length || 0} of ${checklistItems.length} items scored</small><ul class="mc-ws-check">${checklistItems.map(item => `<li><label><input type="checkbox" data-ws-checklist-toggle="${esc(item.label)}" ${item.done ? 'checked' : ''}> ${esc(item.label)}</label></li>`).join('')}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
+          <article id="workspaceChecklistPanel"><header><strong>SESSION REVIEW PROGRESS</strong><button type="button" data-ws-section="checklist">Open Full Checklist</button></header><p class="mc-ws-muted">Checklist review is grounded in the current workspace evidence and stays session-only unless an authoritative source says otherwise.</p><div class="mc-ws-progress"><span style="width:${checklistApplicableCount ? Math.min(100, Math.round((checklistDoneCount / checklistApplicableCount) * 100)) : 0}%"></span></div><small>${checklistDoneCount} of ${checklistApplicableCount} reviewed this session · ${checklistBlockedCount} blocked · ${checklistUnknownCount} unknown</small><ul class="mc-ws-check">${checklistSummaryMarkup}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
           <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.label)}</b><span>${esc(item.dueDateLabel || item.status || '')}</span><small>${esc(item.detail || item.notes || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button><details class="mc-ws-notes" id="workspaceNotesPanel"><summary>Workspace notes</summary><textarea data-ws-note="${esc(activeWorkspace?.id || '')}" rows="4" placeholder="Add temporary workspace notes for this session.">${esc(notesValue)}</textarea></details></article>
         </section>`}
       </main>
@@ -5458,17 +5682,22 @@ $('#missionControlContent').onclick = async event => {
     await openChiefSpecificationViewer(button.dataset.wsSpecSection, { returnTarget: 'chat' });
     return;
   }
+  if (button.dataset.wsChecklistFilter) {
+    const checklistState = workspaceChecklistStateFor(activeBedfordWorkspaceId || '');
+    checklistState.filter = button.dataset.wsChecklistFilter;
+    checklistState.selectedItemId = '';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsChecklistId) {
+    const checklistState = workspaceChecklistStateFor(activeBedfordWorkspaceId || '');
+    checklistState.selectedItemId = button.dataset.wsChecklistId;
+    await showMissionControlView('workspace');
+    return;
+  }
   if (button.dataset.wsProjectDocument) {
     activeBedfordWorkspaceSection = 'documents';
     await openProfessionalDestination({ view: 'sources', documentId: button.dataset.wsProjectDocument, projectId: state().activeProject, origin: 'workspace-documents' });
-    return;
-  }
-  if (button.dataset.wsChecklistToggle) {
-    const workspaceId = activeBedfordWorkspaceId || '';
-    const checklistState = workspaceChecklistStateFor(workspaceId);
-    if (button.closest('li')?.querySelector('input')?.checked) checklistState.add(button.dataset.wsChecklistToggle);
-    else checklistState.delete(button.dataset.wsChecklistToggle);
-    await showMissionControlView('workspace');
     return;
   }
   if (button.dataset.wsIssueFilter) {
@@ -6027,8 +6256,14 @@ $('#missionControlContent').addEventListener('change', event => {
   if (!(target instanceof HTMLInputElement)) return;
   if (!target.matches('input[data-ws-checklist-toggle]')) return;
   const checklistState = workspaceChecklistStateFor(activeBedfordWorkspaceId || '');
-  if (target.checked) checklistState.add(target.dataset.wsChecklistToggle || '');
-  else checklistState.delete(target.dataset.wsChecklistToggle || '');
+  const itemId = target.dataset.wsChecklistToggle || '';
+  if (!itemId) return;
+  if (target.disabled) {
+    target.checked = false;
+    return;
+  }
+  if (target.checked) checklistState.verifiedIds.add(itemId);
+  else checklistState.verifiedIds.delete(itemId);
   void renderMissionControlWorkspace();
 });
 $('#missionControlContent').addEventListener('input', event => {
