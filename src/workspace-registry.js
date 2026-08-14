@@ -109,6 +109,66 @@ function buildApplicableSpecifications(sourceSheets) {
   return records;
 }
 
+function buildIssues({ room, name, type }) {
+  if (text(type) === 'EXISTING_TRANSITION') {
+    return [
+      { label: 'Existing condition inventory', detail: `${room} is documented as an existing / transition telecom-computer room and should be verified against the current inventory list.` }
+    ];
+  }
+  return [
+    { label: 'No room-specific issues recorded', detail: `${room || name || 'This workspace'} does not have separate issue data yet.` }
+  ];
+}
+
+function buildTraceabilityMap({ sourceSheets, applicableSpecifications, name, level, disciplineFocus }) {
+  const primarySheet = list(sourceSheets)[0] ? sheetRecord(list(sourceSheets)[0]) : null;
+  const primarySpec = list(applicableSpecifications)[0] || null;
+  return [
+    {
+      from: primarySheet?.sheetNumber || 'Source Sheet',
+      requirement: primarySpec?.sectionTitle || disciplineFocus || 'Workspace requirement',
+      impact: `${name || 'Workspace'} readiness`
+    },
+    {
+      from: primarySpec?.sectionNumber || 'Governing Spec',
+      requirement: primarySpec?.sectionTitle || 'Shared Bedford specification',
+      impact: `${level || 'Workspace'} traceability`
+    },
+    {
+      from: primarySheet?.sheetNumber || 'Source Sheet',
+      requirement: disciplineFocus || 'Bedford source evidence',
+      impact: 'Workspace'
+    }
+  ];
+}
+
+function buildChecklist({ sourceSheets, disciplineFocus, level, room }) {
+  const items = [
+    `Verify ${room || 'the workspace'} source sheet geometry and room boundaries`,
+    'Confirm rack / cabinet placement against the source drawing',
+    'Verify power, grounding, and bonding conditions',
+    'Inspect firestopping and pathway coordination',
+    `Review governing specifications for ${disciplineFocus || 'this workspace'}`
+  ];
+  if (list(sourceSheets).some(sheet => text(sheet) === '61T-402')) {
+    items.unshift('Compare the transition inventory list against current field conditions');
+  }
+  return items.map(label => ({ label, done: false, detail: `${level || 'Workspace'} checklist item` }));
+}
+
+function buildNextSteps({ sourceSheets, applicableSpecifications, relatedRooms, pmisBuilding, room, name }) {
+  const steps = [
+    { label: `Review ${list(sourceSheets)[0] || 'source sheet'}`, detail: 'Use the embedded drawing evidence to confirm the current room state.' },
+    { label: `Compare ${list(applicableSpecifications)[0]?.sectionNumber || 'governing spec'}`, detail: 'Trace the source sheet back to the Bedford IFC specifications.' },
+    { label: `Ask Chief about ${room || name || 'this workspace'}`, detail: 'Use Chief analysis for project context and implications.' },
+    { label: `${pmisBuilding || 'Building 61'} readiness context`, detail: 'Check PMIS for building-level status and cross-workspace context.' }
+  ];
+  if (list(relatedRooms).length) {
+    steps.push({ label: `Related rooms: ${list(relatedRooms).join(', ')}`, detail: 'Switch to another approved workspace when needed.' });
+  }
+  return steps;
+}
+
 function buildWorkspaceRecord({
   id,
   building,
@@ -127,6 +187,7 @@ function buildWorkspaceRecord({
 }) {
   const resolvedSourceSheets = list(sourceSheets).map(sheetNumber => sheetRecord(sheetNumber));
   const resolvedRelatedSheets = list(relatedSheets).map(sheetNumber => sheetRecord(sheetNumber));
+  const applicableSpecifications = buildApplicableSpecifications(sourceSheets);
   return Object.freeze({
     id: text(id),
     building: text(building),
@@ -139,10 +200,14 @@ function buildWorkspaceRecord({
     sourceSheets: resolvedSourceSheets,
     relatedSheets: resolvedRelatedSheets,
     relatedRooms: list(relatedRooms).map(item => text(item)).filter(Boolean),
-    applicableSpecifications: buildApplicableSpecifications(sourceSheets),
+    applicableSpecifications,
     pmisBuilding: text(pmisBuilding),
     sourceEvidence: list(sourceEvidence).length ? list(sourceEvidence) : buildSourceEvidence(sourceSheets, name),
-    chiefInsight: text(chiefInsight)
+    chiefInsight: text(chiefInsight),
+    issues: buildIssues({ room, name, type }),
+    traceabilityMap: buildTraceabilityMap({ sourceSheets, applicableSpecifications, name, level, disciplineFocus }),
+    checklist: buildChecklist({ sourceSheets, disciplineFocus, level, room }),
+    nextSteps: buildNextSteps({ sourceSheets, applicableSpecifications, relatedRooms, pmisBuilding, room, name })
   });
 }
 
@@ -210,7 +275,18 @@ const WORKSPACE_REGISTRY = Object.freeze([
 ]);
 
 export function listBedfordWorkspaceRecords() {
-  return WORKSPACE_REGISTRY.map(record => ({ ...record, sourceSheets: [...record.sourceSheets], relatedSheets: [...record.relatedSheets], relatedRooms: [...record.relatedRooms], applicableSpecifications: record.applicableSpecifications.map(item => ({ ...item })), sourceEvidence: record.sourceEvidence.map(item => ({ ...item })) }));
+  return WORKSPACE_REGISTRY.map(record => ({
+    ...record,
+    sourceSheets: [...record.sourceSheets],
+    relatedSheets: [...record.relatedSheets],
+    relatedRooms: [...record.relatedRooms],
+    applicableSpecifications: record.applicableSpecifications.map(item => ({ ...item })),
+    sourceEvidence: record.sourceEvidence.map(item => ({ ...item })),
+    issues: record.issues.map(item => ({ ...item })),
+    traceabilityMap: record.traceabilityMap.map(item => ({ ...item })),
+    checklist: record.checklist.map(item => ({ ...item })),
+    nextSteps: record.nextSteps.map(item => ({ ...item }))
+  }));
 }
 
 export function getBedfordWorkspaceRecord(id = '') {
