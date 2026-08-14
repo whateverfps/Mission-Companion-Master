@@ -385,6 +385,12 @@
 .mc-ws-lower{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}
 .mc-ws-lower > article{min-height:320px;max-height:380px;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;overflow:hidden}
 .mc-ws-risks,.mc-ws-check,.mc-ws-next,.mc-ws-timeline{min-height:0;overflow:auto;max-height:160px}
+.mc-ws-risks{max-height:none}
+.mc-ws-lower #workspaceIssuesPanel{grid-template-rows:auto minmax(0,1fr)}
+.mc-ws-lower #workspaceChiefInsightPanel{grid-template-rows:auto minmax(0,1fr)}
+.mc-ws-chief-panel-body{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;min-height:0;padding:12px 12px 14px;overflow:auto}
+.mc-ws-chief-panel-body .mc-ws-chief-avatar{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;background:#102733;font-size:22px}
+.mc-ws-chief-panel-body p{margin:0;color:#cad8dd;font-size:11px;line-height:1.55}
 .mc-ws-next-summary{margin:0 10px 8px;color:#6eaeb4;font-size:9px;letter-spacing:.04em;text-transform:uppercase}
 .mc-ws-trace{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:stretch}
 .mc-ws-trace i{display:none}

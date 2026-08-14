@@ -297,7 +297,10 @@ test('Mission Control workspace preserves the approved wide composition and four
   const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
   assert.match(workspace, /<h1 id="missionControlTitle" tabindex="-1">B\$\{esc\(activeWorkspace\?\.building \|\| '61'\)\} — Telecom Room \$\{esc\(activeWorkspace\?\.room \|\| 'Workspace'\)\}<\/h1>/);
   assert.match(workspace, /<strong>ISSUES & RISKS<\/strong>/);
-  assert.match(workspace, /<strong>TRACEABILITY MAP<\/strong>/);
+  assert.match(workspace, /<article id="workspaceChiefInsightPanel" class="mc-ws-chief-panel">/);
+  assert.match(workspace, /<strong>Chief Insight<\/strong>/);
+  assert.doesNotMatch(workspace, /<strong>TRACEABILITY MAP<\/strong>/);
+  assert.doesNotMatch(workspace, /<div class="mc-ws-chief" id="workspaceChiefInsightPanel">/);
   assert.match(workspace, /<strong>SESSION REVIEW PROGRESS<\/strong>/);
   assert.match(workspace, /Open Full Checklist/);
   assert.match(workspace, /<strong>NEXT STEPS<\/strong>/);
@@ -364,6 +367,10 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(css, /\.mc-ws-lower\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(css, /\.mc-ws-lower > article\{min-height:320px;max-height:380px;display:grid;grid-template-rows:auto minmax\(0,1fr\) auto auto;overflow:hidden\}/);
   assert.match(css, /\.mc-ws-risks,\.mc-ws-check,\.mc-ws-next,\.mc-ws-timeline\{min-height:0;overflow:auto;max-height:160px\}/);
+  assert.match(css, /\.mc-ws-risks\{max-height:none\}/);
+  assert.match(css, /#workspaceIssuesPanel\{grid-template-rows:auto minmax\(0,1fr\)\}/);
+  assert.match(css, /#workspaceChiefInsightPanel\{grid-template-rows:auto minmax\(0,1fr\)\}/);
+  assert.match(css, /\.mc-ws-chief-panel-body\{display:grid;grid-template-columns:auto minmax\(0,1fr\);gap:10px;align-items:start;min-height:0;padding:12px 12px 14px;overflow:auto\}/);
   assert.match(css, /\.mc-ws-room-tree-shell\{/);
   assert.match(css, /\.mc-ws-trades\{/);
   assert.match(css, /\.mc-ws-trades-toggle\{/);
