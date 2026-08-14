@@ -356,7 +356,7 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /Checklist Review/);
   assert.match(workspace, /Create RFI is not configured yet/);
   assert.match(css, /\.mc-ws\{grid-template-columns:240px minmax\(0,1fr\)\}/);
-  assert.match(css, /\.mc-ws-sidebar\{[^}]*display:flex;[^}]*flex-direction:column;[^}]*height:calc\(100dvh - 126px\)[^}]*overflow-y:auto;[^}]*overflow-x:hidden\}/);
+  assert.match(css, /\.mc-ws-sidebar\{[^}]*display:flex;[^}]*flex-direction:column;[^}]*min-height:0;[^}]*align-self:stretch;[^}]*height:auto;[^}]*overflow-y:visible;[^}]*overflow-x:hidden\}/);
   assert.match(css, /\.mc-ws-sidebar>\.mc-ws-side-section:first-of-type\{[^}]*display:block;[^}]*min-height:0;[^}]*overflow:visible\}/);
   assert.match(css, /\.mc-ws-sidebar>\.mc-ws-side-section:first-of-type>\.mc-ws-side-nav\{[^}]*overflow:visible;[^}]*padding-right:0\}/);
   assert.match(css, /\.mc-ws-upper\{grid-template-columns:minmax\(0,2\.55fr\) minmax\(300px,1fr\)/);
@@ -557,18 +557,26 @@ test('Mission Control drawing workspace exposes a workspace-local fullscreen mod
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
   const renderer = app.slice(app.indexOf("async function renderDrawingWorkspaceWithProviders"), app.indexOf('async function renderMissionControlDashboard'));
+  const workspaceRenderer = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard'));
   assert.match(app, /let workspaceDrawingFullscreen = false;/);
   assert.match(app, /captureWorkspaceDrawingFullscreenScrollState/);
   assert.match(app, /restoreWorkspaceDrawingFullscreenScrollState/);
   assert.match(app, /host\.classList\.toggle\('workspace-fullscreen', shell === 'mission-control' && workspaceDrawingFullscreen\)/);
   assert.match(renderer, /shell === 'mission-control' \? `<button data-drawing-fullscreen aria-pressed="\$\{workspaceDrawingFullscreen \? 'true' : 'false'\}">/);
   assert.match(renderer, /data-drawing-fullscreen/);
-  assert.match(app, /event\.key !== 'Escape' \|\| experience !== 'mission-control' \|\| missionControlView !== 'plans' \|\| !workspaceDrawingFullscreen/);
+  assert.match(workspaceRenderer, /data-ws-action="toggle-fullscreen"/);
+  assert.match(workspaceRenderer, /workspaceDrawingFullscreen \? 'true' : 'false'/);
+  assert.match(app, /event\.key !== 'Escape' \|\| experience !== 'mission-control' \|\| !workspaceDrawingFullscreen \|\| \(missionControlView !== 'plans' && missionControlView !== 'workspace'\)/);
   assert.match(css, /\.mc-drawing-workspace\.workspace-fullscreen/);
   assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-layout/);
   assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-index,#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-evidence/);
   assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-viewer/);
   assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-stage/);
+  assert.match(css, /\.mc-ws\.workspace-fullscreen/);
+  assert.match(css, /\.mc-ws\.workspace-fullscreen \.mc-ws-sidebar/);
+  assert.match(css, /\.mc-ws\.workspace-fullscreen \.mc-ws-evidence/);
+  assert.match(css, /\.mc-ws\.workspace-fullscreen \.mc-ws-lower/);
+  assert.match(css, /\.mc-ws\.workspace-fullscreen \.mc-ws-drawing>/);
 });
 
 test('Phase 24B makes Chief construction-first with one synchronized drawing state', () => {

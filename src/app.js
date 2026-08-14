@@ -1541,14 +1541,14 @@ const workspaceNotesStore = createWorkspaceNotesStore({ storage: globalThis.loca
 
 function captureWorkspaceDrawingFullscreenScrollState() {
   workspaceDrawingFullscreenScrollState.windowScrollY = globalThis.scrollY || globalThis.pageYOffset || 0;
-  workspaceDrawingFullscreenScrollState.sidebarScrollTop = $('.mc-drawing-index')?.scrollTop || 0;
+  workspaceDrawingFullscreenScrollState.sidebarScrollTop = $('.mc-ws-sidebar')?.scrollTop || $('.mc-drawing-index')?.scrollTop || 0;
   workspaceDrawingFullscreenScrollState.evidenceScrollTop = $('.mc-drawing-evidence')?.scrollTop || 0;
 }
 
 function restoreWorkspaceDrawingFullscreenScrollState() {
   requestAnimationFrame(() => {
     window.scrollTo({ top: workspaceDrawingFullscreenScrollState.windowScrollY || 0, behavior: 'auto' });
-    const sidebar = $('.mc-drawing-index');
+    const sidebar = $('.mc-ws-sidebar') || $('.mc-drawing-index');
     if (sidebar) sidebar.scrollTop = workspaceDrawingFullscreenScrollState.sidebarScrollTop || 0;
     const evidence = $('.mc-drawing-evidence');
     if (evidence) evidence.scrollTop = workspaceDrawingFullscreenScrollState.evidenceScrollTop || 0;
@@ -6228,6 +6228,7 @@ async function renderMissionControlWorkspace() {
   `).join('') || '<li><b>No applicable specifications</b><span>Workspace data unavailable.</span><em>Unavailable</em></li>';
   const relatedRoomItems = (activeWorkspace?.relatedRooms || []).map(room => `<li><span>${esc(room)}</span></li>`).join('') || '<li><span>No related rooms recorded.</span></li>';
   const openDrawingLabel = previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawings';
+  const workspaceFullscreenLabel = workspaceDrawingFullscreen ? 'Exit Full Screen' : 'Full Screen';
   const documentsViewMarkup = documentsModel.categories.length ? `
         <section class="mc-ws-documents" aria-label="Workspace Documents">
           <header class="mc-ws-documents-header">
@@ -6278,7 +6279,7 @@ async function renderMissionControlWorkspace() {
         </section>`;
   const notesViewMarkup = renderWorkspaceNotesView(notesModel, activeWorkspace, projectMilestoneContext, notesState);
   $('#missionControlContent').innerHTML = `
-    <section class="mc-ws" aria-labelledby="missionControlTitle">
+    <section class="mc-ws ${workspaceDrawingFullscreen ? 'workspace-fullscreen' : ''}" aria-labelledby="missionControlTitle">
       <aside class="mc-ws-sidebar">
         <div class="mc-ws-side-head"><span>WORKSPACE</span><button type="button" data-ws-action="new">Select Workspace</button></div>
         <div class="mc-ws-side-section"><small>WORKSPACE RECORDS</small><nav class="mc-ws-side-nav" aria-label="Workspace records">${workspaceDrawingTree}</nav></div>
@@ -6305,7 +6306,7 @@ async function renderMissionControlWorkspace() {
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
         ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
         <section class="mc-ws-upper">
-          <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}</div></article>
+          <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button><button data-ws-action="toggle-fullscreen" aria-pressed="${workspaceDrawingFullscreen ? 'true' : 'false'}">${esc(workspaceFullscreenLabel)}</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
         </section>
         <section class="mc-ws-lower">
@@ -6808,6 +6809,13 @@ $('#missionControlContent').onclick = async event => {
     if (target) drawingTarget = target;
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('plans');
+    return;
+  }
+  if (button.dataset.wsAction === 'toggle-fullscreen') {
+    captureWorkspaceDrawingFullscreenScrollState();
+    workspaceDrawingFullscreen = !workspaceDrawingFullscreen;
+    await renderMissionControlWorkspace();
+    restoreWorkspaceDrawingFullscreenScrollState();
     return;
   }
   if (button.dataset.wsAction === 'specs') {
@@ -7883,11 +7891,12 @@ app.addEventListener('click', async event => {
 });
 
 app.addEventListener('keydown', async event => {
-  if (event.key !== 'Escape' || experience !== 'mission-control' || missionControlView !== 'plans' || !workspaceDrawingFullscreen) return;
+  if (event.key !== 'Escape' || experience !== 'mission-control' || !workspaceDrawingFullscreen || (missionControlView !== 'plans' && missionControlView !== 'workspace')) return;
   event.preventDefault();
   captureWorkspaceDrawingFullscreenScrollState();
   workspaceDrawingFullscreen = false;
-  await renderDrawingWorkspace('mission-control');
+  if (missionControlView === 'workspace') await renderMissionControlWorkspace();
+  else await renderDrawingWorkspace('mission-control');
   restoreWorkspaceDrawingFullscreenScrollState();
 }, true);
 
