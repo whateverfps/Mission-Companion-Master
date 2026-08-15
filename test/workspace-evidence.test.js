@@ -424,6 +424,40 @@ test('workspace evidence persists across reloads and remains isolated by workspa
   assert.equal(b124[0].relatedSpecifications[0].sectionNumber, '26 05 11');
 });
 
+test('workspace evidence links are deduplicated while preserving existing relationships', async () => {
+  const storage = createMemoryStorage();
+  const persistence = {
+    async loadEvidence() {
+      return [];
+    },
+    async putEvidence() {},
+    async deleteEvidence() {}
+  };
+  const store = createWorkspaceEvidenceStore({ storage, persistence, idFactory: () => 'evidence-link', now: () => '2026-08-15T10:05:00Z' });
+  await store.load('bedford');
+  store.create({
+    id: 'evidence-link',
+    projectId: 'bedford',
+    workspaceId: 'B13',
+    type: 'NOTE',
+    title: 'Link target',
+    linkedIssueIds: ['issue-a'],
+    linkedChecklistItemIds: ['check-a'],
+    linkedObservationIds: ['obs-a'],
+    linkedRfiIds: ['rfi-a']
+  });
+  const linked = store.link('evidence-link', {
+    issueId: 'issue-a',
+    checklistItemId: 'check-a',
+    observationId: 'obs-a',
+    rfiId: 'rfi-a'
+  });
+  assert.deepEqual(linked.linkedIssueIds, ['issue-a']);
+  assert.deepEqual(linked.linkedChecklistItemIds, ['check-a']);
+  assert.deepEqual(linked.linkedObservationIds, ['obs-a']);
+  assert.deepEqual(linked.linkedRfiIds, ['rfi-a']);
+});
+
 test('workspace evidence model provides a usable filtered detail view', () => {
   const model = buildWorkspaceEvidenceModel({
     projectId: 'bedford',

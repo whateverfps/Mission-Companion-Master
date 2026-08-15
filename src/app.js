@@ -602,8 +602,8 @@ function renderWorkspaceObservationEvidence(item = {}) {
   const relatedSpecifications = item.relatedSpecifications || [];
   const relatedIssues = item.relatedIssues || [];
   const relatedChecklistItems = item.relatedChecklistItems || [];
-  const attachments = item.attachments || [];
   const sourceContext = item.sourceContext || {};
+  const linkedEvidence = workspaceEvidenceLinkedRecordsFor('observation', item.id, { workspaceId: item.workspaceId || '' });
   return `
     <section class="mc-ws-issue-detail-grid">
       <article><strong>Created</strong><span>${esc(workspaceObservationTimestampLabel(item.createdAt || item.updatedAt))}</span><small>${esc(item.status || 'OPEN')} · ${esc(item.category || 'GENERAL')}</small></article>
@@ -627,10 +627,7 @@ function renderWorkspaceObservationEvidence(item = {}) {
       <header><strong>RELATED CHECKLIST ITEM</strong><small>${relatedChecklistItems.length}</small></header>
       ${relatedChecklistItems.length ? `<div class="mc-ws-issue-links">${relatedChecklistItems.map(item => `<button type="button" data-ws-checklist-id="${esc(item.id)}" aria-label="Open checklist item ${esc(item.title || item.id)}"><strong>${esc(item.title || item.id)}</strong><span>${esc(item.status || item.category || '')}</span><small>Related checklist item</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related checklist item recorded.</div>'}
     </section>
-    <section class="mc-ws-issue-panel">
-      <header><strong>ATTACHMENTS</strong><small>${attachments.length}</small></header>
-      ${attachments.length ? `<div class="mc-ws-issue-items">${attachments.map(attachment => `<div><strong>${esc(attachment.title || attachment.fileName || attachment.id)}</strong><span>${esc(attachment.description || attachment.fileName || '')}</span><small>${esc(attachment.kind || 'file')}</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No attachments recorded.</div>'}
-    </section>
+    ${renderWorkspaceRecordEvidenceSection({ kind: 'observation', recordId: item.id, linkedEvidence, totalLabel: 'EVIDENCE', emptyState: 'No linked evidence has been added to this observation yet.' })}
     <section class="mc-ws-issue-panel">
       <header><strong>SOURCE CONTEXT</strong><small>${Object.keys(sourceContext || {}).length}</small></header>
       ${Object.keys(sourceContext || {}).length ? `<div class="mc-ws-issue-items">${Object.entries(sourceContext).slice(0, 6).map(([key, value]) => `<div><strong>${esc(key)}</strong><span>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</span><small>Captured context</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No source context recorded.</div>'}
@@ -659,8 +656,8 @@ function renderWorkspaceRfiEvidence(item = {}) {
   const relatedIssues = item.relatedIssues || [];
   const relatedChecklistItems = item.relatedChecklistItems || [];
   const relatedObservations = item.relatedObservations || [];
-  const attachments = item.attachments || [];
   const sourceContext = item.sourceContext || {};
+  const linkedEvidence = workspaceEvidenceLinkedRecordsFor('rfi', item.id, { workspaceId: item.workspaceId || '' });
   return `
     <section class="mc-ws-issue-detail-grid">
       <article><strong>Created</strong><span>${esc(workspaceRfiTimestampLabel(item.createdAt || item.updatedAt))}</span><small>${esc(item.status || 'DRAFT')} · ${esc(item.localId || item.id || 'Local RFI')}</small></article>
@@ -688,24 +685,21 @@ function renderWorkspaceRfiEvidence(item = {}) {
       <header><strong>RELATED CHECKLIST ITEM</strong><small>${relatedChecklistItems.length}</small></header>
       ${relatedChecklistItems.length ? `<div class="mc-ws-issue-links">${relatedChecklistItems.map(item => `<button type="button" data-ws-checklist-id="${esc(item.id)}" aria-label="Open checklist item ${esc(item.title || item.id)}"><strong>${esc(item.title || item.id)}</strong><span>${esc(item.status || item.category || '')}</span><small>Related checklist item</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related checklist item recorded.</div>'}
     </section>
-    <section class="mc-ws-issue-panel">
-      <header><strong>ATTACHMENTS</strong><small>${attachments.length}</small></header>
-      ${attachments.length ? `<div class="mc-ws-issue-items">${attachments.map(attachment => `<div><strong>${esc(attachment.title || attachment.fileName || attachment.id)}</strong><span>${esc(attachment.description || attachment.fileName || '')}</span><small>${esc(attachment.kind || 'file')}</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No attachments recorded.</div>'}
-    </section>
+    ${renderWorkspaceRecordEvidenceSection({ kind: 'rfi', recordId: item.id, linkedEvidence, totalLabel: 'EVIDENCE', emptyState: 'No linked evidence has been added to this RFI yet.' })}
     <section class="mc-ws-issue-panel">
       <header><strong>SOURCE CONTEXT</strong><small>${Object.keys(sourceContext || {}).length}</small></header>
       ${Object.keys(sourceContext || {}).length ? `<div class="mc-ws-issue-items">${Object.entries(sourceContext).slice(0, 6).map(([key, value]) => `<div><strong>${esc(key)}</strong><span>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</span><small>Captured context</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No source context recorded.</div>'}
     </section>`;
 }
 
-function renderWorkspaceRfiEditor(draft = {}, { mode = 'create' } = {}) {
+function renderWorkspaceRfiEditor(draft = {}, { mode = 'create', workspaceEvidence = [] } = {}) {
   const sheet = draft.selectedSheet || null;
   const relatedSpecifications = list(draft.relatedSpecifications);
   const relatedIssues = list(draft.relatedIssues);
   const relatedChecklistItems = list(draft.relatedChecklistItems);
   const relatedObservations = list(draft.relatedObservations);
-  const attachments = list(draft.attachments);
   const sourceContextEntries = Object.entries(draft.sourceContext || {}).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  const linkedEvidence = workspaceEvidenceLinkedRecordsFor('rfi', draft.id || '', { workspaceId: draft.workspaceId || '' });
   return `
     <div class="mc-ws-observation-editor">
       <button type="button" class="modal-x" data-rfi-cancel aria-label="Close RFI editor">×</button>
@@ -739,7 +733,7 @@ function renderWorkspaceRfiEditor(draft = {}, { mode = 'create' } = {}) {
         <label>Question<textarea data-rfi-field="question" placeholder="Describe the request for information">${esc(draft.question || '')}</textarea></label>
         <label>Suggested Resolution<textarea data-rfi-field="suggestedResolution" placeholder="Optional suggested resolution">${esc(draft.suggestedResolution || '')}</textarea></label>
         <section class="mc-ws-observation-context">
-          <header><strong>LINKED CONTEXT</strong><small>${esc(`${relatedIssues.length} issues · ${relatedChecklistItems.length} checklist items · ${relatedObservations.length} observations · ${attachments.length} attachments`)}</small></header>
+          <header><strong>LINKED CONTEXT</strong><small>${esc(`${relatedIssues.length} issues · ${relatedChecklistItems.length} checklist items · ${relatedObservations.length} observations · ${linkedEvidence.length} evidence`)}</small></header>
           <div class="mc-ws-observation-links">
             <div class="mc-ws-observation-link-block">
               <strong>Related drawing</strong>
@@ -768,10 +762,11 @@ function renderWorkspaceRfiEditor(draft = {}, { mode = 'create' } = {}) {
             </div>
           </div>
         </section>
+        ${renderWorkspaceRecordEvidenceSection({ kind: 'rfi', recordId: draft.id || '', linkedEvidence, totalLabel: 'EVIDENCE', emptyState: 'No linked evidence has been added to this RFI yet.', showActionButton: false })}
         <section class="mc-ws-observation-context">
-          <header><strong>ATTACHMENTS</strong><small>${attachments.length}</small></header>
-          ${attachments.length ? `<div class="mc-ws-observation-attachments">${attachments.map(attachment => `<div class="mc-ws-observation-link-block"><strong>${esc(attachment.title || attachment.fileName || attachment.id)}</strong><span>${esc(attachment.description || attachment.fileName || '')}</span><small>${esc(attachment.kind || 'file')}</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No attachments recorded.</div>'}
-          <p class="mc-ws-observation-note">Attachment ingestion can be added later if the Workspace file/photo workflow is available.</p>
+          <header><strong>EXISTING EVIDENCE</strong><small>${workspaceEvidence.length}</small></header>
+          ${workspaceEvidence.length ? renderWorkspaceEvidenceExistingCards(workspaceEvidence) : '<div class="mc-ws-empty-inline">No evidence has been recorded for this Workspace yet.</div>'}
+          <p class="mc-ws-observation-note">Choose an existing evidence record to reuse it here without creating a duplicate.</p>
         </section>
         <section class="mc-ws-observation-context">
           <header><strong>SOURCE CONTEXT</strong><small>${sourceContextEntries.length}</small></header>
@@ -873,13 +868,13 @@ function renderWorkspaceObservationsView(issuesModel = {}, observationsModel = {
     </section>`;
 }
 
-function renderWorkspaceObservationEditor(draft = {}, { mode = 'create' } = {}) {
+function renderWorkspaceObservationEditor(draft = {}, { mode = 'create', workspaceEvidence = [] } = {}) {
   const sheet = draft.selectedSheet || null;
   const relatedSpecifications = list(draft.relatedSpecifications);
   const relatedIssues = list(draft.relatedIssues);
   const relatedChecklistItems = list(draft.relatedChecklistItems);
-  const attachments = list(draft.attachments);
   const sourceContextEntries = Object.entries(draft.sourceContext || {}).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  const linkedEvidence = workspaceEvidenceLinkedRecordsFor('observation', draft.id || '', { workspaceId: draft.workspaceId || '' });
   return `
     <div class="mc-ws-observation-editor">
       <button type="button" class="modal-x" data-observation-cancel aria-label="Close observation editor">×</button>
@@ -920,7 +915,7 @@ function renderWorkspaceObservationEditor(draft = {}, { mode = 'create' } = {}) 
         </div>
         <label>Description<textarea data-observation-field="description" placeholder="Describe what you observed">${esc(draft.description || '')}</textarea></label>
         <section class="mc-ws-observation-context">
-          <header><strong>LINKED CONTEXT</strong><small>${esc(`${relatedIssues.length} issues · ${relatedChecklistItems.length} checklist items · ${attachments.length} attachments`)}</small></header>
+          <header><strong>LINKED CONTEXT</strong><small>${esc(`${relatedIssues.length} issues · ${relatedChecklistItems.length} checklist items · ${linkedEvidence.length} evidence`)}</small></header>
           <div class="mc-ws-observation-links">
             <div class="mc-ws-observation-link-block">
               <strong>Related drawing</strong>
@@ -944,10 +939,11 @@ function renderWorkspaceObservationEditor(draft = {}, { mode = 'create' } = {}) 
             </div>
           </div>
         </section>
+        ${renderWorkspaceRecordEvidenceSection({ kind: 'observation', recordId: draft.id || '', linkedEvidence, totalLabel: 'EVIDENCE', emptyState: 'No linked evidence has been added to this observation yet.', showActionButton: false })}
         <section class="mc-ws-observation-context">
-          <header><strong>ATTACHMENTS</strong><small>${attachments.length}</small></header>
-          ${attachments.length ? `<div class="mc-ws-observation-attachments">${attachments.map(attachment => `<div class="mc-ws-observation-link-block"><strong>${esc(attachment.title || attachment.fileName || attachment.id)}</strong><span>${esc(attachment.description || attachment.fileName || '')}</span><small>${esc(attachment.kind || 'file')}</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No attachments recorded.</div>'}
-          <p class="mc-ws-observation-note">Attachment ingestion can be added later if the Workspace file/photo workflow is available.</p>
+          <header><strong>EXISTING EVIDENCE</strong><small>${workspaceEvidence.length}</small></header>
+          ${workspaceEvidence.length ? renderWorkspaceEvidenceExistingCards(workspaceEvidence) : '<div class="mc-ws-empty-inline">No evidence has been recorded for this Workspace yet.</div>'}
+          <p class="mc-ws-observation-note">Choose an existing evidence record to reuse it here without creating a duplicate.</p>
         </section>
         <section class="mc-ws-observation-context">
           <header><strong>SOURCE CONTEXT</strong><small>${sourceContextEntries.length}</small></header>
@@ -982,6 +978,7 @@ function openWorkspaceObservationModal({
     relatedSpecifications,
     sourceContext
   });
+  if (!draft.id) draft.id = createIdentifier();
   if (existingObservation) {
     draft.id = existingObservation.id || draft.id;
     draft.createdAt = existingObservation.createdAt || draft.createdAt;
@@ -1002,7 +999,8 @@ function openWorkspaceObservationModal({
   const observationState = workspaceIssuesStateFor(workspaceId);
   observationState.observationMode = mode;
   observationState.observationDraft = structuredClone(draft);
-  openModal(renderWorkspaceObservationEditor(draft, { mode }), () => {
+  const workspaceEvidence = workspaceEvidenceStore.list({ projectId, workspaceId });
+  openModal(renderWorkspaceObservationEditor(draft, { mode, workspaceEvidence }), () => {
     const modal = $('#modal');
     const titleField = modal.querySelector('[data-observation-field="title"]');
     const categoryField = modal.querySelector('[data-observation-field="category"]');
@@ -1011,7 +1009,10 @@ function openWorkspaceObservationModal({
     const descriptionField = modal.querySelector('[data-observation-field="description"]');
     const saveButton = modal.querySelector('[data-observation-save]');
     const cancelButtons = [...modal.querySelectorAll('[data-observation-cancel]')];
+    const evidenceLinkButtons = [...modal.querySelectorAll('[data-evidence-link-existing]')];
+    const evidenceDetailButtons = [...modal.querySelectorAll('[data-evidence-open-detail]')];
     const persistObservation = async () => {
+      const isEdit = mode === 'edit' && Boolean(existingObservation?.id);
       const payload = {
         id: draft.id || '',
         projectId,
@@ -1031,7 +1032,7 @@ function openWorkspaceObservationModal({
         attachments: list(draft.attachments),
         sourceContext: structuredClone(draft.sourceContext || {})
       };
-      const saved = payload.id ? workspaceObservationsStore.update(payload.id, payload) : workspaceObservationsStore.create(payload);
+      const saved = isEdit ? workspaceObservationsStore.update(payload.id, payload) : workspaceObservationsStore.create(payload);
       observationState.view = 'observations';
       observationState.observationFilter = 'all';
       observationState.selectedObservationId = saved?.id || '';
@@ -1042,6 +1043,11 @@ function openWorkspaceObservationModal({
     };
     saveButton.onclick = persistObservation;
     const cancelObservation = () => {
+      if (mode === 'create' && draft.id) {
+        for (const evidence of workspaceEvidenceLinkedRecordsFor('observation', draft.id, { projectId, workspaceId })) {
+          workspaceEvidenceStore.unlink(evidence.id, { observationId: draft.id });
+        }
+      }
       observationState.observationDraft = null;
       observationState.observationMode = 'view';
       closeModal(true);
@@ -1049,6 +1055,46 @@ function openWorkspaceObservationModal({
     };
     cancelButtons.forEach(button => {
       button.onclick = cancelObservation;
+    });
+    evidenceLinkButtons.forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = workspaceEvidenceStore.get(button.dataset.evidenceLinkExisting);
+        if (!target) return;
+        const saved = workspaceEvidenceStore.link(target.id, { observationId: draft.id || '' });
+        if (!saved) return;
+        draft.title = titleField?.value || draft.title || '';
+        draft.category = categoryField?.value || draft.category || 'GENERAL';
+        draft.severity = severityField?.value || draft.severity || 'INFO';
+        draft.status = statusField?.value || draft.status || 'OPEN';
+        draft.description = descriptionField?.value || draft.description || '';
+        observationState.observationDraft = structuredClone(draft);
+        closeModal(true);
+        openWorkspaceObservationModal({
+          mode,
+          workspace,
+          selectedSheet: draft.selectedSheet,
+          relatedIssue: draft.relatedIssues[0] || relatedIssue,
+          relatedChecklistItem: draft.relatedChecklistItems[0] || relatedChecklistItem,
+          relatedSpecifications: draft.relatedSpecifications,
+          existingObservation: structuredClone(draft),
+          sourceContext: draft.sourceContext || {}
+        });
+      };
+    });
+    evidenceDetailButtons.forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = workspaceEvidenceStore.get(button.dataset.evidenceOpenDetail);
+        if (!target) return;
+        evidenceState.mode = 'view';
+        evidenceState.draft = null;
+        evidenceState.selectedEvidenceId = target.id;
+        closeModal(true);
+        await openWorkspaceEvidence(target.id);
+      };
     });
     modalCloseGuard = () => {
       observationState.observationDraft = null;
@@ -1080,6 +1126,7 @@ function openWorkspaceRfiModal({
     relatedSpecifications,
     sourceContext
   });
+  if (!draft.id) draft.id = createIdentifier();
   if (existingRfi) {
     draft.id = existingRfi.id || draft.id;
     draft.localId = existingRfi.localId || draft.localId;
@@ -1102,7 +1149,8 @@ function openWorkspaceRfiModal({
   const rfiState = workspaceIssuesStateFor(workspaceId);
   rfiState.rfiMode = mode;
   rfiState.rfiDraft = structuredClone(draft);
-  openModal(renderWorkspaceRfiEditor(draft, { mode }), () => {
+  const workspaceEvidence = workspaceEvidenceStore.list({ projectId, workspaceId });
+  openModal(renderWorkspaceRfiEditor(draft, { mode, workspaceEvidence }), () => {
     const modal = $('#modal');
     const subjectField = modal.querySelector('[data-rfi-field="subject"]');
     const questionField = modal.querySelector('[data-rfi-field="question"]');
@@ -1111,7 +1159,10 @@ function openWorkspaceRfiModal({
     const statusField = modal.querySelector('[data-rfi-field="status"]');
     const saveButton = modal.querySelector('[data-rfi-save]');
     const cancelButtons = [...modal.querySelectorAll('[data-rfi-cancel]')];
+    const evidenceLinkButtons = [...modal.querySelectorAll('[data-evidence-link-existing]')];
+    const evidenceDetailButtons = [...modal.querySelectorAll('[data-evidence-open-detail]')];
     const persistRfi = async () => {
+      const isEdit = mode === 'edit' && Boolean(existingRfi?.id);
       const payload = {
         id: draft.id || '',
         localId: draft.localId || '',
@@ -1133,7 +1184,7 @@ function openWorkspaceRfiModal({
         attachments: list(draft.attachments),
         sourceContext: structuredClone(draft.sourceContext || {})
       };
-      const saved = payload.id ? workspaceRfisStore.update(payload.id, payload) : workspaceRfisStore.create(payload);
+      const saved = isEdit ? workspaceRfisStore.update(payload.id, payload) : workspaceRfisStore.create(payload);
       rfiState.view = 'rfis';
       rfiState.rfiFilter = 'all';
       rfiState.selectedRfiId = saved?.id || '';
@@ -1144,6 +1195,11 @@ function openWorkspaceRfiModal({
     };
     saveButton.onclick = persistRfi;
     const cancelRfi = () => {
+      if (mode === 'create' && draft.id) {
+        for (const evidence of workspaceEvidenceLinkedRecordsFor('rfi', draft.id, { projectId, workspaceId })) {
+          workspaceEvidenceStore.unlink(evidence.id, { rfiId: draft.id });
+        }
+      }
       rfiState.rfiDraft = null;
       rfiState.rfiMode = 'view';
       closeModal(true);
@@ -1151,6 +1207,47 @@ function openWorkspaceRfiModal({
     };
     cancelButtons.forEach(button => {
       button.onclick = cancelRfi;
+    });
+    evidenceLinkButtons.forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = workspaceEvidenceStore.get(button.dataset.evidenceLinkExisting);
+        if (!target) return;
+        const saved = workspaceEvidenceStore.link(target.id, { rfiId: draft.id || '' });
+        if (!saved) return;
+        draft.subject = subjectField?.value || draft.subject || '';
+        draft.question = questionField?.value || draft.question || '';
+        draft.suggestedResolution = suggestedResolutionField?.value || draft.suggestedResolution || '';
+        draft.requestedResponseDate = requestedResponseDateField?.value || draft.requestedResponseDate || '';
+        draft.status = statusField?.value || draft.status || 'DRAFT';
+        rfiState.rfiDraft = structuredClone(draft);
+        closeModal(true);
+        openWorkspaceRfiModal({
+          mode,
+          workspace,
+          selectedSheet: draft.selectedSheet,
+          relatedIssue: draft.relatedIssues[0] || relatedIssue,
+          relatedChecklistItem: draft.relatedChecklistItems[0] || relatedChecklistItem,
+          relatedObservation: draft.relatedObservations[0] || relatedObservation,
+          relatedSpecifications: draft.relatedSpecifications,
+          existingRfi: structuredClone(draft),
+          sourceContext: draft.sourceContext || {}
+        });
+      };
+    });
+    evidenceDetailButtons.forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = workspaceEvidenceStore.get(button.dataset.evidenceOpenDetail);
+        if (!target) return;
+        rfiState.rfiMode = 'view';
+        rfiState.rfiDraft = null;
+        rfiState.selectedRfiId = target.id;
+        closeModal(true);
+        await openWorkspaceEvidence(target.id);
+      };
     });
     modalCloseGuard = () => {
       rfiState.rfiDraft = null;
@@ -1312,7 +1409,7 @@ function renderWorkspaceIssuesView(issuesModel = {}, observationsModel = {}, rfi
               </header>
               <p>${esc(selectedObservation.description || 'No description recorded.')}</p>
               <section class="mc-ws-issue-panel">
-                <header><strong>SHARED EVIDENCE</strong><small>${linkedEvidenceForObservation(selectedObservation.id).length}</small></header>
+        <header><strong>EVIDENCE</strong><small>${linkedEvidenceForObservation(selectedObservation.id).length}</small></header>
                 ${renderWorkspaceLinkedEvidence(linkedEvidenceForObservation(selectedObservation.id), 'observation', selectedObservation.id)}
               </section>
               ${renderWorkspaceObservationEvidence(selectedObservation)}
@@ -1347,7 +1444,7 @@ function renderWorkspaceIssuesView(issuesModel = {}, observationsModel = {}, rfi
               </header>
               <p>${esc(selectedRfi.question || 'No question recorded.')}</p>
               <section class="mc-ws-issue-panel">
-                <header><strong>SUPPORTING EVIDENCE</strong><small>${linkedEvidenceForRfi(selectedRfi.id).length}</small></header>
+                <header><strong>EVIDENCE</strong><small>${linkedEvidenceForRfi(selectedRfi.id).length}</small></header>
                 ${renderWorkspaceLinkedEvidence(linkedEvidenceForRfi(selectedRfi.id), 'rfi', selectedRfi.id)}
               </section>
               <section class="mc-ws-issue-panel">
@@ -1390,7 +1487,7 @@ function renderWorkspaceIssuesView(issuesModel = {}, observationsModel = {}, rfi
               <p>${esc(selectedIssue.description || 'No description recorded.')}</p>
               ${renderWorkspaceIssueEvidence(selectedIssue)}
               <section class="mc-ws-issue-panel">
-                <header><strong>RELATED EVIDENCE</strong><small>${linkedEvidenceForIssue(selectedIssue.id).length}</small></header>
+                <header><strong>EVIDENCE</strong><small>${linkedEvidenceForIssue(selectedIssue.id).length}</small></header>
                 ${renderWorkspaceLinkedEvidence(linkedEvidenceForIssue(selectedIssue.id), 'issue', selectedIssue.id)}
               </section>
             ` : `
@@ -2288,24 +2385,7 @@ function renderWorkspaceEvidenceDetail(item = {}) {
       </section>` : ''}
       <section class="mc-ws-issue-panel">
         <header><strong>LINKED RECORDS</strong><small>${linkedIssueIds.length + linkedChecklistItemIds.length + linkedObservationIds.length + linkedRfiIds.length}</small></header>
-        <div class="mc-ws-evidence-link-groups">
-          <div>
-            <strong>Issues</strong>
-            ${linkedIssueIds.length ? `<div class="mc-ws-issue-links">${linkedIssueIds.map(id => `<button type="button" data-ws-issue-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked issue</span><small>Issue</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked issues recorded.</div>'}
-          </div>
-          <div>
-            <strong>Checklist items</strong>
-            ${linkedChecklistItemIds.length ? `<div class="mc-ws-issue-links">${linkedChecklistItemIds.map(id => `<button type="button" data-ws-checklist-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked checklist item</span><small>Checklist</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked checklist items recorded.</div>'}
-          </div>
-          <div>
-            <strong>Observations</strong>
-            ${linkedObservationIds.length ? `<div class="mc-ws-issue-links">${linkedObservationIds.map(id => `<button type="button" data-ws-observation-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked observation</span><small>Observation</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked observations recorded.</div>'}
-          </div>
-          <div>
-            <strong>RFIs</strong>
-            ${linkedRfiIds.length ? `<div class="mc-ws-issue-links">${linkedRfiIds.map(id => `<button type="button" data-ws-rfi-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked RFI</span><small>RFI</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked RFIs recorded.</div>'}
-          </div>
-        </div>
+        ${renderWorkspaceEvidenceLinkedRecordGroups(item)}
       </section>
     </section>`;
 }
@@ -2318,9 +2398,307 @@ function renderWorkspaceLinkedEvidence(records = [], relationKind = '', relation
       <span>${esc(workspaceEvidenceTypeLabel(item.type || 'NOTE'))} · ${esc(item.selectedSheet?.sheetNumber || 'No drawing')}</span>
       <small>
         ${esc(item.selectedSheet?.sheetTitle || item.description || 'Shared evidence')}
+        <button type="button" data-ws-evidence-open="${esc(item.id)}">Open Evidence</button>
         <button type="button" data-ws-evidence-unlink="${esc(item.id)}" data-ws-evidence-relation-kind="${esc(relationKind)}" data-ws-evidence-relation-id="${esc(relationId)}">Unlink</button>
       </small>
     </div>`).join('')}</div>`;
+}
+
+function workspaceEvidenceLinkedRecordsFor(kind = '', recordId = '', { projectId = state().activeProject || BEDFORD_PROJECT_ID, workspaceId = '' } = {}) {
+  const normalized = String(kind || '').trim().toLowerCase();
+  const identifier = String(recordId || '').trim();
+  if (!normalized || !identifier) return [];
+  const field = normalized === 'issue'
+    ? 'linkedIssueIds'
+    : normalized === 'checklist'
+      ? 'linkedChecklistItemIds'
+      : normalized === 'observation'
+        ? 'linkedObservationIds'
+        : normalized === 'rfi'
+          ? 'linkedRfiIds'
+          : '';
+  if (!field) return [];
+  return workspaceEvidenceStore.list({ projectId, workspaceId }).filter(record => Array.isArray(record[field]) && record[field].includes(identifier));
+}
+
+function renderWorkspaceRecordEvidenceSection({
+  kind = '',
+  recordId = '',
+  linkedEvidence = [],
+  totalLabel = 'EVIDENCE',
+  emptyState = 'No linked evidence has been added to this record yet.',
+  actionLabel = 'Link Existing Evidence',
+  showActionButton = true
+} = {}) {
+  const normalized = String(kind || '').trim().toLowerCase();
+  const linkTarget = normalized === 'issue'
+    ? `data-ws-evidence-link-issue-id="${esc(recordId)}"`
+    : normalized === 'checklist'
+      ? `data-ws-evidence-link-checklist-id="${esc(recordId)}"`
+      : normalized === 'observation'
+        ? `data-ws-evidence-link-observation-id="${esc(recordId)}"`
+        : normalized === 'rfi'
+          ? `data-ws-evidence-link-rfi-id="${esc(recordId)}"`
+          : '';
+  return `
+    <section class="mc-ws-issue-panel">
+      <header><strong>${esc(totalLabel)}</strong><small>${linkedEvidence.length}</small></header>
+      ${showActionButton ? `<div class="mc-ws-observation-actions">
+        <button type="button" data-ws-evidence-action="link-existing" ${linkTarget}>${esc(actionLabel)}</button>
+      </div>` : ''}
+      ${renderWorkspaceLinkedEvidence(linkedEvidence, normalized, recordId)}
+    </section>`;
+}
+
+function renderWorkspaceEvidenceLinkedRecordGroups(item = {}) {
+  const linkedIssueIds = Array.isArray(item.linkedIssueIds) ? item.linkedIssueIds : [];
+  const linkedChecklistItemIds = Array.isArray(item.linkedChecklistItemIds) ? item.linkedChecklistItemIds : [];
+  const linkedObservationIds = Array.isArray(item.linkedObservationIds) ? item.linkedObservationIds : [];
+  const linkedRfiIds = Array.isArray(item.linkedRfiIds) ? item.linkedRfiIds : [];
+  const groups = [
+    { kind: 'issue', label: 'Issues', ids: linkedIssueIds },
+    { kind: 'checklist', label: 'Checklist Items', ids: linkedChecklistItemIds },
+    { kind: 'observation', label: 'Observations', ids: linkedObservationIds },
+    { kind: 'rfi', label: 'RFIs', ids: linkedRfiIds }
+  ];
+  return `<div class="mc-ws-evidence-link-groups">${groups.map(group => `
+    <section class="mc-ws-observation-context">
+      <header><strong>${esc(group.label)}</strong><small>${group.ids.length}</small></header>
+      ${group.ids.length ? `<div class="mc-ws-evidence-existing-grid">${group.ids.map(id => `
+        <article class="mc-ws-evidence-existing-card">
+          <button type="button" class="mc-ws-evidence-existing-card-main" ${group.kind === 'issue' ? `data-ws-issue-id="${esc(id)}"` : group.kind === 'checklist' ? `data-ws-checklist-id="${esc(id)}"` : group.kind === 'observation' ? `data-ws-observation-id="${esc(id)}"` : `data-ws-rfi-id="${esc(id)}"`}>
+            <span>${esc(workspaceEvidenceLinkRecordKindLabel(group.kind))}</span>
+            <strong>${esc(id)}</strong>
+            <small>Open linked ${esc(workspaceEvidenceLinkRecordKindLabel(group.kind).toLowerCase())}</small>
+            <em>Linked record</em>
+          </button>
+          <button type="button" class="mc-ws-evidence-action-label" data-ws-evidence-unlink="${esc(item.id)}" data-ws-evidence-relation-kind="${esc(group.kind)}" data-ws-evidence-relation-id="${esc(id)}">Unlink</button>
+        </article>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked records recorded.</div>'}
+    </section>`).join('')}</div>`;
+}
+
+function workspaceEvidenceLinkRecordKindLabel(kind = '') {
+  const normalized = String(kind || '').trim().toLowerCase();
+  return normalized === 'issue'
+    ? 'Issue'
+    : normalized === 'checklist'
+      ? 'Checklist Item'
+      : normalized === 'observation'
+        ? 'Observation'
+        : normalized === 'rfi'
+          ? 'RFI'
+          : 'Record';
+}
+
+function workspaceEvidenceLinkRecordDetailLabel(kind = '', record = {}) {
+  const normalized = String(kind || '').trim().toLowerCase();
+  if (normalized === 'issue') {
+    return `${record.type || 'ISSUE'} · ${record.severity || 'INFO'} · ${record.status || 'OPEN'}`;
+  }
+  if (normalized === 'observation') {
+    return `${record.category || 'GENERAL'} · ${record.severity || 'INFO'} · ${record.status || 'OPEN'}`;
+  }
+  if (normalized === 'rfi') {
+    return `${record.localId || record.id || 'RFI'} · ${record.status || 'DRAFT'}`;
+  }
+  if (normalized === 'checklist') {
+    return `${record.category || 'CHECKLIST'} · ${record.status || 'NOT_VERIFIED'}`;
+  }
+  return workspaceEvidenceLinkRecordKindLabel(kind);
+}
+
+function workspaceEvidenceLinkRecordSummary(kind = '', record = {}) {
+  const normalized = String(kind || '').trim().toLowerCase();
+  if (normalized === 'issue') {
+    return record.description || record.impact || record.recommendedNextStep || 'Open issue';
+  }
+  if (normalized === 'observation') {
+    return record.description || 'Open observation';
+  }
+  if (normalized === 'rfi') {
+    return record.question || record.suggestedResolution || 'Open RFI';
+  }
+  if (normalized === 'checklist') {
+    return record.description || 'Open checklist item';
+  }
+  return record.description || record.title || 'Workspace record';
+}
+
+function renderWorkspaceEvidenceLinkCards(records = [], { kind = '', targetEvidenceId = '', targetEvidenceLabel = '', relationId = '' } = {}) {
+  if (!records.length) return '<div class="mc-ws-empty-inline">No matching records available.</div>';
+  const normalized = String(kind || '').trim().toLowerCase();
+  const linkDataset = normalized === 'issue'
+    ? 'data-ws-evidence-link-target-issue-id'
+    : normalized === 'checklist'
+      ? 'data-ws-evidence-link-target-checklist-id'
+      : normalized === 'observation'
+        ? 'data-ws-evidence-link-target-observation-id'
+        : normalized === 'rfi'
+          ? 'data-ws-evidence-link-target-rfi-id'
+          : '';
+  return `<div class="mc-ws-evidence-existing-grid">${records.map(record => `
+    <article class="mc-ws-evidence-existing-card">
+      <div class="mc-ws-evidence-existing-card-main">
+        <span>${esc(workspaceEvidenceLinkRecordKindLabel(kind))}</span>
+        <strong>${esc(record.title || record.subject || record.localId || record.id || 'Untitled record')}</strong>
+        <small>${esc(workspaceEvidenceLinkRecordDetailLabel(kind, record))}</small>
+        <em>${esc(workspaceEvidenceLinkRecordSummary(kind, record))}</em>
+      </div>
+      <button type="button" class="mc-ws-evidence-action-label" data-ws-evidence-link-target-kind="${esc(normalized)}" ${linkDataset ? `${linkDataset}="${esc(record.id || '')}"` : ''} data-ws-evidence-link-target-label="${esc(targetEvidenceLabel || targetEvidenceId || 'Evidence')}">Link to Record</button>
+    </article>`).join('')}</div>`;
+}
+
+function renderWorkspaceEvidenceLinkPicker({ targetEvidence = null, linkedIssueId = '', linkedChecklistItemId = '', linkedObservationId = '', linkedRfiId = '', workspace = null, selectedSheet = null, relatedSpecifications = [], sourceContext = {}, mode = 'record' } = {}) {
+  const projectId = state().activeProject || BEDFORD_PROJECT_ID;
+  const workspaceId = text(workspace?.id || '');
+  const projectMilestoneContext = sourceContext?.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace });
+  const pmisRuntime = missionPmisRuntimeData();
+  const issuesModel = buildWorkspaceIssuesModel({ workspace, projectMilestoneContext, pmisRuntime });
+  const checklistModel = buildWorkspaceChecklistModel({ workspace, projectMilestoneContext, issuesModel, pmisRuntime });
+  const evidenceRecords = workspaceEvidenceStore.list({ projectId, workspaceId });
+  const observationRecords = workspaceObservationsStore.list({ projectId, workspaceId });
+  const rfiRecords = workspaceRfisStore.list({ projectId, workspaceId });
+  const targetEvidenceTitle = targetEvidence?.title || targetEvidence?.fileName || targetEvidence?.id || 'Selected evidence';
+  const targetRecordTitle = linkedIssueId
+    ? (issuesModel.issues.find(item => item.id === linkedIssueId)?.title || linkedIssueId)
+    : linkedChecklistItemId
+      ? (checklistModel.items.find(item => item.id === linkedChecklistItemId)?.title || linkedChecklistItemId)
+      : linkedObservationId
+        ? (observationRecords.find(item => item.id === linkedObservationId)?.title || linkedObservationId)
+        : linkedRfiId
+          ? (rfiRecords.find(item => item.id === linkedRfiId)?.subject || linkedRfiId)
+          : '';
+  const activeRecordLabel = linkedIssueId
+    ? 'Issue'
+    : linkedChecklistItemId
+      ? 'Checklist Item'
+      : linkedObservationId
+        ? 'Observation'
+        : linkedRfiId
+          ? 'RFI'
+          : '';
+  const sourceTitle = mode === 'evidence'
+    ? targetEvidenceTitle
+    : targetRecordTitle || 'Selected record';
+  const sourceSummary = mode === 'evidence'
+    ? `${workspaceEvidenceTypeLabel(targetEvidence?.type || 'NOTE')} · ${targetEvidence?.selectedSheet?.sheetNumber || 'No drawing'}`
+    : `${activeRecordLabel} · ${workspace?.room || workspace?.id || 'Workspace'}`;
+  const recordGroups = mode === 'record'
+    ? [
+        { kind: 'issue', records: issuesModel.issues, label: 'Issues' },
+        { kind: 'observation', records: observationRecords, label: 'Observations' },
+        { kind: 'rfi', records: rfiRecords, label: 'RFIs' },
+        { kind: 'checklist', records: checklistModel.items, label: 'Checklist Items' }
+      ].filter(group => group.records.length)
+    : [];
+  return `
+    <div class="mc-ws-evidence-editor">
+      <button type="button" class="modal-x" data-evidence-cancel aria-label="Close evidence link picker">×</button>
+      <header class="mc-ws-modal-header">
+        <h2>${esc(mode === 'evidence' ? 'Link Evidence to Record' : 'Link Existing Evidence')}</h2>
+        <p class="mc-ws-observation-intro">${esc(mode === 'evidence' ? 'Choose a Workspace record that should be linked to this evidence item.' : 'Choose an existing evidence record to link back to the active Workspace record.')}</p>
+      </header>
+      <div class="mc-ws-modal-scroll">
+        <section class="mc-ws-observation-context">
+          <header><strong>${esc(mode === 'evidence' ? 'SELECTED EVIDENCE' : 'ACTIVE RECORD')}</strong><small>${esc(sourceSummary)}</small></header>
+          <div class="mc-ws-observation-context-grid">
+            <article><span>Project</span><strong>${esc(projectId || 'Unavailable')}</strong></article>
+            <article><span>Workspace</span><strong>${esc(workspace?.room || workspace?.workspaceId || workspaceId || 'Unavailable')}</strong></article>
+            <article><span>Building</span><strong>${esc(workspace?.building || 'Unavailable')}</strong></article>
+            <article><span>Level</span><strong>${esc(workspace?.level || 'Unavailable')}</strong></article>
+            <article><span>Selected drawing</span><strong>${esc(selectedSheet?.sheetNumber || targetEvidence?.selectedSheet?.sheetNumber || 'Unavailable')}</strong><small>${esc(selectedSheet?.sheetTitle || targetEvidence?.selectedSheet?.sheetTitle || 'No drawing captured.')}</small></article>
+            <article><span>Applicable specifications</span><strong>${esc(relatedSpecifications.length || targetEvidence?.relatedSpecifications?.length || 0)}</strong><small>${esc((relatedSpecifications.length ? relatedSpecifications : targetEvidence?.relatedSpecifications || []).slice(0, 3).map(spec => spec.sectionNumber).join(' · ') || 'No applicable specifications recorded.')}</small></article>
+          </div>
+        </section>
+        ${mode === 'record' ? `
+          <section class="mc-ws-observation-context">
+            <header><strong>EXISTING EVIDENCE</strong><small>${evidenceRecords.length}</small></header>
+            ${renderWorkspaceEvidenceExistingCards(evidenceRecords)}
+          </section>
+        ` : `
+          <div class="mc-ws-evidence-link-groups">
+            ${recordGroups.map(group => `
+              <section class="mc-ws-observation-context">
+                <header><strong>${esc(group.label)}</strong><small>${group.records.length}</small></header>
+                ${renderWorkspaceEvidenceLinkCards(group.records, { kind: group.kind, targetEvidenceId: targetEvidence?.id || '', targetEvidenceLabel: targetEvidenceTitle })}
+              </section>
+            `).join('')}
+          </div>
+        `}
+      </div>
+      <div class="settings-actions">
+        <button type="button" class="subtle" data-evidence-cancel>Cancel</button>
+      </div>
+    </div>`;
+}
+
+function openWorkspaceEvidenceLinkPicker(options = {}) {
+  openModal(renderWorkspaceEvidenceLinkPicker(options), () => {
+    const modal = $('#modal');
+    const cancelButtons = [...modal.querySelectorAll('[data-evidence-cancel]')];
+    const detailButtons = [...modal.querySelectorAll('[data-evidence-open-detail]')];
+    const existingLinkButtons = [...modal.querySelectorAll('[data-evidence-link-existing]')];
+    const targetLinkButtons = [...modal.querySelectorAll('[data-ws-evidence-link-target-kind]')];
+    const recordId = options.targetEvidence?.id || '';
+    const linkToTargetRecord = async (targetKind = '', targetId = '') => {
+      if (!targetId) return;
+      const relationKey = targetKind === 'issue' ? 'issueId'
+        : targetKind === 'checklist' ? 'checklistItemId'
+          : targetKind === 'observation' ? 'observationId'
+            : targetKind === 'rfi' ? 'rfiId'
+              : '';
+      if (!relationKey) return;
+      const targetEvidence = options.targetEvidence || workspaceEvidenceStore.get(recordId);
+      if (!targetEvidence) return;
+      const saved = workspaceEvidenceStore.link(targetEvidence.id, { [relationKey]: targetId });
+      if (!saved) return;
+      closeModal(true);
+      await showMissionControlView('workspace');
+    };
+    cancelButtons.forEach(button => {
+      button.onclick = () => closeModal(true);
+    });
+    detailButtons.forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = workspaceEvidenceStore.get(button.dataset.evidenceOpenDetail);
+        if (!target) return;
+        closeModal(true);
+        await openWorkspaceEvidence(target.id);
+      };
+    });
+    existingLinkButtons.forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = workspaceEvidenceStore.get(button.dataset.evidenceLinkExisting);
+        if (!target) return;
+        const existingEvidence = options.targetEvidence || null;
+        if (!existingEvidence) return;
+        const linkPayload = {};
+        if (options.linkedIssueId) linkPayload.issueId = options.linkedIssueId;
+        if (options.linkedChecklistItemId) linkPayload.checklistItemId = options.linkedChecklistItemId;
+        if (options.linkedObservationId) linkPayload.observationId = options.linkedObservationId;
+        if (options.linkedRfiId) linkPayload.rfiId = options.linkedRfiId;
+        const saved = workspaceEvidenceStore.link(target.id, linkPayload);
+        if (!saved) return;
+        closeModal(true);
+        await showMissionControlView('workspace');
+      };
+    });
+    targetLinkButtons.forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        await linkToTargetRecord(
+          String(button.dataset.wsEvidenceLinkTargetKind || '').trim().toLowerCase(),
+          button.dataset.wsEvidenceLinkTargetIssueId || button.dataset.wsEvidenceLinkTargetChecklistId || button.dataset.wsEvidenceLinkTargetObservationId || button.dataset.wsEvidenceLinkTargetRfiId || ''
+        );
+      };
+    });
+    modalCloseGuard = () => true;
+  });
 }
 
 function workspaceEvidenceBlobIdFor(record = {}) {
@@ -2736,24 +3114,7 @@ function renderWorkspaceEvidenceContext(item = {}, activeWorkspace = null, proje
       </section>
       <section class="mc-ws-issue-panel">
         <header><strong>LINKED RECORDS</strong><small>${linkedIssueIds.length + linkedChecklistItemIds.length + linkedObservationIds.length + linkedRfiIds.length}</small></header>
-        <div class="mc-ws-evidence-link-groups">
-          <div>
-            <strong>Issues</strong>
-            ${linkedIssueIds.length ? `<div class="mc-ws-issue-links">${linkedIssueIds.map(id => `<button type="button" data-ws-issue-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked issue</span><small>Issue</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked issues recorded.</div>'}
-          </div>
-          <div>
-            <strong>Checklist items</strong>
-            ${linkedChecklistItemIds.length ? `<div class="mc-ws-issue-links">${linkedChecklistItemIds.map(id => `<button type="button" data-ws-checklist-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked checklist item</span><small>Checklist</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked checklist items recorded.</div>'}
-          </div>
-          <div>
-            <strong>Observations</strong>
-            ${linkedObservationIds.length ? `<div class="mc-ws-issue-links">${linkedObservationIds.map(id => `<button type="button" data-ws-observation-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked observation</span><small>Observation</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked observations recorded.</div>'}
-          </div>
-          <div>
-            <strong>RFIs</strong>
-            ${linkedRfiIds.length ? `<div class="mc-ws-issue-links">${linkedRfiIds.map(id => `<button type="button" data-ws-rfi-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked RFI</span><small>RFI</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked RFIs recorded.</div>'}
-          </div>
-        </div>
+        ${renderWorkspaceEvidenceLinkedRecordGroups(item)}
       </section>
     </section>`;
 }
@@ -3173,6 +3534,7 @@ function openWorkspaceEvidenceModal({
           observationId: linkedObservationId || '',
           rfiId: linkedRfiId || ''
         });
+        if (!next) return;
         evidenceState.mode = 'view';
         evidenceState.draft = null;
         evidenceState.selectedEvidenceId = next?.id || target.id;
@@ -8706,12 +9068,12 @@ $('#missionControlContent').onclick = async event => {
     if (button.dataset.wsEvidenceLinkRecord) {
       const target = workspaceEvidenceStore.get(button.dataset.wsEvidenceLinkRecord) || currentEvidence;
       if (!target) return;
-      openWorkspaceEvidenceModal({
-        mode: 'link',
+      openWorkspaceEvidenceLinkPicker({
+        mode: 'evidence',
         workspace: activeWorkspace,
         selectedSheet: target.selectedSheet || selectedSheet,
         relatedSpecifications: target.relatedSpecifications || activeWorkspace?.applicableSpecifications || [],
-        existingEvidence: target,
+        targetEvidence: target,
         sourceContext: target.sourceContext || {}
       });
       return;
@@ -8720,8 +9082,30 @@ $('#missionControlContent').onclick = async event => {
     const linkedChecklistItemId = button.dataset.wsEvidenceLinkChecklistId || '';
     const linkedObservationId = button.dataset.wsEvidenceLinkObservationId || '';
     const linkedRfiId = button.dataset.wsEvidenceLinkRfiId || '';
+    if (button.dataset.wsEvidenceAction === 'link-existing') {
+      openWorkspaceEvidenceLinkPicker({
+        workspace: activeWorkspace,
+        selectedSheet,
+        relatedSpecifications: activeWorkspace?.applicableSpecifications || [],
+        sourceContext: {
+          launchedFrom: activeBedfordWorkspaceSection || 'documents',
+          currentSection: activeBedfordWorkspaceSection || 'documents',
+          projectPhase: projectMilestoneContext?.projectPhase || '',
+          ntpDateLabel: projectMilestoneContext?.ntpDateLabel || '',
+          contractCompletionDateLabel: projectMilestoneContext?.contractCompletionDateLabel || '',
+          roomScheduleStatus: projectMilestoneContext?.roomScheduleStatus || '',
+          scheduleStatus: projectMilestoneContext?.scheduleStatus || '',
+          activeEvidenceId: currentEvidence?.id || ''
+        },
+        linkedIssueId,
+        linkedChecklistItemId,
+        linkedObservationId,
+        linkedRfiId
+      });
+      return;
+    }
     openWorkspaceEvidenceModal({
-      mode: button.dataset.wsEvidenceAction === 'link-existing' ? 'link' : 'create',
+      mode: 'create',
       workspace: activeWorkspace,
       selectedSheet,
       relatedSpecifications: activeWorkspace?.applicableSpecifications || [],

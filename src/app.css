@@ -566,6 +566,12 @@
 .mc-ws-evidence-file-summary span,.mc-ws-evidence-file-summary small{color:#8ea5af;font-size:10px}
 .mc-ws-evidence-source-context .mc-ws-observation-link-block{min-height:0}
 .mc-ws-evidence-source-context .mc-ws-observation-link-block span{font-size:11px}
+.mc-ws-evidence-link-block{display:grid;gap:4px;padding:10px 12px;border:1px solid #1b3944;border-radius:10px;background:#0a1a23}
+.mc-ws-evidence-link-block strong{font-size:11px;color:#f1f7f9}
+.mc-ws-evidence-link-block span{color:#67ccc2;font-size:8px;letter-spacing:.08em;text-transform:uppercase}
+.mc-ws-evidence-link-block small{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:#8ca3ad;font-size:9px;line-height:1.35}
+.mc-ws-evidence-link-block button{padding:4px 8px;border:1px solid #1b3944;border-radius:999px;background:#0a1a23;color:#d2e2e6;font-size:8px;cursor:pointer}
+.mc-ws-evidence-link-groups{display:grid;gap:10px}
 .mc-ws-evidence-existing-grid{display:grid;gap:8px}
 .mc-ws-evidence-existing-card{display:grid;gap:4px;width:100%;padding:10px 12px;border:1px solid #1b3944;border-radius:10px;background:#0a1a23;color:#d2e2e6;text-align:left;cursor:pointer;transition:background-color .15s ease,box-shadow .15s ease,transform .15s ease}
 .mc-ws-evidence-existing-card:hover,.mc-ws-evidence-existing-card:focus-visible{background:#102531;box-shadow:0 8px 18px #0003;transform:translateY(-1px)}

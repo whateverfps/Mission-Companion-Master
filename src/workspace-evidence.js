@@ -347,10 +347,10 @@ export function createWorkspaceEvidenceStore({ storage = globalThis.localStorage
       const existing = getById(id);
       if (!existing) return null;
       const updated = mutate(id, {
-        linkedIssueIds: links.issueId ? [...existing.linkedIssueIds, links.issueId] : existing.linkedIssueIds,
-        linkedChecklistItemIds: links.checklistItemId ? [...existing.linkedChecklistItemIds, links.checklistItemId] : existing.linkedChecklistItemIds,
-        linkedObservationIds: links.observationId ? [...existing.linkedObservationIds, links.observationId] : existing.linkedObservationIds,
-        linkedRfiIds: links.rfiId ? [...existing.linkedRfiIds, links.rfiId] : existing.linkedRfiIds
+        linkedIssueIds: normalizeLinks(list(existing.linkedIssueIds).concat(links.issueId ? [links.issueId] : [])),
+        linkedChecklistItemIds: normalizeLinks(list(existing.linkedChecklistItemIds).concat(links.checklistItemId ? [links.checklistItemId] : [])),
+        linkedObservationIds: normalizeLinks(list(existing.linkedObservationIds).concat(links.observationId ? [links.observationId] : [])),
+        linkedRfiIds: normalizeLinks(list(existing.linkedRfiIds).concat(links.rfiId ? [links.rfiId] : []))
       });
       if (updated) void persistToExternalStore(updated);
       return updated;
