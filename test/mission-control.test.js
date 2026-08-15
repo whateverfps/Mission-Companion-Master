@@ -160,13 +160,29 @@ test('Mission Control retains the shared dark visual system without white surfac
   assert.doesNotMatch(refinement, /background(?:-color)?:#fff(?:fff)?(?:[;}]|$)/i);
 });
 
+test('Mission Control workspace presentation keeps the shell, summary cards, checklist filters, and evidence panels compact', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
+  assert.match(app, /<p>\$\{esc\(activeWorkspace\?\.name \|\| 'Select a workspace to review checklist evidence\.'\)\}<\/p>/);
+  assert.match(app, /<nav class="mc-ws-checklist-filters mc-ws-checklist-filters-status" aria-label="Checklist status filters">/);
+  assert.match(app, /<nav class="mc-ws-checklist-filters mc-ws-checklist-filters-category" aria-label="Checklist category filters">/);
+  assert.match(css, /\.mc-ws-header > div:first-child\{/);
+  assert.match(css, /\.mc-ws-project-clock > div\{/);
+  assert.match(css, /\.mc-ws-checklist-filters-status::before\{/);
+  assert.match(css, /\.mc-ws-checklist-filters-category::before\{/);
+  assert.match(css, /\.mc-ws-evidence-viewer-body\{/);
+  assert.match(css, /\.mc-ws-observation-actions button,/);
+});
+
 test('Mission Control uses Dashboard, Chief, and Workspace as the primary shell navigation', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  const nav = app.slice(app.indexOf('<nav class="mc-control-nav"'), app.indexOf('<main id="missionControlMain"'));
-  assert.match(nav, /data-control-view="dashboard">Dashboard<\/button>/);
-  assert.match(nav, /data-control-home[^>]*>Chief<\/button>/);
-  assert.match(nav, /data-control-view="workspace">Workspace<\/button>/);
-  assert.doesNotMatch(nav, /data-control-view="plans">Drawings<\/button>/);
+  const sidebar = app.slice(app.indexOf('function renderMissionControlSidebar()'), app.indexOf('async function renderMissionControlWorkspace()'));
+  assert.match(app, /<section id="missionControlShell" class="mc-control-shell mc-ws mc-mission-shell"/);
+  assert.match(app, /<aside id="missionControlSidebar" class="mc-ws-sidebar" aria-label="Mission Companion navigation"><\/aside>/);
+  assert.match(sidebar, /data-control-view="dashboard">Dashboard<\/button>/);
+  assert.match(sidebar, /data-control-home[^>]*>Chief<\/button>/);
+  assert.match(sidebar, /data-control-view="workspace" aria-current="\$\{missionControlView === 'workspace' \? 'page' : 'false'\}">Workspace<\/button>/);
+  assert.doesNotMatch(sidebar, /data-control-view="plans">Drawings<\/button>/);
   assert.doesNotMatch(app, /data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /data-control-more-tools/);
   assert.doesNotMatch(app, /aria-label="More Tools"/);
@@ -175,11 +191,16 @@ test('Mission Control uses Dashboard, Chief, and Workspace as the primary shell 
 
 test('Mission Control workspace is registry-backed and no longer hard-codes Room 107 prototype content', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  const sidebar = app.slice(app.indexOf('function renderMissionControlSidebar()'), app.indexOf('async function renderMissionControlWorkspace()'));
   const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
+  assert.match(app, /missionControlView = 'workspace';/);
+  assert.match(app, /missionControlSidebar/);
   assert.match(workspace, /buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)/);
   assert.match(app, /data-ws-select=/);
-  assert.match(app, /function workspaceRoomTreeMarkup\(workspaceModel = \{\}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = \[\], workspaceTradesState = null\)/);
-  assert.match(workspace, /Select Workspace/);
+  assert.match(app, /function renderMissionControlSidebar\(\)/);
+  assert.match(sidebar, /mc-mission-workspace-select/);
+  assert.match(sidebar, /data-ws-select/);
+  assert.match(sidebar, /Select Workspace/);
   assert.doesNotMatch(workspace, /ACTIVE WORKSPACE/);
   assert.doesNotMatch(workspace, /PMIS Context:/);
   assert.doesNotMatch(workspace, /Telecom Room 107/);
@@ -379,9 +400,12 @@ test('Mission Control workspace preserves the approved wide composition and four
   const workspaceDocuments = fs.readFileSync(new URL('../src/workspace-documents.js', import.meta.url), 'utf8');
   const checklistItemMarkup = app.slice(app.indexOf('function renderWorkspaceChecklistItem'), app.indexOf('function renderWorkspaceChecklistDetail'));
   const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
+  const sidebar = app.slice(app.indexOf('function renderMissionControlSidebar()'), app.indexOf('async function renderMissionControlWorkspace()'));
   const checklistSummaryMarkup = workspace.slice(workspace.indexOf('const checklistSummaryMarkup'), workspace.indexOf('const timelineSummaryItems'));
   assert.match(checklistItemMarkup, /<div class="mc-ws-checklist-row-title">\s*<strong>\$\{esc\(item\.title\)\}<\/strong>\s*<\/div>/);
   assert.doesNotMatch(checklistItemMarkup, /item\.category/);
+  assert.match(app, /<main id="missionControlMain" class="mc-ws-main" tabindex="-1">/);
+  assert.match(app, /<div id="missionControlContent" aria-live="polite"><\/div>/);
   assert.match(workspace, /<h1 id="missionControlTitle" tabindex="-1">B\$\{esc\(activeWorkspace\?\.building \|\| '61'\)\} — Telecom Room \$\{esc\(activeWorkspace\?\.room \|\| 'Workspace'\)\}<\/h1>/);
   assert.match(workspace, /<strong>ISSUES & RISKS<\/strong>/);
   assert.match(workspace, /<article id="workspaceChiefInsightPanel" class="mc-ws-chief-panel">/);
@@ -398,17 +422,26 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /SCHEDULE STATUS/);
   assert.match(workspace, /mc-ws-timeline/);
   assert.match(app, /function workspaceRoomTreeMarkup\(workspaceModel = \{\}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = \[\], workspaceTradesState = null\)/);
-  assert.match(workspace, /workspaceDrawingTree = workspaceRoomTreeMarkup\(workspaceModel, activeWorkspace, previewSheet, workspaceDrawingCategories, workspaceTradesSessionState\)/);
   assert.match(workspace, /renderWorkspaceTimelineView\(/);
   assert.match(workspace, /buildWorkspaceTimelineModel\(/);
   assert.match(workspace, /combinedNextSteps\.slice\(0, 5\)/);
   assert.match(workspace, /mc-ws-next-summary/);
   assert.match(workspace, /RELATED DOCUMENTS \/ SOURCE SHEETS/);
-  assert.match(workspace, /data-ws-section="overview"/);
-  assert.match(workspace, /data-ws-section="documents"/);
-  assert.match(workspace, /data-ws-section="comparisons"/);
-  assert.match(workspace, /data-ws-section="notes"/);
-  assert.match(workspace, /data-ws-action="compare-spec"/);
+  assert.doesNotMatch(workspace, /workspaceDrawingTree = workspaceRoomTreeMarkup/);
+  assert.match(sidebar, /PRIMARY MODES/);
+  assert.match(sidebar, /PROJECT \/ WORKSPACE/);
+  assert.match(sidebar, /WORKSPACE SECTIONS/);
+  assert.match(sidebar, /QUICK ACTIONS/);
+  assert.match(sidebar, /data-ws-section="overview"/);
+  assert.match(sidebar, /data-ws-section="documents"/);
+  assert.match(sidebar, /data-ws-section="comparisons"/);
+  assert.match(sidebar, /data-ws-section="notes"/);
+  assert.match(sidebar, /data-ws-action="compare-spec"/);
+  assert.match(sidebar, /data-ws-action="rfi"/);
+  assert.match(sidebar, /mc-mission-workspace-select/);
+  assert.match(sidebar, /data-control-view="dashboard">Dashboard<\/button>/);
+  assert.match(sidebar, /data-control-home[^>]*>Chief<\/button>/);
+  assert.match(sidebar, /data-control-view="workspace" aria-current="\$\{missionControlView === 'workspace' \? 'page' : 'false'\}">Workspace<\/button>/);
   assert.match(app, /data-ws-checklist-id=/);
   assert.match(app, /<article><span>Verified<\/span><strong>/);
   assert.match(app, /verified item/);
@@ -463,7 +496,6 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /data-ws-rfi-chief=/);
   assert.doesNotMatch(workspace, /Create RFI is not configured yet/);
   assert.match(app, /action: 'checklist-verification'/);
-  assert.match(workspace, /Create a local RFI draft from the active workspace context/);
   assert.match(app, /safeText\(workspace\?\.(?:id|workspaceId) \|\| draft\.workspaceId \|\| ''\)/);
   assert.match(css, /\.mc-ws\{grid-template-columns:240px minmax\(0,1fr\)\}/);
   assert.match(css, /\.mc-ws-sidebar\{[^}]*display:flex;[^}]*flex-direction:column;[^}]*min-height:0;[^}]*align-self:stretch;[^}]*height:auto;[^}]*overflow-y:visible;[^}]*overflow-x:hidden\}/);
@@ -577,6 +609,8 @@ test('Mission Control workspace overview actions and summaries are clickable and
   assert.match(css, /\.mc-ws-observation-context-grid/);
   assert.match(css, /\.mc-ws-observation-form-grid/);
   assert.match(css, /\.mc-ws-observation-actions/);
+  assert.match(css, /\.mc-mission-shell\{grid-template-columns:286px minmax\(0,1fr\);min-height:100vh;margin:0;background:linear-gradient\(180deg,#06131c 0,#071119 100%\)\}/);
+  assert.match(css, /\.mc-mission-workspace-select select\{/);
 });
 
 test('Mission Control workspace comparison card rendering uses local string normalization instead of an undeclared text helper', () => {
@@ -787,11 +821,13 @@ test('Phase 24B makes Chief construction-first with one synchronized drawing sta
   assert.doesNotMatch(app, /engine\.setState\([^)]*workPackage|persistWorkPackage/);
 });
 
-test('Mission Control hides built-in demo entry points and opens to Chief by default', () => {
+test('Mission Control hides built-in demo entry points and opens to Workspace by default', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  const nav = app.slice(app.indexOf('<nav class="mc-control-nav"'), app.indexOf('<main id="missionControlMain"'));
-  assert.match(nav, /data-control-home[^>]*>Chief<\/button>/);
-  assert.doesNotMatch(nav, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
+  const sidebar = app.slice(app.indexOf('function renderMissionControlSidebar()'), app.indexOf('async function renderMissionControlWorkspace()'));
+  assert.match(app, /let missionControlView = 'workspace';/);
+  assert.match(sidebar, /data-control-view="workspace" aria-current="\$\{missionControlView === 'workspace' \? 'page' : 'false'\}">Workspace<\/button>/);
+  assert.match(sidebar, /data-control-home[^>]*>Chief<\/button>/);
+  assert.doesNotMatch(sidebar, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
   assert.doesNotMatch(app, /<button[^>]*data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /Explore Demonstration Project/);
   assert.doesNotMatch(app, /Load Demonstration Project/);
@@ -802,10 +838,13 @@ test('Mission Control hides built-in demo entry points and opens to Chief by def
 
 test('Mission Control uses the compact primary navigation without the compatibility drawer', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  const nav = app.slice(app.indexOf('<nav class="mc-control-nav"'), app.indexOf('<main id="missionControlMain"'));
-  assert.match(nav, /data-control-view="dashboard">Dashboard<\/button>/);
-  assert.match(nav, /data-control-home[^>]*>Chief<\/button>/);
-  assert.doesNotMatch(nav, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
+  const sidebar = app.slice(app.indexOf('function renderMissionControlSidebar()'), app.indexOf('async function renderMissionControlWorkspace()'));
+  assert.match(sidebar, /data-control-view="dashboard">Dashboard<\/button>/);
+  assert.match(sidebar, /data-control-home[^>]*>Chief<\/button>/);
+  assert.match(sidebar, /data-control-view="workspace" aria-current="\$\{missionControlView === 'workspace' \? 'page' : 'false'\}">Workspace<\/button>/);
+  assert.doesNotMatch(app, /<nav class="mc-control-nav"/);
+  assert.doesNotMatch(app, /<button type="button" class="active" data-control-view="plans">Drawings<\/button>/);
+  assert.doesNotMatch(sidebar, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
   assert.doesNotMatch(app, /<button[^>]*data-control-experience="professional-workspace">Professional Workspace<\/button>/);
   assert.doesNotMatch(app, /<button[^>]*data-control-more-tools[^>]*>More Tools<\/button>/);
   assert.doesNotMatch(app, /aria-label="More Tools"/);

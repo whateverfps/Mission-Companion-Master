@@ -1799,7 +1799,7 @@ function renderWorkspaceChecklistView(checklistModel = {}, activeWorkspace = nul
         <div>
           <span class="mc-ws-back">← Bedford Workspaces</span>
           <h1 id="missionControlTitle" tabindex="-1">Checklist</h1>
-          <p>${esc(activeWorkspace ? `B${activeWorkspace.building || '61'} — ${activeWorkspace.room || 'Workspace'} · ${activeWorkspace.name || 'Workspace'}` : 'Select a workspace to review checklist evidence.')}</p>
+          <p>${esc(activeWorkspace?.name || 'Select a workspace to review checklist evidence.')}</p>
         </div>
         <div class="mc-ws-checklist-summary">
           <article><span>Applicable Items</span><strong>${checklistModel.counts?.applicableItems ?? withSessionState.length}</strong><small>${withSessionState.length ? 'Deterministic checklist items available' : 'No checklist items available'}</small></article>
@@ -1809,8 +1809,13 @@ function renderWorkspaceChecklistView(checklistModel = {}, activeWorkspace = nul
           <article><span>Verified</span><strong>${verifiedCount}/${checklistApplicableCount || checklistItems.length}</strong><small>${verifiedCount ? `${verifiedCount} verified item${verifiedCount === 1 ? '' : 's'}` : 'No verified items yet'}</small></article>
         </div>
       </header>
-      <nav class="mc-ws-checklist-filters" aria-label="Checklist filters">
-        ${filters.map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-checklist-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+      <nav class="mc-ws-checklist-filters mc-ws-checklist-filters-status" aria-label="Checklist status filters">
+        <span class="mc-ws-filter-group-label">Status</span>
+        ${filters.filter(filter => ['all', 'ready', 'active', 'upcoming', 'blocked', 'awaiting-schedule', 'complete'].includes(filter.id)).map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-checklist-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+      </nav>
+      <nav class="mc-ws-checklist-filters mc-ws-checklist-filters-category" aria-label="Checklist category filters">
+        <span class="mc-ws-filter-group-label">Trade / category</span>
+        ${filters.filter(filter => !['all', 'ready', 'active', 'upcoming', 'blocked', 'awaiting-schedule', 'complete'].includes(filter.id)).map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-checklist-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
       </nav>
       <div class="mc-ws-checklist-layout">
         <section class="mc-ws-checklist-list" aria-label="Checklist items">
@@ -3891,7 +3896,7 @@ function workspaceNextStepPriority(item = {}) {
 let view = 'chat';
 let experience = 'mission-control';
 let lastProfessionalView = '';
-let missionControlView = 'landing';
+let missionControlView = 'workspace';
 let missionControlAttachments = [];
 let chiefHistoryVisible = false;
 let activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
@@ -4231,8 +4236,8 @@ function landingEntryReady() {
   return landingCoreReady();
 }
 function updateMissionControlNavigationVisibility() {
-  const nav = $('.mc-control-nav');
-  if (nav) nav.hidden = missionControlView === 'landing';
+  const rail = $('#missionControlSidebar');
+  if (rail) rail.hidden = missionControlView === 'landing';
 }
 function landingStatusLabel() {
   if (!landingEntryReady()) return 'PREPARING PROJECT ENVIRONMENT';
@@ -4928,22 +4933,11 @@ updateMissionRenderState(RenderState.IDLE);
 
 app.innerHTML = `
 <a id="skipLink" class="mc-skip-link" href="#missionControlMain">Skip to workspace</a>
-<section id="missionControlShell" class="mc-control-shell" aria-labelledby="missionControlTitle">
-  <header class="mc-control-global-header">
-    <div class="mc-control-identity">
-      <span class="mc-control-mark" aria-hidden="true">M</span>
-      <div><strong>MISSION COMPANION</strong><span>Mission Control</span></div>
-    </div>
-    <button id="openProfessionalWorkspace" class="mc-control-settings-button" type="button" aria-label="Open Professional Workspace" title="Open Professional Workspace"><span aria-hidden="true">⚙</span></button>
-  </header>
-  <nav class="mc-control-nav" aria-label="Mission Control navigation">
-    <button data-control-view="dashboard">Dashboard</button>
-    <button data-control-home aria-current="page">Chief</button>
-    <button data-control-view="workspace">Workspace</button>
-  </nav>
-<main id="missionControlMain" tabindex="-1">
-  <div id="missionControlContent" aria-live="polite"></div>
-</main>
+<section id="missionControlShell" class="mc-control-shell mc-ws mc-mission-shell" aria-labelledby="missionControlTitle">
+  <aside id="missionControlSidebar" class="mc-ws-sidebar" aria-label="Mission Companion navigation"></aside>
+  <main id="missionControlMain" class="mc-ws-main" tabindex="-1">
+    <div id="missionControlContent" aria-live="polite"></div>
+  </main>
 <iframe
   id="${missionPmisRuntimeFrameId}"
   title="Mission PMIS Runtime"
@@ -8507,6 +8501,65 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
 }
 
 
+function renderMissionControlSidebar() {
+  const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
+  const activeWorkspace = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
+  const workspaceOptions = workspaceModel.workspaces.map(workspace => `<option value="${esc(workspace.id)}" ${workspace.id === activeBedfordWorkspaceId ? 'selected' : ''}>${esc(workspaceDisplayTitle(workspace))}</option>`).join('');
+  const workspaceSummary = activeWorkspace
+    ? `${esc(activeWorkspace.building ? `Building ${activeWorkspace.building}` : 'Building 61')} / ${esc(activeWorkspace.level || 'Workspace')} / ${esc(activeWorkspace.room || 'Workspace')}`
+    : 'No workspace selected';
+  const workspaceSubhead = activeWorkspace
+    ? `${esc(activeWorkspace.type || 'Workspace')} · ${esc(activeWorkspace.name || 'Workspace')}`
+    : 'Select a workspace to open its overview';
+  return `
+    <div class="mc-ws-side-head">
+      <div class="mc-mission-brand">
+        <span>MISSION COMPANION</span>
+        <strong>Unified Workspace Shell</strong>
+      </div>
+      <button id="openProfessionalWorkspace" class="mc-control-settings-button" type="button" aria-label="Open Professional Workspace" title="Open Professional Workspace"><span aria-hidden="true">⚙</span></button>
+    </div>
+    <div class="mc-ws-side-section">
+      <small>PRIMARY MODES</small>
+      <nav class="mc-ws-side-nav" aria-label="Primary modes">
+        <button type="button" class="${missionControlView === 'dashboard' ? 'active' : ''}" data-control-view="dashboard">Dashboard</button>
+        <button type="button" class="${missionControlView === 'home' || missionControlView === 'chat' || missionControlView === 'history' ? 'active' : ''}" data-control-home aria-current="${missionControlView === 'home' || missionControlView === 'chat' || missionControlView === 'history' ? 'page' : 'false'}">Chief</button>
+        <button type="button" class="${missionControlView === 'workspace' ? 'active' : ''}" data-control-view="workspace" aria-current="${missionControlView === 'workspace' ? 'page' : 'false'}">Workspace</button>
+      </nav>
+    </div>
+    <div class="mc-ws-side-section mc-mission-workspace-picker">
+      <small>PROJECT / WORKSPACE</small>
+      <button type="button" class="mc-mission-workspace-summary" data-ws-action="new" aria-label="Select workspace">${workspaceSummary}<span>${workspaceSubhead}</span></button>
+      <label class="mc-mission-workspace-select">
+        <span>Select Workspace</span>
+        <select data-ws-select aria-label="Select workspace">${workspaceOptions}</select>
+      </label>
+    </div>
+    <div class="mc-ws-side-section">
+      <small>WORKSPACE SECTIONS</small>
+      <nav class="mc-ws-side-nav" aria-label="Workspace sections">
+        <button type="button" class="${activeBedfordWorkspaceSection === 'overview' ? 'active' : ''}" data-ws-section="overview">⌂ Overview</button>
+        <button type="button" class="${activeBedfordWorkspaceSection === 'documents' ? 'active' : ''}" data-ws-section="documents">▣ Documents</button>
+        <button type="button" class="${activeBedfordWorkspaceSection === 'evidence' ? 'active' : ''}" data-ws-section="evidence">Evidence</button>
+        <button type="button" class="${activeBedfordWorkspaceSection === 'issues' ? 'active' : ''}" data-ws-section="issues">◇ Issues</button>
+        <button type="button" class="${activeBedfordWorkspaceSection === 'checklist' ? 'active' : ''}" data-ws-section="checklist">☑ Checklist</button>
+        <button type="button" class="${activeBedfordWorkspaceSection === 'comparisons' ? 'active' : ''}" data-ws-section="comparisons">⇄ Comparisons</button>
+        <button type="button" class="${activeBedfordWorkspaceSection === 'timeline' ? 'active' : ''}" data-ws-section="timeline">◷ Timeline</button>
+        <button type="button" class="${activeBedfordWorkspaceSection === 'notes' ? 'active' : ''}" data-ws-section="notes">✎ Notes</button>
+      </nav>
+    </div>
+    <div class="mc-ws-side-section mc-ws-quick">
+      <small>QUICK ACTIONS</small>
+      <button data-ws-action="chief">Ask Chief about this</button>
+      <button data-ws-action="compare-spec">Compare to Spec</button>
+      <button data-ws-action="evidence" title="Capture shared Workspace evidence">Add Evidence</button>
+      <button data-ws-action="rfi" title="Create a local RFI draft from the active workspace context">Create RFI</button>
+      <button data-ws-action="observation">Create Observation</button>
+      <button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button>
+    </div>
+    <div class="rail-foot"><span class="dot" id="healthDot"></span><span id="healthText">Starting…</span></div>`;
+}
+
 async function renderMissionControlWorkspace() {
   const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
   const workspaceSeed = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
@@ -8703,8 +8756,6 @@ async function renderMissionControlWorkspace() {
   const timelineSummaryMarkup = timelineSummaryItems.length
     ? timelineSummaryItems.map(item => renderWorkspaceOverviewTimelineRow(item)).join('')
     : '<li><button type="button" disabled><span>Timeline</span><strong>No next steps recorded</strong><small>Milestone chronology unavailable</small><em class="low">Info</em></button></li>';
-  const workspaceDrawingCategories = activeWorkspace?.drawingCategories || [];
-  const workspaceDrawingTree = workspaceRoomTreeMarkup(workspaceModel, activeWorkspace, previewSheet, workspaceDrawingCategories, workspaceTradesSessionState);
   const relatedDocumentItems = (activeWorkspace?.sourceEvidence || []).slice(0, 4).map(item => `
     <li>
       <button type="button" data-ws-source-sheet="${esc(item.sheetNumber)}" aria-label="Open source sheet ${esc(item.sheetNumber)}">
@@ -8791,44 +8842,26 @@ async function renderMissionControlWorkspace() {
   const notesViewMarkup = renderWorkspaceNotesView(notesModel, activeWorkspace, projectMilestoneContext, notesState);
   workspaceEvidenceReleaseAllPreviews();
   $('#missionControlContent').innerHTML = `
-    <section class="mc-ws ${workspaceDrawingFullscreen ? 'workspace-fullscreen' : ''}" aria-labelledby="missionControlTitle">
-      <aside class="mc-ws-sidebar">
-        <div class="mc-ws-side-head"><span>WORKSPACE</span><button type="button" data-ws-action="new">Select Workspace</button></div>
-        <div class="mc-ws-side-section"><small>WORKSPACE RECORDS</small><nav class="mc-ws-side-nav" aria-label="Workspace records">${workspaceDrawingTree}</nav></div>
-        <nav class="mc-ws-side-nav" aria-label="Workspace sections">
-          <button type="button" class="${activeBedfordWorkspaceSection === 'overview' ? 'active' : ''}" data-ws-section="overview">⌂ Overview</button>
-          <button type="button" class="${activeBedfordWorkspaceSection === 'documents' ? 'active' : ''}" data-ws-section="documents">▣ Documents</button>
-          <button type="button" class="${activeBedfordWorkspaceSection === 'evidence' ? 'active' : ''}" data-ws-section="evidence">Evidence</button>
-          <button type="button" class="${activeBedfordWorkspaceSection === 'issues' ? 'active' : ''}" data-ws-section="issues">◇ Issues</button>
-          <button type="button" class="${activeBedfordWorkspaceSection === 'checklist' ? 'active' : ''}" data-ws-section="checklist">☑ Checklist</button>
-          <button type="button" class="${activeBedfordWorkspaceSection === 'comparisons' ? 'active' : ''}" data-ws-section="comparisons">⇄ Comparisons</button>
-          <button type="button" class="${activeBedfordWorkspaceSection === 'timeline' ? 'active' : ''}" data-ws-section="timeline">◷ Timeline</button>
-          <button type="button" class="${activeBedfordWorkspaceSection === 'notes' ? 'active' : ''}" data-ws-section="notes">✎ Notes</button>
-        </nav>
-        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="compare-spec">Compare to Spec</button><button data-ws-action="evidence" title="Capture shared Workspace evidence">Add Evidence</button><button data-ws-action="rfi" title="Create a local RFI draft from the active workspace context">Create RFI</button><button data-ws-action="observation">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
-      </aside>
-      <main class="mc-ws-main">
-        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-verification', label: 'Verified', value: checklistApplicableCount ? `${checklistVerifiedCount}/${checklistApplicableCount}` : 'No data', detail: checklistApplicableCount ? `${checklistVerifiedCount} of ${checklistApplicableCount} items verified` : 'No deterministic checklist items recorded', tone: checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-blocked', label: 'Blocked', value: checklistBlockedCount, detail: checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded', tone: checklistBlockedCount ? 'danger' : 'watch' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'issues-questions', label: 'Open Questions', value: issuesModel.counts.questions, detail: issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.', tone: issuesModel.counts.questions ? 'watch' : 'neutral' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'documents', label: 'Related Documents', value: (activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0), detail: `${activeWorkspace?.sourceSheets?.length || 0} source sheets`, tone: 'neutral' })}</article></div></header>
-        <section class="mc-ws-project-clock" aria-label="Project milestone context">
-          <div><small>PROJECT PHASE</small><strong>${esc(timelineModel.summary?.projectPhase || projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
-          <div><small>NTP</small><strong>${esc(projectMilestoneContext?.ntpDateLabel || 'Aug 13, 2026')}</strong></div>
-          <div><small>CONTRACT COMPLETION</small><strong>${esc(timelineModel.summary?.contractCompletion?.dateLabel || projectMilestoneContext?.contractCompletionDateLabel || 'Aug 14, 2028')}</strong></div>
-          <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(timelineModel.summary?.roomScheduleStatus || projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
-        </section>
-        <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
-        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'evidence' ? evidenceViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, observationsModel, rfisModel, activeWorkspace, projectMilestoneContext, issueState, observationState, rfiState) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
-        <section class="mc-ws-upper">
-          <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button><button data-ws-action="toggle-fullscreen" aria-pressed="${workspaceDrawingFullscreen ? 'true' : 'false'}">${esc(workspaceFullscreenLabel)}</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}</div></article>
-          <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
-        </section>
-        <section class="mc-ws-lower">
-          <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${issueSummaryMarkup}</ul></article>
-          <article id="workspaceChiefInsightPanel" class="mc-ws-chief-panel"><header><strong>Chief Insight</strong><button data-ws-action="chief">Ask Chief</button></header><div class="mc-ws-chief-panel-body"><div class="mc-ws-chief-avatar">👷</div><p>${esc(chiefInsight)}</p></div></article>
-          <article id="workspaceChecklistPanel"><header><strong>VERIFICATION PROGRESS</strong><button type="button" data-ws-section="checklist">Open Full Checklist</button></header><p class="mc-ws-muted">Checklist verification is grounded in the current workspace evidence and stays session-only unless an authoritative source says otherwise.</p><div class="mc-ws-progress"><span style="width:${checklistApplicableCount ? Math.min(100, Math.round((checklistVerifiedCount / checklistApplicableCount) * 100)) : 0}%"></span></div><small>${checklistVerifiedCount} of ${checklistApplicableCount} verified · ${checklistBlockedCount} blocked · ${checklistUnknownCount} unknown</small><ul class="mc-ws-check">${checklistSummaryMarkup}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
-          <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${timelineSummaryMarkup}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.title)}</b><span>${esc(item.date ? item.dateLabel || item.date : item.status || '')}</span><small>${esc(item.description || item.workspaceImpact || item.nextStep || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button></article>
-        </section>`}
-      </main>
-    </section>`;
+    <section class="mc-ws-workspace-view ${workspaceDrawingFullscreen ? 'workspace-fullscreen' : ''}" aria-labelledby="missionControlTitle">
+      <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-verification', label: 'Verified', value: checklistApplicableCount ? `${checklistVerifiedCount}/${checklistApplicableCount}` : 'No data', detail: checklistApplicableCount ? `${checklistVerifiedCount} of ${checklistApplicableCount} items verified` : 'No deterministic checklist items recorded', tone: checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-blocked', label: 'Blocked', value: checklistBlockedCount, detail: checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded', tone: checklistBlockedCount ? 'danger' : 'watch' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'issues-questions', label: 'Open Questions', value: issuesModel.counts.questions, detail: issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.', tone: issuesModel.counts.questions ? 'watch' : 'neutral' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'documents', label: 'Related Documents', value: (activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0), detail: `${activeWorkspace?.sourceSheets?.length || 0} source sheets`, tone: 'neutral' })}</article></div></header>
+      <section class="mc-ws-project-clock" aria-label="Project milestone context">
+        <div><small>PROJECT PHASE</small><strong>${esc(timelineModel.summary?.projectPhase || projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
+        <div><small>NTP</small><strong>${esc(projectMilestoneContext?.ntpDateLabel || 'Aug 13, 2026')}</strong></div>
+        <div><small>CONTRACT COMPLETION</small><strong>${esc(timelineModel.summary?.contractCompletion?.dateLabel || projectMilestoneContext?.contractCompletionDateLabel || 'Aug 14, 2028')}</strong></div>
+        <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(timelineModel.summary?.roomScheduleStatus || projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
+      </section>
+      <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
+      ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'evidence' ? evidenceViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, observationsModel, rfisModel, activeWorkspace, projectMilestoneContext, issueState, observationState, rfiState) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
+      <section class="mc-ws-upper">
+        <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button><button data-ws-action="toggle-fullscreen" aria-pressed="${workspaceDrawingFullscreen ? 'true' : 'false'}">${esc(workspaceFullscreenLabel)}</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}</div></article>
+        <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
+      </section>
+      <section class="mc-ws-lower">
+        <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${issueSummaryMarkup}</ul></article>
+        <article id="workspaceChiefInsightPanel" class="mc-ws-chief-panel"><header><strong>Chief Insight</strong><button data-ws-action="chief">Ask Chief</button></header><div class="mc-ws-chief-panel-body"><div class="mc-ws-chief-avatar">👷</div><p>${esc(chiefInsight)}</p></div></article>
+        <article id="workspaceChecklistPanel"><header><strong>VERIFICATION PROGRESS</strong><button type="button" data-ws-section="checklist">Open Full Checklist</button></header><p class="mc-ws-muted">Checklist verification is grounded in the current workspace evidence and stays session-only unless an authoritative source says otherwise.</p><div class="mc-ws-progress"><span style="width:${checklistApplicableCount ? Math.min(100, Math.round((checklistVerifiedCount / checklistApplicableCount) * 100)) : 0}%"></span></div><small>${checklistVerifiedCount} of ${checklistApplicableCount} verified · ${checklistBlockedCount} blocked · ${checklistUnknownCount} unknown</small><ul class="mc-ws-check">${checklistSummaryMarkup}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
+        <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${timelineSummaryMarkup}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.title)}</b><span>${esc(item.date ? item.dateLabel || item.date : item.status || '')}</span><small>${esc(item.description || item.workspaceImpact || item.nextStep || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button></article>
+      </section>`}`
   await hydrateWorkspaceEvidenceBlobPreviews();
 }
 
@@ -8966,6 +8999,8 @@ async function renderMissionControlPlans() {
 }
 
 async function renderMissionControl(prefetchedDocuments = null, prefetchedSections = null) {
+  const missionControlSidebar = $('#missionControlSidebar');
+  if (missionControlSidebar) missionControlSidebar.innerHTML = renderMissionControlSidebar();
   if (missionControlView === 'landing') {
     await renderMissionControlLanding();
     updateMissionControlNavigationVisibility();
@@ -8988,34 +9023,211 @@ async function renderMissionControl(prefetchedDocuments = null, prefetchedSectio
   await renderChiefWorkspace();
 }
 
-$('#openProfessionalWorkspace').onclick = () => switchExperience('professional-workspace', { destination: view });
-$('#returnMissionControl').onclick = () => switchExperience('mission-control');
-const missionControlIdentity = $('.mc-control-identity');
-missionControlIdentity?.setAttribute('role', 'button');
-missionControlIdentity?.setAttribute('tabindex', '0');
-missionControlIdentity?.setAttribute('aria-label', 'Return to landing page');
-missionControlIdentity?.addEventListener('click', () => showMissionControlView('landing'));
-missionControlIdentity?.addEventListener('keydown', event => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    showMissionControlView('landing');
-  }
-});
-
 function showMissionControlView(name = 'home') {
   if (!['plans', 'dashboard', 'workspace', 'home', 'history'].includes(name)) releaseDrawingSource();
   missionControlView = ['projects', 'chat', 'history', 'library', 'inspections', 'plans', 'dashboard', 'workspace', 'home', 'landing'].includes(name) ? name : 'home';
   updateMissionControlNavigationVisibility();
-  const homeButton = $('[data-control-home]');
-  homeButton?.toggleAttribute('aria-current', missionControlView === 'home');
-  $$('.mc-control-nav button[data-control-view]').forEach(button => {
+  const homeButton = $('#missionControlSidebar [data-control-home]');
+  homeButton?.toggleAttribute('aria-current', missionControlView === 'home' || missionControlView === 'chat' || missionControlView === 'history');
+  $$(`#missionControlSidebar [data-control-view]`).forEach(button => {
     const active = button.dataset.controlView === missionControlView;
     button.toggleAttribute('aria-current', active);
   });
   return renderMissionControl().then(() => $('#missionControlTitle')?.focus());
 }
-$('[data-control-home]').onclick = () => showMissionControlView('home');
-$$('[data-control-view]').forEach(button => button.onclick = () => showMissionControlView(button.dataset.controlView));
+
+async function handleMissionControlSidebarButton(button) {
+  if (!button) return false;
+  if (button.id === 'openProfessionalWorkspace') {
+    await switchExperience('professional-workspace', { destination: view });
+    return true;
+  }
+  if (button.dataset.controlView) {
+    if (button.dataset.controlView === 'dashboard') {
+      await showMissionControlView('dashboard');
+      return true;
+    }
+    if (button.dataset.controlView === 'workspace') {
+      await showMissionControlView('workspace');
+      return true;
+    }
+  }
+  if (button.dataset.controlHome !== undefined) {
+    await showMissionControlView('home');
+    return true;
+  }
+  if (button.dataset.wsAction === 'new') {
+    activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
+    activeBedfordWorkspaceSheetNumber = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
+    activeBedfordWorkspaceSection = 'overview';
+    workspaceTradesSessionState.expandedTradesWorkspaceId = '';
+    workspaceTradesSessionState.expandedWorkspaceCategory = '';
+    await showMissionControlView('workspace');
+    return true;
+  }
+  if (button.dataset.wsAction === 'chief') {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('home');
+    const prompt = $('#missionControlPrompt');
+    if (prompt) {
+      const selectedSheet = activeWorkspace?.sourceSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+        || activeWorkspace?.relatedSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+        || null;
+      prompt.value = buildWorkspaceChiefPrompt(activeWorkspace, activeWorkspace?.pmisBuilding || '', projectMilestoneContext, {
+        selectedSheet,
+        issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }),
+        checklistModel: buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }), pmisRuntime: missionPmisRuntimeData() }),
+        timelineModel: buildWorkspaceTimelineModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }), checklistModel: buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }), pmisRuntime: missionPmisRuntimeData() }) }),
+        checklistBlockedCount: buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }), pmisRuntime: missionPmisRuntimeData() }).counts?.blocked ?? 0
+      });
+      prompt.focus();
+    }
+    return true;
+  }
+  if (button.dataset.wsAction === 'compare-spec') {
+    workspaceComparisonsSessionState.mode = WORKSPACE_COMPARISON_MODES.REQUIREMENT;
+    workspaceComparisonsSessionState.selectedRequirementId = '';
+    activeBedfordWorkspaceSection = 'comparisons';
+    await showMissionControlView('workspace');
+    return true;
+  }
+  if (button.dataset.wsAction === 'evidence') {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    const selectedSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || selectableSheets[0] || null;
+    openWorkspaceEvidenceModal({
+      mode: 'create',
+      workspace: activeWorkspace,
+      selectedSheet,
+      relatedSpecifications: activeWorkspace?.applicableSpecifications || [],
+      sourceContext: {
+        launchedFrom: activeBedfordWorkspaceSection || 'overview',
+        currentSection: activeBedfordWorkspaceSection || 'overview',
+        projectPhase: projectMilestoneContext?.projectPhase || '',
+        ntpDateLabel: projectMilestoneContext?.ntpDateLabel || '',
+        contractCompletionDateLabel: projectMilestoneContext?.contractCompletionDateLabel || '',
+        roomScheduleStatus: projectMilestoneContext?.roomScheduleStatus || '',
+        scheduleStatus: projectMilestoneContext?.scheduleStatus || ''
+      }
+    });
+    return true;
+  }
+  if (button.dataset.wsAction === 'rfi') {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    const selectedSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || selectableSheets[0] || null;
+    const rfiState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+    rfiState.view = 'rfis';
+    openWorkspaceRfiFromWorkspaceContext({
+      workspace: activeWorkspace,
+      selectedSheet,
+      projectMilestoneContext,
+      sourceContext: {
+        launchedFrom: activeBedfordWorkspaceSection || 'overview',
+        currentSection: activeBedfordWorkspaceSection || 'overview'
+      }
+    });
+    return true;
+  }
+  if (button.dataset.wsAction === 'observation') {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const pmisRuntime = missionPmisRuntimeData();
+    const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
+    const checklistModel = buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, pmisRuntime });
+    const issueState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+    const selectedIssue = activeBedfordWorkspaceSection === 'issues'
+      ? issuesModel.issues.find(item => item.id === issueState.selectedIssueId) || null
+      : null;
+    const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
+    const currentChecklistItem = activeBedfordWorkspaceSection === 'checklist'
+      ? checklistModel.items.find(item => item.id === checklistState.selectedItemId) || null
+      : null;
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    const selectedSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+      || selectableSheets[0]
+      || null;
+    openWorkspaceObservationModal({
+      mode: 'create',
+      workspace: activeWorkspace,
+      selectedSheet,
+      relatedIssue: selectedIssue,
+      relatedChecklistItem: currentChecklistItem,
+      relatedSpecifications: activeWorkspace?.applicableSpecifications || [],
+      sourceContext: {
+        launchedFrom: activeBedfordWorkspaceSection || 'overview',
+        projectPhase: projectMilestoneContext?.projectPhase || '',
+        ntpDateLabel: projectMilestoneContext?.ntpDateLabel || '',
+        contractCompletionDateLabel: projectMilestoneContext?.contractCompletionDateLabel || '',
+        roomScheduleStatus: projectMilestoneContext?.roomScheduleStatus || '',
+        scheduleStatus: projectMilestoneContext?.scheduleStatus || ''
+      }
+    });
+    return true;
+  }
+  if (button.dataset.wsAction === 'drawings') {
+    const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
+    const target = buildWorkspaceDrawingTarget(activeWorkspace, activeBedfordWorkspaceSheetNumber);
+    if (target) drawingTarget = target;
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('plans');
+    return true;
+  }
+  if (button.dataset.wsAction === 'toggle-fullscreen') {
+    captureWorkspaceDrawingFullscreenScrollState();
+    workspaceDrawingFullscreen = !workspaceDrawingFullscreen;
+    await renderMissionControlWorkspace();
+    restoreWorkspaceDrawingFullscreenScrollState();
+    return true;
+  }
+  if (button.dataset.wsAction === 'specs') {
+    const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
+    const firstSpec = activeWorkspace?.applicableSpecifications?.[0]?.sectionNumber || '';
+    if (firstSpec) return openChiefSpecificationViewer(firstSpec, { returnTarget: 'chat' });
+    return showMissionControlView('home');
+  }
+  if (button.dataset.wsSection) {
+    activeBedfordWorkspaceSection = button.dataset.wsSection;
+    await showMissionControlView('workspace');
+    window.setTimeout(() => {
+      const anchor = document.getElementById(workspaceSectionAnchor(activeBedfordWorkspaceSection));
+      anchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+    return true;
+  }
+  return false;
+}
+
+$('#openProfessionalWorkspace')?.addEventListener('click', () => void switchExperience('professional-workspace', { destination: view }));
+$('#returnMissionControl')?.addEventListener('click', () => switchExperience('mission-control'));
+$('#missionControlSidebar')?.addEventListener('click', async event => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  const handled = await handleMissionControlSidebarButton(button);
+  if (handled) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+});
+$('#missionControlSidebar')?.addEventListener('change', async event => {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement) || !target.matches('select[data-ws-select]')) return;
+  activeBedfordWorkspaceId = target.value || getBedfordWorkspaceDefaultId();
+  const selectedWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace;
+  activeBedfordWorkspaceSheetNumber = selectedWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
+  activeBedfordWorkspaceSection = 'overview';
+  workspaceTradesSessionState.expandedTradesWorkspaceId = '';
+  workspaceTradesSessionState.expandedWorkspaceCategory = '';
+  await showMissionControlView('workspace');
+});
 $('#missionControlContent').onclick = async event => {
   const button = event.target.closest('button');
   if (!button) return;
