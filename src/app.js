@@ -4192,8 +4192,8 @@ const getBedfordDrawingCatalogRecords = () => bedfordDrawingSets.flatMap(set => 
 const getBedfordDrawingSetForDocumentId = documentId => getBedfordDrawingSetByDocumentId(documentId) || bedfordDrawingSets.find(set => set.documentId === documentId) || null;
 const getBedfordDrawingSetForSheetNumber = sheetNumber => {
   const sheet = String(sheetNumber || '').trim().toUpperCase();
-  if (/^62/.test(sheet)) return getBedfordDrawingSetByBuildingId('62') || bedfordDrawingSets.find(set => set.buildingId === '62') || null;
-  if (/^61/.test(sheet)) return getBedfordDrawingSetByBuildingId('61') || bedfordDrawingSets.find(set => set.buildingId === '61') || null;
+  const matchedSet = bedfordDrawingSets.find(set => sheet.startsWith(String(set.buildingId || '').trim().toUpperCase()));
+  if (matchedSet) return matchedSet;
   return getBedfordDrawingSetByBuildingId(activeBedfordDrawingBuildingId) || bedfordDrawingSets[0] || null;
 };
 const loadBedfordRelationshipBootstrap = async drawingSet => {
@@ -8614,8 +8614,9 @@ async function renderMissionControlWorkspace() {
     })
     : workspaceModel;
   const activeWorkspace = workspaceContextModel.activeWorkspace || workspaceSeed || null;
+  const previewDrawingSet = previewSheet ? getBedfordDrawingSetForReference(previewSheet) : null;
   const previewUrl = previewSheet?.pdfPageNumber
-    ? new URL(`project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf#page=${previewSheet.pdfPageNumber}&view=Fit`, document.baseURI).toString()
+    ? new URL(`project-documents/bedford/drawings/${previewDrawingSet?.sourceFileName || '518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf'}#page=${previewSheet.pdfPageNumber}&view=Fit`, document.baseURI).toString()
     : '';
   const chiefInsight = activeWorkspace ? buildChiefInsight({
     id: activeWorkspace.id,

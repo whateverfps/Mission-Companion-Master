@@ -19,6 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
 const readJson = relativePath => JSON.parse(fs.readFileSync(path.join(root, relativePath), 'utf8'));
 const relationshipData = readJson('project-data/bedford/relationships/building-61-spec-links.json');
+const relationshipDataMCR = readJson('project-data/bedford/relationships/building-MCR-spec-links.json');
 
 function flattenRelationshipLinks(data) {
   return Object.entries(data.results || {}).flatMap(([sheetNumber, sheetData]) =>
@@ -30,9 +31,9 @@ function flattenRelationshipLinks(data) {
   );
 }
 
-test('Bedford workspace registry exposes the four plan-derived Building 61 records', () => {
+test('Bedford workspace registry exposes the plan-derived Building 61 records plus MCR', () => {
   const records = listBedfordWorkspaceRecords();
-  assert.deepEqual(records.map(item => item.id), ['B13', '124', '226', '137']);
+  assert.deepEqual(records.map(item => item.id), ['B13', '124', '226', '137', 'MCR']);
   assert.equal(getBedfordWorkspaceDefaultId(), 'B13');
 });
 
@@ -81,9 +82,21 @@ test('Bedford workspace model keeps the active record and returns all records', 
   const model = buildBedfordWorkspaceModel('226');
   assert.equal(model.activeWorkspaceId, '226');
   assert.equal(model.activeWorkspace?.room, '226');
-  assert.equal(model.workspaces.length, 4);
-  assert.deepEqual(model.workspaces.map(item => item.id), ['B13', '124', '226', '137']);
+  assert.equal(model.workspaces.length, 5);
+  assert.deepEqual(model.workspaces.map(item => item.id), ['B13', '124', '226', '137', 'MCR']);
   assert.equal(model.projectMilestoneContext?.sourceDocument?.id, BEDFORD_NTP_SOURCE_DOCUMENT.id);
+});
+
+test('Bedford workspace registry exposes MCR as a first-class building workspace', () => {
+  const mcr = getBedfordWorkspaceRecord('MCR');
+  assert.ok(mcr);
+  assert.equal(mcr.building, 'MCR');
+  assert.equal(mcr.room, 'MCR');
+  assert.equal(mcr.sourceSheets[0].sheetNumber, 'MCRG-000');
+  assert.equal(mcr.sourceSheets[1].sheetNumber, 'MCRG-001');
+  assert.ok(mcr.drawingCategories.some(category => category.label === 'General'));
+  assert.ok(mcr.drawingCategories.some(category => category.label === 'Electrical'));
+  assert.match(mcr.chiefInsight, /MCR is the New Main Computer Room building/i);
 });
 
 test('Bedford workspace chief insight is derived from the active record rather than canned prose', () => {
@@ -105,6 +118,16 @@ test('Bedford workspace chief insight is derived from the active record rather t
   assert.match(insight, /5 related sheets/i);
   assert.match(insight, /1 applicable specification section/i);
   assert.match(insight, /existing-transition room/i);
+});
+
+test('Bedford workspace registry resolves selected MCR sheets against the MCR relationship graph', () => {
+  const drawingLinks = flattenRelationshipLinks(relationshipDataMCR);
+  const mcr = buildBedfordWorkspaceModel('MCR', { selectedSheetNumber: 'MCRA-101', drawingLinks }).activeWorkspace;
+  assert.ok(mcr);
+  assert.equal(mcr.applicableSpecifications.length > 0, true);
+  assert.ok(mcr.applicableSpecifications.some(item => item.sectionNumber === '06 10 00'));
+  assert.equal(mcr.sourceSheets[0].pageId, 'drawing-page:bedford-mcr-drawings:1');
+  assert.ok(mcr.drawingCategories.some(category => category.label === 'Architectural'));
 });
 
 test('Bedford project milestone context is deterministic and shared across workspace records', () => {

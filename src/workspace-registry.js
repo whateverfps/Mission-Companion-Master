@@ -1,10 +1,29 @@
 import { BUILDING_61_DRAWING_CATALOG } from './building-61-drawing-catalog.js';
+import { BUILDING_MCR_DRAWING_CATALOG } from './building-MCR-drawing-catalog.js';
 import { buildBedfordProjectMilestoneContext } from './workspace-milestones.js';
 
 const text = value => value === null || value === undefined ? '' : String(value).trim();
 const list = value => Array.isArray(value) ? value : [];
 
+const BEDFORD_DRAWING_CATALOG_BY_BUILDING_ID = Object.freeze({
+  '61': BUILDING_61_DRAWING_CATALOG,
+  MCR: BUILDING_MCR_DRAWING_CATALOG
+});
 const BUILDING_61_SHEET_INDEX = new Map(BUILDING_61_DRAWING_CATALOG.map(sheet => [sheet.sheetNumber, sheet]));
+const BUILDING_MCR_SHEET_INDEX = new Map(BUILDING_MCR_DRAWING_CATALOG.map(sheet => [sheet.sheetNumber, sheet]));
+const MCR_DISCIPLINE_ORDER = [
+  'General',
+  'Civil',
+  'Structural',
+  'Architectural',
+  'Interiors',
+  'Equipment',
+  'Fire Protection',
+  'Plumbing',
+  'Mechanical',
+  'Electrical',
+  'Telecommunication'
+];
 
 const DRAWING_CATEGORY_ORDER = [
   'PRIMARY SOURCE SHEETS',
@@ -19,6 +38,30 @@ const DRAWING_CATEGORY_ORDER = [
 ];
 
 const specificationMap = new Map([
+  ['MCRG-000', [
+    ['01 32 16.15', 'PROJECT SCHEDULES'],
+    ['01 91 00', 'GENERAL COMMISSIONING REQUIREMENTS'],
+    ['07 08 00', 'FACILITY EXTERIOR CLOSURE COMMISSIONING'],
+    ['21 08 00', 'COMMISSIONING OF FIRE SUPPRESSION SYSTEMS'],
+    ['22 08 00', 'COMMISSIONING OF PLUMBING SYSTEMS'],
+    ['23 08 00', 'COMMISSIONING OF HVAC SYSTEMS'],
+    ['26 08 00', 'COMMISSIONING OF ELECTRICAL SYSTEMS'],
+    ['27 08 00', 'COMMISSIONING OF COMMUNICATIONS SYSTEMS'],
+    ['28 08 00', 'COMMISSIONING OF SECURITY SYSTEMS'],
+    ['33 08 00', 'COMMISSIONING OF SITE UTILITY SYSTEMS']
+  ]],
+  ['MCRG-001', [
+    ['01 32 16.15', 'PROJECT SCHEDULES'],
+    ['01 91 00', 'GENERAL COMMISSIONING REQUIREMENTS'],
+    ['07 08 00', 'FACILITY EXTERIOR CLOSURE COMMISSIONING'],
+    ['21 08 00', 'COMMISSIONING OF FIRE SUPPRESSION SYSTEMS'],
+    ['22 08 00', 'COMMISSIONING OF PLUMBING SYSTEMS'],
+    ['23 08 00', 'COMMISSIONING OF HVAC SYSTEMS'],
+    ['26 08 00', 'COMMISSIONING OF ELECTRICAL SYSTEMS'],
+    ['27 08 00', 'COMMISSIONING OF COMMUNICATIONS SYSTEMS'],
+    ['28 08 00', 'COMMISSIONING OF SECURITY SYSTEMS'],
+    ['33 08 00', 'COMMISSIONING OF SITE UTILITY SYSTEMS']
+  ]],
   ['61T-100', [
     ['27 10 00', 'INFORMATION TRANSPORT INFRASTRUCTURE'],
     ['27 05 11', 'COMMON WORK RESULTS FOR COMMUNICATIONS'],
@@ -72,15 +115,31 @@ const specificationMap = new Map([
   ]]
 ]);
 
-function sheetRecord(sheetNumber) {
-  const sheet = BUILDING_61_SHEET_INDEX.get(text(sheetNumber)) || null;
+function catalogForBuilding(buildingId = '61') {
+  return BEDFORD_DRAWING_CATALOG_BY_BUILDING_ID[text(buildingId).toUpperCase()] || BUILDING_61_DRAWING_CATALOG;
+}
+
+function sheetIndexForBuilding(buildingId = '61') {
+  return text(buildingId).toUpperCase() === 'MCR' ? BUILDING_MCR_SHEET_INDEX : BUILDING_61_SHEET_INDEX;
+}
+
+function drawingSetSlugForBuildingId(buildingId = '61') {
+  return text(buildingId).toUpperCase() === 'MCR'
+    ? 'bedford-mcr-drawings'
+    : text(buildingId).toUpperCase() === '62'
+      ? 'bedford-b62-drawings'
+      : 'bedford-b61-drawings';
+}
+
+function sheetRecord(sheetNumber, { buildingId = '61', drawingCatalog = catalogForBuilding(buildingId) } = {}) {
+  const sheet = sheetIndexForBuilding(buildingId).get(text(sheetNumber)) || list(drawingCatalog).find(item => text(item.sheetNumber) === text(sheetNumber)) || null;
   return sheet ? {
     sheetNumber: sheet.sheetNumber,
     sheetTitle: sheet.sheetTitle,
     discipline: sheet.discipline,
     drawingType: sheet.drawingType,
     pdfPageNumber: Number(sheet.pdfPageNumber) || 0,
-    pageId: sheet.pageId || `drawing-page:bedford-b61-drawings:${Number(sheet.pdfPageNumber) || 0}`
+    pageId: sheet.pageId || `drawing-page:${drawingSetSlugForBuildingId(buildingId)}:${Number(sheet.pdfPageNumber) || 0}`
   } : {
     sheetNumber: text(sheetNumber),
     sheetTitle: 'Not available',
@@ -122,7 +181,8 @@ function workspaceLevelTokens(level = '') {
   return [value];
 }
 
-function sheetMatchesWorkspaceContext(sheet = {}, { type = '', level = '', room = '' } = {}) {
+function sheetMatchesWorkspaceContext(sheet = {}, { type = '', level = '', room = '', buildingId = '61' } = {}) {
+  if (text(buildingId).toUpperCase() === 'MCR') return true;
   const sheetNumber = text(sheet.sheetNumber).toUpperCase();
   const title = text(sheet.sheetTitle).toUpperCase();
   const drawingType = text(sheet.drawingType).toUpperCase();
@@ -146,11 +206,11 @@ function sheetMatchesWorkspaceContext(sheet = {}, { type = '', level = '', room 
   return false;
 }
 
-function buildDrawingCategories({ sourceSheets = [], type = '', level = '', room = '' } = {}) {
+function buildDrawingCategories({ sourceSheets = [], type = '', level = '', room = '', buildingId = '61', drawingCatalog = catalogForBuilding(buildingId) } = {}) {
   const primarySheetNumbers = new Set(list(sourceSheets).map(sheetNumber => text(sheetNumber)));
   const categories = new Map();
   const sourceRecords = list(sourceSheets).map(sheetNumber => ({
-    ...sheetRecord(sheetNumber),
+    ...sheetRecord(sheetNumber, { buildingId, drawingCatalog }),
     relevance: 'PRIMARY',
     category: 'PRIMARY SOURCE SHEETS'
   }));
@@ -167,16 +227,21 @@ function buildDrawingCategories({ sourceSheets = [], type = '', level = '', room
     categories.get('PRIMARY SOURCE SHEETS').items.push(record);
   }
 
-  for (const sheet of BUILDING_61_DRAWING_CATALOG) {
+  const catalog = list(drawingCatalog);
+  for (const sheet of catalog) {
     const sheetNumber = text(sheet.sheetNumber);
     if (!sheetNumber || primarySheetNumbers.has(sheetNumber)) continue;
-    if (!sheetMatchesWorkspaceContext(sheet, { type, level, room })) continue;
-    const categoryLabel = sheetCategoryLabel(sheet, type, primarySheetNumbers);
+    if (!sheetMatchesWorkspaceContext(sheet, { type, level, room, buildingId })) continue;
+    const categoryLabel = text(buildingId).toUpperCase() === 'MCR'
+      ? (text(sheet.discipline) || 'General')
+      : sheetCategoryLabel(sheet, type, primarySheetNumbers);
     if (!categories.has(categoryLabel)) {
       categories.set(categoryLabel, {
         id: categoryLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
         label: categoryLabel.split(' / ').join(' / '),
-        relationship: categoryLabel === 'EXISTING / TRANSITION'
+        relationship: text(buildingId).toUpperCase() === 'MCR'
+          ? 'Building Package'
+          : categoryLabel === 'EXISTING / TRANSITION'
           ? 'Existing / Transition'
           : categoryLabel === 'PRIMARY SOURCE SHEETS'
             ? 'Primary Source'
@@ -196,6 +261,29 @@ function buildDrawingCategories({ sourceSheets = [], type = '', level = '', room
   const orderedCategories = DRAWING_CATEGORY_ORDER
     .map(label => categories.get(label))
     .filter(category => category && category.items.length);
+  if (text(buildingId).toUpperCase() === 'MCR') {
+    const primaryCategory = categories.get('PRIMARY SOURCE SHEETS') || null;
+    const orderedMcrCategories = MCR_DISCIPLINE_ORDER
+      .map(label => categories.get(label))
+      .filter(category => category && category.items.length);
+    return [primaryCategory, ...orderedMcrCategories].filter(Boolean).map(category => ({
+      ...category,
+      sheets: category.items,
+      items: category.items
+        .slice()
+        .sort((left, right) => String(left.sheetNumber).localeCompare(String(right.sheetNumber), undefined, { numeric: true }))
+        .map(item => ({
+          sheetNumber: item.sheetNumber,
+          sheetTitle: item.sheetTitle,
+          discipline: item.discipline,
+          drawingType: item.drawingType,
+          pdfPageNumber: Number(item.pdfPageNumber) || 0,
+          pageId: item.pageId || `drawing-page:bedford-mcr-drawings:${Number(item.pdfPageNumber) || 0}`,
+          relevance: item.relevance || 'DIRECT',
+          category: item.category || category.label
+        }))
+    }));
+  }
 
   return orderedCategories.map(category => ({
     ...category,
@@ -359,6 +447,20 @@ function buildChiefInsight({
   const relatedSheetCount = list(relatedSheets).length;
   const specCount = list(applicableSpecifications).length;
   const relatedRoomCount = list(relatedRooms).length;
+  if (text(id).toUpperCase() === 'MCR') {
+    const sourceSheetSummary = `${sheetCount} source sheet${sheetCount === 1 ? '' : 's'}`;
+    const relatedSheetSummary = relatedSheetCount ? ` and ${relatedSheetCount} related sheet${relatedSheetCount === 1 ? '' : 's'}` : '';
+    const parts = [
+      'MCR is the New Main Computer Room building for Bedford EHRM.',
+      `It is supported by ${sourceSheetSummary}${relatedSheetSummary}.`,
+      specCount ? `It currently maps to ${specCount} applicable specification section${specCount === 1 ? '' : 's'}.` : 'Applicable specification relationships are still being established for the broader package.',
+      'Use the source sheets and PMIS context to track the migration, redundancy, and activation sequence.'
+    ];
+    if (projectMilestoneContext) {
+      parts.push(`The project remains in ${projectMilestoneContext.projectPhase || 'Preconstruction'} under Notice to Proceed on ${projectMilestoneContext.ntpDateLabel || projectMilestoneContext.ntpDate || 'the NTP date'}.`);
+    }
+    return parts.slice(0, 4).join(' ');
+  }
   const parts = [
     `${room || id || 'This workspace'} is the ${name || 'Bedford workspace'} for ${disciplineFocus || 'project evidence review'} at ${level || 'the recorded level'} in ${pmisBuilding || 'Bedford'}.`,
     `It is supported by ${sheetCount} source sheet${sheetCount === 1 ? '' : 's'}${relatedSheetCount ? ` and ${relatedSheetCount} related sheet${relatedSheetCount === 1 ? '' : 's'}` : ''}.`,
@@ -388,14 +490,16 @@ function buildWorkspaceRecord({
   relatedRooms = [],
   pmisBuilding,
   chiefInsight,
-  sourceEvidence
+  sourceEvidence,
+  drawingCatalog = BUILDING_61_DRAWING_CATALOG
 }) {
-  const resolvedSourceSheets = list(sourceSheets).map(sheetNumber => sheetRecord(sheetNumber));
-  const drawingCategories = buildDrawingCategories({ sourceSheets, type, level, room });
+  const buildingId = text(building).toUpperCase();
+  const resolvedSourceSheets = list(sourceSheets).map(sheetNumber => sheetRecord(sheetNumber, { buildingId, drawingCatalog }));
+  const drawingCategories = buildDrawingCategories({ sourceSheets, type, level, room, buildingId, drawingCatalog });
   const resolvedRelatedSheets = (() => {
     const seen = new Set(resolvedSourceSheets.map(item => item.sheetNumber));
     const records = [];
-    for (const entry of list(relatedSheets).map(sheetNumber => sheetRecord(sheetNumber))) {
+    for (const entry of list(relatedSheets).map(sheetNumber => sheetRecord(sheetNumber, { buildingId, drawingCatalog }))) {
       if (!entry.sheetNumber || seen.has(entry.sheetNumber)) continue;
       seen.add(entry.sheetNumber);
       records.push(entry);
@@ -487,6 +591,21 @@ const WORKSPACE_REGISTRY = Object.freeze([
     relatedRooms: ['B13', '124', '226'],
     pmisBuilding: 'Building 61',
     chiefInsight: 'The room 137 inventory list and telecom details make it the clearest existing-transition workspace in the current B61 set.'
+  }),
+  buildWorkspaceRecord({
+    id: 'MCR',
+    building: 'MCR',
+    room: 'MCR',
+    name: 'New Main Computer Room Building',
+    type: 'PRIMARY',
+    importance: 'Primary',
+    level: 'Building',
+    disciplineFocus: 'MCR / Infrastructure',
+    sourceSheets: ['MCRG-000', 'MCRG-001'],
+    relatedSheets: BUILDING_MCR_DRAWING_CATALOG.map(item => item.sheetNumber).filter(sheet => !['MCRG-000', 'MCRG-001'].includes(sheet)),
+    relatedRooms: [],
+    pmisBuilding: 'MCR',
+    drawingCatalog: BUILDING_MCR_DRAWING_CATALOG
   })
 ]);
 

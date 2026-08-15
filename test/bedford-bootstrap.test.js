@@ -12,8 +12,10 @@ const authoritativeSections = readJson('project-data/bedford/specifications/auth
 const bedfordSpecificationSections = readJson('project-data/bedford/specifications/bedford-spec-index.json');
 const relationshipData = readJson('project-data/bedford/relationships/building-61-spec-links.json');
 const relationshipDataB62 = readJson('project-data/bedford/relationships/building-62-spec-links.json');
+const relationshipDataMCR = readJson('project-data/bedford/relationships/building-MCR-spec-links.json');
 const drawingCatalog = readJson('project-data/bedford/drawing-catalogs/building-61.json');
 const drawingCatalogB62 = readJson('project-data/bedford/drawing-catalogs/building-62.json');
+const drawingCatalogMCR = readJson('project-data/bedford/drawing-catalogs/building-MCR.json');
 
 const { createSpecificationIndex } = await import('../src/specification-index.js');
 const { createDrawingCatalog } = await import('../src/drawing-catalog.js');
@@ -153,6 +155,7 @@ test('Bedford built-in PDF source documents keep canonical packaged source paths
   assert.deepEqual(paths.sort(), [
     'project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf',
     'project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B62.20260316.pdf',
+    'project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.MCR.20260316.pdf',
     'project-documents/bedford/drawings/518-22-700.Bedford.MA.EHRM.Specifications.IFC.20260413.pdf',
     'project-documents/bedford/drawings/C08 - Notice to Proceed Sawtooth - EHRM Upgrades Bedford MA.pdf'
   ].sort());
@@ -228,9 +231,16 @@ test('Bedford drawing reference identity maps to the correct building set before
 
   const b62Set = getBedfordDrawingSetForReference(b62Reference);
   const b61Set = getBedfordDrawingSetForReference(b61Reference);
+  const mcrReference = {
+    sheetNumber: 'MCRA-101',
+    pageId: drawingCatalogMCR.sheets.find(item => item.sheetNumber === 'MCRA-101')?.pageId || 'drawing-page:bedford-mcr-drawings:0',
+    drawingPageId: drawingCatalogMCR.sheets.find(item => item.sheetNumber === 'MCRA-101')?.pageId || 'drawing-page:bedford-mcr-drawings:0'
+  };
+  const mcrSet = getBedfordDrawingSetForReference(mcrReference);
 
   assert.equal(b62Set?.documentId, 'bedford-b62-drawings');
   assert.equal(b61Set?.documentId, 'bedford-b61-drawings');
+  assert.equal(mcrSet?.documentId, 'bedford-mcr-drawings');
 });
 
 test('Bedford B62 catalog and relationships load through the same shared pipeline', async () => {
@@ -283,4 +293,47 @@ test('Bedford B62 catalog and relationships load through the same shared pipelin
   const fireRecords = records.filter(item => item.drawingPageId === firePageId);
   assert.equal(fireRecords.length, 6);
   assert.equal(drawingCatalogB62.sheets.some(item => item.sheetNumber === '62FX100'), true);
+});
+
+test('Bedford MCR catalog and relationships load through the same shared pipeline', async () => {
+  const specificationIndex = createSpecificationIndex();
+  const drawingSpecificationLinks = createDrawingSpecificationLinkService({
+    index: specificationIndex,
+    persistence: null
+  });
+  specificationIndex.index({
+    document: {
+      id: 'bedford-specifications',
+      projectId: 'bedford',
+      name: 'Bedford Specification Manual',
+      title: 'Bedford Specification Manual'
+    },
+    sourceSections: authoritativeSections.map(section => ({
+      ...section,
+      pageStart: section.pageStart || section.startPdfPage || section.startPage || null,
+      pageEnd: section.pageEnd || section.endPdfPage || section.endPage || section.startPdfPage || section.startPage || null
+    }))
+  });
+
+  const loadResult = await loadBedfordDrawingSpecMappings({
+    drawingSpecificationLinks,
+    specificationIndex,
+    projectId: 'bedford',
+    drawingDocumentId: 'bedford-specifications',
+    relationshipsPath: 'project-data/bedford/relationships/building-MCR-spec-links.json',
+    baseUri: 'http://example.test/',
+    fetcher: async url => ({
+      ok: true,
+      url,
+      async json() {
+        return relationshipDataMCR;
+      }
+    })
+  });
+
+  assert.equal(loadResult.loaded, 711);
+  const records = drawingSpecificationLinks.forProject('bedford');
+  assert.equal(records.length, 711);
+  assert.equal(drawingCatalogMCR.sheets.length, 120);
+  assert.equal(drawingCatalogMCR.sheets.some(item => item.sheetNumber === 'MCRT-100'), true);
 });
