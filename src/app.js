@@ -3811,6 +3811,36 @@ function workspaceDisplayTitle(value = '') {
     .replace(/\s{2,}/g, ' ');
 }
 
+function renderChiefSuggestedQuestionsMarkup() {
+  return `
+    <section class="mc-chief-workspace-questions" aria-label="Suggested construction questions">
+      <span>Suggested questions</span>
+      <div class="mc-chief-question-group">
+        <strong>Project Intelligence</strong>
+        <div class="mc-chief-question-list">
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What is the status of Building 61?">What is the status of Building 61?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What is holding Building 61 back?">What is holding Building 61 back?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What trades need attention in Building 61?">What trades need attention in Building 61?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What is the OIT readiness for Building 61?">What is the OIT readiness for Building 61?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="Is Building 61 ready for pilot completion?">Is Building 61 ready for pilot completion?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="Which building needs the most attention?">Which building needs the most attention?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="Give me a PMIS project summary.">Give me a PMIS project summary.</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What should I focus on today?">What should I focus on today?</button>
+        </div>
+      </div>
+      <div class="mc-chief-question-group">
+        <strong>Specifications &amp; Drawings</strong>
+        <div class="mc-chief-question-list">
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs apply to 61FX100?">What specs apply to 61FX100?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What drawings relate to 28 31 00?">What drawings relate to 28 31 00?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs cover HVAC and what drawings relate?">What specs cover HVAC and what drawings relate?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="How long after NTP until a schedule is required according to the specifications?">How long after NTP until a schedule is required according to the specifications?</button>
+          <button type="button" class="mc-chief-question-chip" data-control-prompt="What specifications govern 61H-101?">What specifications govern 61H-101?</button>
+        </div>
+      </div>
+    </section>`;
+}
+
 function workspaceRoomTreeMarkup(workspaceModel = {}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = [], workspaceTradesState = null) {
   const tradesState = workspaceTradesState || { expandedTradesWorkspaceId: '', expandedWorkspaceCategory: '' };
   const workspaces = list(workspaceModel.workspaces);
@@ -3893,10 +3923,25 @@ function workspaceNextStepPriority(item = {}) {
   return 'high';
 }
 
+function keepWorkspaceTreeOpen() {
+  workspaceTreeSessionState.selectorOpen = true;
+}
+
+function syncMissionControlWorkspaceTreeState() {
+  const selector = $('#missionControlSidebar .mc-mission-workspace-select');
+  if (!selector) return;
+  selector.open = !!workspaceTreeSessionState.selectorOpen;
+  if (selector.dataset.workspaceTreeBound === 'true') return;
+  selector.dataset.workspaceTreeBound = 'true';
+  selector.addEventListener('toggle', () => {
+    workspaceTreeSessionState.selectorOpen = selector.open;
+  });
+}
+
 let view = 'chat';
 let experience = 'mission-control';
 let lastProfessionalView = '';
-let missionControlView = 'workspace';
+let missionControlView = 'landing';
 let missionControlAttachments = [];
 let chiefHistoryVisible = false;
 let activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
@@ -3907,6 +3952,9 @@ const workspaceDrawingFullscreenScrollState = {
   windowScrollY: 0,
   sidebarScrollTop: 0,
   evidenceScrollTop: 0
+};
+const workspaceTreeSessionState = {
+  selectorOpen: false
 };
 const workspaceTradesSessionState = {
   expandedTradesWorkspaceId: '',
@@ -6777,32 +6825,6 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
             <p>${project ? `Use the active project context and the latest construction evidence in one persistent workspace.` : 'Create or import a project to begin working with Chief in a single continuous workspace.'}</p>
           </div>
         </div>
-        <div class="mc-chief-workspace-questions" aria-label="Suggested construction questions">
-          <span>Suggested questions</span>
-          <div class="mc-chief-question-group">
-            <strong>Project Intelligence</strong>
-            <div class="mc-chief-question-list">
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What is the status of Building 61?">What is the status of Building 61?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What is holding Building 61 back?">What is holding Building 61 back?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What trades need attention in Building 61?">What trades need attention in Building 61?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What is the OIT readiness for Building 61?">What is the OIT readiness for Building 61?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="Is Building 61 ready for pilot completion?">Is Building 61 ready for pilot completion?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="Which building needs the most attention?">Which building needs the most attention?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="Give me a PMIS project summary.">Give me a PMIS project summary.</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What should I focus on today?">What should I focus on today?</button>
-            </div>
-          </div>
-          <div class="mc-chief-question-group">
-            <strong>Specifications &amp; Drawings</strong>
-            <div class="mc-chief-question-list">
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs apply to 61FX100?">What specs apply to 61FX100?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What drawings relate to 28 31 00?">What drawings relate to 28 31 00?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What specs cover HVAC and what drawings relate?">What specs cover HVAC and what drawings relate?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="How long after NTP until a schedule is required according to the specifications?">How long after NTP until a schedule is required according to the specifications?</button>
-              <button type="button" class="mc-chief-question-chip" data-control-prompt="What specifications govern 61H-101?">What specifications govern 61H-101?</button>
-            </div>
-          </div>
-        </div>
       </header>
       <div class="mc-chief-workspace-grid">
         <section class="mc-chief-conversation-panel" aria-label="Chief conversation workspace">
@@ -6836,6 +6858,7 @@ async function renderChiefWorkspace({ historyVisible = false } = {}) {
           ${historyVisible ? `<section class="mc-chief-history" aria-labelledby="mcChiefHistoryTitle"><div class="mc-chief-history-header"><div><span>CONVERSATION HISTORY</span><h2 id="mcChiefHistoryTitle">Recent threads</h2></div></div><div class="mc-chief-history-list">${historyItems.length ? historyItems.map(item => `<button type="button" class="mc-chief-history-item" data-conversation-id="${esc(item.conversationId)}"><strong>${esc(item.title || 'Conversation')}</strong><span>${esc(item.updatedAt ? new Date(item.updatedAt).toLocaleString() : 'Not updated')}</span></button>`).join('') : '<p class="mc-chief-history-empty">No history yet.</p>'}</div></section>` : ''}
           <form id="missionControlComposer" class="mc-control-composer">
             <div class="mc-control-attachments" aria-live="polite">${(conversation?.attachmentDocumentIds || []).map(id => `<span data-attached-document="${esc(id)}">${esc(attachmentNames.get(id) || 'Attached document unavailable')} <button type="button" data-remove-attachment="${esc(id)}" aria-label="Remove attached document">×</button></span>`).join('')}${missionControlAttachments.map(item => `<span class="${esc(item.status)}">${esc(item.name)} · ${esc(item.status)}${item.error ? ` — ${esc(item.error)}` : ''}</span>`).join('')}</div>
+            ${renderChiefSuggestedQuestionsMarkup()}
             <label for="missionControlPrompt">Your question</label>
             <textarea id="missionControlPrompt" rows="3" placeholder="Ask Chief about your project…"></textarea>
             <div class="mc-chief-composer-actions">
@@ -8504,7 +8527,10 @@ async function renderDrawingWorkspaceWithProviders(shell = 'professional', { doc
 function renderMissionControlSidebar() {
   const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
   const activeWorkspace = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
-  const workspaceOptions = workspaceModel.workspaces.map(workspace => `<option value="${esc(workspace.id)}" ${workspace.id === activeBedfordWorkspaceId ? 'selected' : ''}>${esc(workspaceDisplayTitle(workspace))}</option>`).join('');
+  const previewSheet = (activeWorkspace?.sourceSheets || []).find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+    || activeWorkspace?.sourceSheets?.[0]
+    || activeWorkspace?.relatedSheets?.[0]
+    || null;
   const workspaceSummary = activeWorkspace
     ? `${esc(activeWorkspace.building ? `Building ${activeWorkspace.building}` : 'Building 61')} / ${esc(activeWorkspace.level || 'Workspace')} / ${esc(activeWorkspace.room || 'Workspace')}`
     : 'No workspace selected';
@@ -8530,10 +8556,15 @@ function renderMissionControlSidebar() {
     <div class="mc-ws-side-section mc-mission-workspace-picker">
       <small>PROJECT / WORKSPACE</small>
       <button type="button" class="mc-mission-workspace-summary" data-ws-action="new" aria-label="Select workspace">${workspaceSummary}<span>${workspaceSubhead}</span></button>
-      <label class="mc-mission-workspace-select">
-        <span>Select Workspace</span>
-        <select data-ws-select aria-label="Select workspace">${workspaceOptions}</select>
-      </label>
+      <details class="mc-mission-workspace-select"${workspaceTreeSessionState.selectorOpen ? ' open' : ''}>
+        <summary>
+          <span>Select Workspace</span>
+          <small>Collapsed by default · open to browse rooms, trades, and sheets</small>
+        </summary>
+        <div class="mc-mission-workspace-picker-tree">
+          ${workspaceRoomTreeMarkup(workspaceModel, activeWorkspace, previewSheet, workspaceModel?.activeWorkspace?.drawingCategories || [], workspaceTradesSessionState)}
+        </div>
+      </details>
     </div>
     <div class="mc-ws-side-section">
       <small>WORKSPACE SECTIONS</small>
@@ -9001,6 +9032,7 @@ async function renderMissionControlPlans() {
 async function renderMissionControl(prefetchedDocuments = null, prefetchedSections = null) {
   const missionControlSidebar = $('#missionControlSidebar');
   if (missionControlSidebar) missionControlSidebar.innerHTML = renderMissionControlSidebar();
+  syncMissionControlWorkspaceTreeState();
   if (missionControlView === 'landing') {
     await renderMissionControlLanding();
     updateMissionControlNavigationVisibility();
@@ -9042,6 +9074,60 @@ async function handleMissionControlSidebarButton(button) {
     await switchExperience('professional-workspace', { destination: view });
     return true;
   }
+  if (button.dataset.wsSelect) {
+    activeBedfordWorkspaceId = button.dataset.wsSelect;
+    keepWorkspaceTreeOpen();
+    const selectedWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace;
+    activeBedfordWorkspaceSheetNumber = selectedWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
+    activeBedfordWorkspaceSection = 'overview';
+    workspaceTradesSessionState.expandedTradesWorkspaceId = '';
+    workspaceTradesSessionState.expandedWorkspaceCategory = '';
+    await showMissionControlView('workspace');
+    return true;
+  }
+  if (button.dataset.wsSheet) {
+    activeBedfordWorkspaceSheetNumber = button.dataset.wsSheet;
+    keepWorkspaceTreeOpen();
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('workspace');
+    return true;
+  }
+  if (button.dataset.wsDrawingSheet) {
+    const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
+    const target = buildWorkspaceDrawingTarget(activeWorkspace, button.dataset.wsDrawingSheet);
+    if (target) drawingTarget = target;
+    activeBedfordWorkspaceSheetNumber = button.dataset.wsDrawingSheet;
+    keepWorkspaceTreeOpen();
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('workspace');
+    return true;
+  }
+  if (button.dataset.wsTrades) {
+    const workspaceId = String(button.dataset.wsTrades || '').trim();
+    keepWorkspaceTreeOpen();
+    if (workspaceTradesSessionState.expandedTradesWorkspaceId === workspaceId) {
+      workspaceTradesSessionState.expandedTradesWorkspaceId = '';
+      workspaceTradesSessionState.expandedWorkspaceCategory = '';
+    } else {
+      workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
+      workspaceTradesSessionState.expandedWorkspaceCategory = '';
+    }
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('workspace');
+    return true;
+  }
+  if (button.dataset.wsTradeCategory) {
+    const categoryKey = String(button.dataset.wsTradeCategory || '').trim();
+    const [workspaceId] = categoryKey.split(':');
+    if (workspaceId && buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.id === workspaceId) {
+      keepWorkspaceTreeOpen();
+      workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
+      workspaceTradesSessionState.expandedWorkspaceCategory = workspaceTradesSessionState.expandedWorkspaceCategory === categoryKey ? '' : categoryKey;
+      activeBedfordWorkspaceSection = 'overview';
+      await showMissionControlView('workspace');
+    }
+    return true;
+  }
   if (button.dataset.controlView) {
     if (button.dataset.controlView === 'dashboard') {
       await showMissionControlView('dashboard');
@@ -9058,6 +9144,7 @@ async function handleMissionControlSidebarButton(button) {
   }
   if (button.dataset.wsAction === 'new') {
     activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
+    keepWorkspaceTreeOpen();
     activeBedfordWorkspaceSheetNumber = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
     workspaceTradesSessionState.expandedTradesWorkspaceId = '';
@@ -9217,22 +9304,12 @@ $('#missionControlSidebar')?.addEventListener('click', async event => {
     event.stopPropagation();
   }
 });
-$('#missionControlSidebar')?.addEventListener('change', async event => {
-  const target = event.target;
-  if (!(target instanceof HTMLSelectElement) || !target.matches('select[data-ws-select]')) return;
-  activeBedfordWorkspaceId = target.value || getBedfordWorkspaceDefaultId();
-  const selectedWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace;
-  activeBedfordWorkspaceSheetNumber = selectedWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
-  activeBedfordWorkspaceSection = 'overview';
-  workspaceTradesSessionState.expandedTradesWorkspaceId = '';
-  workspaceTradesSessionState.expandedWorkspaceCategory = '';
-  await showMissionControlView('workspace');
-});
 $('#missionControlContent').onclick = async event => {
   const button = event.target.closest('button');
   if (!button) return;
   if (button.dataset.wsSelect) {
     activeBedfordWorkspaceId = button.dataset.wsSelect;
+    keepWorkspaceTreeOpen();
     const selectedWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace;
     activeBedfordWorkspaceSheetNumber = selectedWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
@@ -9243,6 +9320,7 @@ $('#missionControlContent').onclick = async event => {
   }
   if (button.dataset.wsTrades) {
     const workspaceId = String(button.dataset.wsTrades || '').trim();
+    keepWorkspaceTreeOpen();
     if (workspaceTradesSessionState.expandedTradesWorkspaceId === workspaceId) {
       workspaceTradesSessionState.expandedTradesWorkspaceId = '';
       workspaceTradesSessionState.expandedWorkspaceCategory = '';
@@ -9296,6 +9374,7 @@ $('#missionControlContent').onclick = async event => {
     const categoryKey = String(button.dataset.wsTradeCategory || '').trim();
     const [workspaceId] = categoryKey.split(':');
     if (workspaceId && buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.id === workspaceId) {
+      keepWorkspaceTreeOpen();
       workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
       workspaceTradesSessionState.expandedWorkspaceCategory = workspaceTradesSessionState.expandedWorkspaceCategory === categoryKey ? '' : categoryKey;
       activeBedfordWorkspaceSection = 'overview';
@@ -9611,6 +9690,7 @@ $('#missionControlContent').onclick = async event => {
   }
   if (button.dataset.wsSheet) {
     activeBedfordWorkspaceSheetNumber = button.dataset.wsSheet;
+    keepWorkspaceTreeOpen();
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return;
@@ -9677,6 +9757,7 @@ $('#missionControlContent').onclick = async event => {
     const target = buildWorkspaceDrawingTarget(activeWorkspace, button.dataset.wsDrawingSheet);
     if (target) drawingTarget = target;
     activeBedfordWorkspaceSheetNumber = button.dataset.wsDrawingSheet;
+    keepWorkspaceTreeOpen();
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return;
@@ -9689,6 +9770,7 @@ $('#missionControlContent').onclick = async event => {
     if (selectedSheet) {
       drawingTarget = buildWorkspaceDrawingTarget(activeWorkspace, selectedSheet.sheetNumber);
       activeBedfordWorkspaceSheetNumber = selectedSheet.sheetNumber;
+      keepWorkspaceTreeOpen();
       activeBedfordWorkspaceSection = 'documents';
       await showMissionControlView('plans');
     }
@@ -10080,6 +10162,7 @@ $('#missionControlContent').onclick = async event => {
   }
   if (button.dataset.wsAction === 'new') {
     activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
+    keepWorkspaceTreeOpen();
     activeBedfordWorkspaceSheetNumber = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
     workspaceTradesSessionState.expandedTradesWorkspaceId = '';
@@ -10088,7 +10171,7 @@ $('#missionControlContent').onclick = async event => {
     return;
   }
   if (button.dataset.controlAction === 'enter-mission-control') {
-    return showMissionControlView('home');
+    return showMissionControlView('workspace');
   }
   if (button.dataset.controlAction === 'open-chief') {
     return showMissionControlView('home');
@@ -11733,7 +11816,7 @@ async function returnFromDemonstrationProject() {
   engine.createConversation();
   missionControlAttachments = [];
   chiefHistoryVisible = false;
-  missionControlView = 'home';
+  missionControlView = 'workspace';
   await refresh();
   await switchExperience('mission-control');
   $('#missionControlPrompt')?.focus();
@@ -11749,7 +11832,7 @@ async function openDemonstrationProject({ reset = false } = {}) {
     await engine.importProject(fixture, { preserveIdentifiers: true });
   }
   await selectProjectThroughProductionPath(DEMO_PROJECT_ID);
-  missionControlView = 'home';
+  missionControlView = 'workspace';
   selectedDoc = DEMO_INITIAL_DOCUMENT_ID;
   demoGuideDismissed = false;
   const demoDocument = (await engine.documents()).find(document => document.id === DEMO_INITIAL_DOCUMENT_ID);

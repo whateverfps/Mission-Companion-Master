@@ -192,19 +192,40 @@ test('Mission Control uses Dashboard, Chief, and Workspace as the primary shell 
 test('Mission Control workspace is registry-backed and no longer hard-codes Room 107 prototype content', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const sidebar = app.slice(app.indexOf('function renderMissionControlSidebar()'), app.indexOf('async function renderMissionControlWorkspace()'));
+  const roomTree = app.slice(app.indexOf('function workspaceRoomTreeMarkup(workspaceModel = {}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = [], workspaceTradesState = null)'), app.indexOf('function workspaceNextStepPriority(item = {})'));
   const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
-  assert.match(app, /missionControlView = 'workspace';/);
+  const chiefWorkspace = app.slice(app.indexOf('async function renderChiefWorkspace({ historyVisible = false } = {})'), app.indexOf('async function renderMissionControlChat()'));
+  assert.match(app, /missionControlView = 'landing';/);
   assert.match(app, /missionControlSidebar/);
   assert.match(workspace, /buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)/);
-  assert.match(app, /data-ws-select=/);
   assert.match(app, /function renderMissionControlSidebar\(\)/);
   assert.match(sidebar, /mc-mission-workspace-select/);
-  assert.match(sidebar, /data-ws-select/);
+  assert.match(sidebar, /workspaceRoomTreeMarkup\(workspaceModel, activeWorkspace, previewSheet, workspaceModel\?\.activeWorkspace\?\.drawingCategories \|\| \[\], workspaceTradesSessionState\)/);
   assert.match(sidebar, /Select Workspace/);
+  assert.doesNotMatch(sidebar, /<select data-ws-select/);
+  assert.doesNotMatch(sidebar, /mc-mission-workspace-picker-list/);
+  assert.doesNotMatch(sidebar, /mc-mission-workspace-option/);
+  assert.match(roomTree, /data-ws-select=/);
+  assert.match(roomTree, /data-ws-trades=/);
+  assert.match(roomTree, /data-ws-trade-category=/);
+  assert.match(roomTree, /data-ws-sheet=/);
+  const composerIndex = chiefWorkspace.indexOf('<form id="missionControlComposer" class="mc-control-composer">');
+  assert.ok(composerIndex > 0);
+  assert.doesNotMatch(chiefWorkspace.slice(0, composerIndex), /renderChiefSuggestedQuestionsMarkup\(\)/);
+  assert.match(chiefWorkspace.slice(composerIndex), /renderChiefSuggestedQuestionsMarkup\(\)/);
   assert.doesNotMatch(workspace, /ACTIVE WORKSPACE/);
   assert.doesNotMatch(workspace, /PMIS Context:/);
   assert.doesNotMatch(workspace, /Telecom Room 107/);
   assert.doesNotMatch(workspace, /B61 – Telecom Room 107/);
+});
+
+test('Mission Control starts on the landing screen and waits for a click to enter the shell', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  assert.match(app, /let missionControlView = 'landing';/);
+  assert.match(app, /function renderMissionControlLanding\(\)/);
+  assert.match(app, /data-control-action="enter-mission-control"/);
+  assert.match(app, /if \(button\.dataset\.controlAction === 'enter-mission-control'\) {\s*return showMissionControlView\('workspace'\);/);
+  assert.match(app, /updateMissionControlNavigationVisibility\(\);/);
 });
 
 test('Mission Control workspace exposes the shared Evidence layer in Documents and quick actions', () => {
@@ -475,8 +496,8 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.doesNotMatch(workspace, /mc-ws-sheet-picker/);
   assert.doesNotMatch(workspace, /ACTIVE ROOM/);
   assert.doesNotMatch(workspace, /MARKUPS & ITEMS/);
-  assert.match(app, /if \(button\.dataset\.wsSheet\) \{\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsSheet;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
-  assert.match(app, /if \(button\.dataset\.wsDrawingSheet\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, button\.dataset\.wsDrawingSheet\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsDrawingSheet;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
+  assert.match(app, /if \(button\.dataset\.wsSheet\) \{\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsSheet;\s*keepWorkspaceTreeOpen\(\);\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
+  assert.match(app, /if \(button\.dataset\.wsDrawingSheet\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, button\.dataset\.wsDrawingSheet\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsDrawingSheet;\s*keepWorkspaceTreeOpen\(\);\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
   assert.match(app, /if \(button\.dataset\.wsAction === 'drawings'\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, activeBedfordWorkspaceSheetNumber\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('plans'\);/);
   assert.match(app, /mc-ws-documents/);
   assert.match(app, /mc-ws-documents-grid/);
@@ -610,7 +631,10 @@ test('Mission Control workspace overview actions and summaries are clickable and
   assert.match(css, /\.mc-ws-observation-form-grid/);
   assert.match(css, /\.mc-ws-observation-actions/);
   assert.match(css, /\.mc-mission-shell\{grid-template-columns:286px minmax\(0,1fr\);min-height:100vh;margin:0;background:linear-gradient\(180deg,#06131c 0,#071119 100%\)\}/);
-  assert.match(css, /\.mc-mission-workspace-select select\{/);
+  assert.match(css, /\.mc-mission-workspace-select summary\{/);
+  assert.match(css, /\.mc-mission-workspace-picker-tree\{/);
+  assert.doesNotMatch(css, /\.mc-mission-workspace-picker-list\{/);
+  assert.doesNotMatch(css, /\.mc-mission-workspace-option\{/);
 });
 
 test('Mission Control workspace comparison card rendering uses local string normalization instead of an undeclared text helper', () => {
@@ -824,7 +848,7 @@ test('Phase 24B makes Chief construction-first with one synchronized drawing sta
 test('Mission Control hides built-in demo entry points and opens to Workspace by default', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const sidebar = app.slice(app.indexOf('function renderMissionControlSidebar()'), app.indexOf('async function renderMissionControlWorkspace()'));
-  assert.match(app, /let missionControlView = 'workspace';/);
+  assert.match(app, /missionControlView = 'workspace';/);
   assert.match(sidebar, /data-control-view="workspace" aria-current="\$\{missionControlView === 'workspace' \? 'page' : 'false'\}">Workspace<\/button>/);
   assert.match(sidebar, /data-control-home[^>]*>Chief<\/button>/);
   assert.doesNotMatch(sidebar, /<button[^>]*data-control-view="plans">Drawings<\/button>/);
