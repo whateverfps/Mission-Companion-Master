@@ -377,14 +377,18 @@ test('Mission Control workspace preserves the approved wide composition and four
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
   const workspaceDocuments = fs.readFileSync(new URL('../src/workspace-documents.js', import.meta.url), 'utf8');
+  const checklistItemMarkup = app.slice(app.indexOf('function renderWorkspaceChecklistItem'), app.indexOf('function renderWorkspaceChecklistDetail'));
   const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
+  const checklistSummaryMarkup = workspace.slice(workspace.indexOf('const checklistSummaryMarkup'), workspace.indexOf('const timelineSummaryItems'));
+  assert.match(checklistItemMarkup, /<div class="mc-ws-checklist-row-title">\s*<strong>\$\{esc\(item\.title\)\}<\/strong>\s*<\/div>/);
+  assert.doesNotMatch(checklistItemMarkup, /item\.category/);
   assert.match(workspace, /<h1 id="missionControlTitle" tabindex="-1">B\$\{esc\(activeWorkspace\?\.building \|\| '61'\)\} — Telecom Room \$\{esc\(activeWorkspace\?\.room \|\| 'Workspace'\)\}<\/h1>/);
   assert.match(workspace, /<strong>ISSUES & RISKS<\/strong>/);
   assert.match(workspace, /<article id="workspaceChiefInsightPanel" class="mc-ws-chief-panel">/);
   assert.match(workspace, /<strong>Chief Insight<\/strong>/);
   assert.doesNotMatch(workspace, /<strong>TRACEABILITY MAP<\/strong>/);
   assert.doesNotMatch(workspace, /<div class="mc-ws-chief" id="workspaceChiefInsightPanel">/);
-  assert.match(workspace, /<strong>SESSION REVIEW PROGRESS<\/strong>/);
+  assert.match(workspace, /<strong>VERIFICATION PROGRESS<\/strong>/);
   assert.match(workspace, /Open Full Checklist/);
   assert.match(workspace, /<strong>NEXT STEPS<\/strong>/);
   assert.match(workspace, /mc-ws-project-clock/);
@@ -405,8 +409,17 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(workspace, /data-ws-section="comparisons"/);
   assert.match(workspace, /data-ws-section="notes"/);
   assert.match(workspace, /data-ws-action="compare-spec"/);
-  assert.match(app, /data-ws-checklist-toggle=/);
   assert.match(app, /data-ws-checklist-id=/);
+  assert.match(app, /<article><span>Verified<\/span><strong>/);
+  assert.match(app, /verified item/);
+  assert.doesNotMatch(app, /data-ws-checklist-review=/);
+  assert.match(app, /data-ws-checklist-verification-status=/);
+  assert.match(app, /data-ws-checklist-verification-notes=/);
+  assert.match(app, /data-ws-checklist-verification-save=/);
+  assert.doesNotMatch(app, /data-ws-checklist-toggle=/);
+  assert.match(checklistSummaryMarkup, /checklistVerificationStateLabel\(item\.verificationStatus/);
+  assert.doesNotMatch(workspace, /SESSION REVIEW PROGRESS/);
+  assert.doesNotMatch(workspace, /reviewed this session/);
   assert.match(workspace, /renderWorkspaceNotesView\(/);
   assert.match(workspace, /workspaceNotesStore\.list\(/);
   assert.match(app, /data-ws-source-sheet=/);
@@ -449,7 +462,7 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /data-ws-rfi-create="checklist"/);
   assert.match(app, /data-ws-rfi-chief=/);
   assert.doesNotMatch(workspace, /Create RFI is not configured yet/);
-  assert.match(app, /Checklist Review/);
+  assert.match(app, /action: 'checklist-verification'/);
   assert.match(workspace, /Create a local RFI draft from the active workspace context/);
   assert.match(app, /safeText\(workspace\?\.(?:id|workspaceId) \|\| draft\.workspaceId \|\| ''\)/);
   assert.match(css, /\.mc-ws\{grid-template-columns:240px minmax\(0,1fr\)\}/);
@@ -492,6 +505,23 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(css, /\.mc-ws-documents/);
   assert.match(css, /\.mc-ws-documents-grid/);
   assert.match(css, /\.mc-ws-document-card/);
+});
+
+test('Mission Control workspace checklist KPI and checklist panel share one effective summary path', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  const workspace = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard()'));
+  const checklistView = app.slice(app.indexOf('function renderWorkspaceChecklistView('), app.indexOf('function renderWorkspaceTimelineSourceRefs'));
+  assert.match(app, /function workspaceChecklistEffectiveState\(checklistModel = \{\}, sessionState = null, selectedFilter = 'all', selectedItemId = ''\)/);
+  assert.match(app, /verificationDraft\.verifiedBy = verificationDraft\.verifiedBy \|\| '';/);
+  assert.match(workspace, /const checklistOverviewState = workspaceChecklistEffectiveState\(checklistModel, checklistState, 'all', checklistState\.selectedItemId\);/);
+  assert.match(workspace, /const checklistVerifiedCount = checklistOverviewState\.verifiedCount;/);
+  assert.match(workspace, /const checklistApplicableCount = checklistOverviewState\.checklistApplicableCount;/);
+  assert.match(workspace, /const checklistSummaryItems = checklistOverviewState\.summaryItems;/);
+  assert.match(checklistView, /const checklistViewState = workspaceChecklistEffectiveState\(checklistModel, sessionState, selectedFilter, selectedItemId\);/);
+  assert.match(checklistView, /const \{ withSessionState, selected, checklistApplicableCount, verifiedCount \} = checklistViewState;/);
+  assert.match(checklistView, /const summaryItems = checklistViewState\.summaryItems;/);
+  assert.doesNotMatch(workspace, /withSessionState\.slice\(0, 3\)/);
+  assert.doesNotMatch(app, /verifiedBy: verificationDraft\?\.verifiedBy \|\| activeWorkspace\?\.name \|\| ''/);
 });
 
 test('Mission Control workspace overview actions and summaries are clickable and preserve Chief context', () => {

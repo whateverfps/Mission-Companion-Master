@@ -1116,6 +1116,14 @@ export const engine = {
     };
   },
 
+  workspaceChecklistPersistence() {
+    return {
+      loadVerifications: async (projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === 'workspace-checklist-verification' && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record)),
+      putVerification: async record => putMany('stateRecords', [{ id: `workspace-checklist-verification:${record.projectId}:${record.workspaceId}:${record.itemId}`, kind: 'workspace-checklist-verification', projectId: record.projectId, workspaceId: record.workspaceId, itemId: record.itemId, verificationStatus: record.verificationStatus, record: structuredClone(record), updatedAt: record.updatedAt }]),
+      deleteVerification: async (itemId, projectId = state.activeProject, workspaceId = '') => tx('stateRecords', 'readwrite', store => store.delete(`workspace-checklist-verification:${projectId}:${workspaceId}:${itemId}`))
+    };
+  },
+
   workspaceEvidencePersistence() {
     return {
       loadEvidence: async (projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === 'workspace-evidence' && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record)),

@@ -300,7 +300,8 @@ function workspaceChecklistStateFor(workspaceId = '') {
     workspaceChecklistSessionState.set(workspaceId, {
       filter: 'all',
       selectedItemId: '',
-      verifiedIds: new Set()
+      verifiedIds: new Set(),
+      verificationDrafts: {}
     });
   }
   const state = workspaceChecklistSessionState.get(workspaceId);
@@ -314,7 +315,106 @@ function workspaceChecklistStateFor(workspaceId = '') {
     return migrated;
   }
   if (!(state.verifiedIds instanceof Set)) state.verifiedIds = new Set(list(state.verifiedIds));
+  if (!state.verificationDrafts || typeof state.verificationDrafts !== 'object') state.verificationDrafts = {};
   return state;
+}
+
+function workspaceChecklistVerificationDraftFor(workspaceId = '', item = {}, persisted = null) {
+  const state = workspaceChecklistStateFor(workspaceId);
+  const key = item?.id || '';
+  if (!key) return null;
+  const verifiedBy = persisted?.verifiedBy || item.verifiedBy || '';
+  if (!state.verificationDrafts[key] || state.verificationDrafts[key].itemId !== key) {
+    state.verificationDrafts[key] = {
+      itemId: key,
+      verificationStatus: persisted?.verificationStatus || item.verificationStatus || item.verificationState || 'NOT_VERIFIED',
+      notes: persisted?.notes || item.verificationNotes || '',
+      verifiedBy,
+      verifiedAt: persisted?.verifiedAt || item.verifiedAt || '',
+      evidenceIds: Array.isArray(persisted?.evidenceIds) ? [...persisted.evidenceIds] : Array.isArray(item.verificationEvidenceIds) ? [...item.verificationEvidenceIds] : [],
+      issueIds: Array.isArray(persisted?.issueIds) ? [...persisted.issueIds] : Array.isArray(item.verificationIssueIds) ? [...item.verificationIssueIds] : []
+    };
+  }
+  return state.verificationDrafts[key];
+}
+
+function workspaceChecklistInvalidVerifierNames(workspace = null) {
+  const names = new Set([
+    workspace?.name,
+    workspace?.title,
+    workspace?.label,
+    workspace?.room
+  ].map(value => String(value || '').trim()).filter(Boolean));
+  return names;
+}
+
+function sanitizeWorkspaceChecklistVerificationRecord(record = {}, workspace = null) {
+  const verifier = String(record?.verifiedBy || '').trim();
+  if (!verifier) return { ...record, verifiedBy: '' , _sanitized: false };
+  const invalidVerifierNames = workspaceChecklistInvalidVerifierNames(workspace);
+  if (!invalidVerifierNames.has(verifier)) return { ...record, verifiedBy: verifier, _sanitized: false };
+  return { ...record, verifiedBy: '', _sanitized: true };
+}
+
+function workspaceChecklistEffectiveState(checklistModel = {}, sessionState = null, selectedFilter = 'all', selectedItemId = '') {
+  const allItems = Array.isArray(checklistModel.items) ? checklistModel.items : [];
+  const filteredItems = allItems.filter(item => checklistFilterMatches(item, selectedFilter));
+  const withSessionState = filteredItems.map(item => {
+    const draft = sessionState?.verificationDrafts?.[item.id] || null;
+    return {
+      ...item,
+      verificationStatus: draft?.verificationStatus || item.verificationStatus || item.verificationState || 'NOT_VERIFIED',
+      verificationNotes: draft?.notes || item.verificationNotes || '',
+      verifiedAt: draft?.verifiedAt || item.verifiedAt || '',
+      verifiedBy: draft?.verifiedBy || item.verifiedBy || ''
+    };
+  });
+  const selected = withSessionState.find(item => item.id === selectedItemId) || withSessionState.find(item => item.queueState === 'BLOCKED') || withSessionState[0] || null;
+  const checklistApplicableCount = checklistModel.counts?.applicableItems ?? withSessionState.length;
+  const verifiedCount = withSessionState.filter(item => ['PASS', 'FAIL', 'NA'].includes(String(item.verificationStatus || item.verificationState || item.status || '').toUpperCase())).length;
+  const summaryItems = (Array.isArray(checklistModel.overviewItems) && checklistModel.overviewItems.length ? checklistModel.overviewItems : withSessionState.slice(0, 3)).map(item => {
+    const draft = sessionState?.verificationDrafts?.[item.id] || null;
+    return {
+      ...item,
+      verificationStatus: draft?.verificationStatus || item.verificationStatus || item.verificationState || 'NOT_VERIFIED',
+      verificationNotes: draft?.notes || item.verificationNotes || '',
+      verifiedAt: draft?.verifiedAt || item.verifiedAt || '',
+      verifiedBy: draft?.verifiedBy || item.verifiedBy || ''
+    };
+  });
+  return {
+    allItems,
+    filteredItems,
+    withSessionState,
+    selected,
+    checklistApplicableCount,
+    verifiedCount,
+    summaryItems
+  };
+}
+
+async function saveWorkspaceChecklistVerification(itemId = '', { workspaceId = '', verificationStatus = 'NOT_VERIFIED', notes = '', verifiedBy = '', verifiedAt = '', evidenceIds = [], issueIds = [] } = {}) {
+  const projectId = state().activeProject || BEDFORD_PROJECT_ID;
+  const normalizedWorkspaceId = String(workspaceId || activeBedfordWorkspaceId || '');
+  const normalizedItemId = String(itemId || '').trim();
+  if (!projectId || !normalizedWorkspaceId || !normalizedItemId) return null;
+  const current = workspaceChecklistVerificationStore.get(projectId, normalizedWorkspaceId, normalizedItemId) || null;
+  const normalized = {
+    id: current?.id || `workspace-checklist-verification:${projectId}:${normalizedWorkspaceId}:${normalizedItemId}`,
+    projectId,
+    workspaceId: normalizedWorkspaceId,
+    itemId: normalizedItemId,
+    verificationStatus: String(verificationStatus || 'NOT_VERIFIED').toUpperCase() || 'NOT_VERIFIED',
+    notes: String(notes || ''),
+    verifiedBy: String(verifiedBy || current?.verifiedBy || ''),
+    verifiedAt: String(verifiedAt || current?.verifiedAt || ''),
+    evidenceIds: Array.isArray(evidenceIds) ? evidenceIds : [],
+    issueIds: Array.isArray(issueIds) ? issueIds : [],
+    updatedAt: new Date().toISOString(),
+    createdAt: String(current?.createdAt || new Date().toISOString())
+  };
+  await workspaceChecklistVerificationStore.save(normalized);
+  return normalized;
 }
 
 function workspaceTimelineStateFor(workspaceId = '') {
@@ -1522,6 +1622,29 @@ function renderWorkspaceChecklistSourceRefs(item = {}) {
   }).join('')}</div>`;
 }
 
+function checklistQueueStateLabel(value = '') {
+  switch (String(value || '').toUpperCase()) {
+    case 'READY': return 'Ready';
+    case 'ACTIVE': return 'Active';
+    case 'UPCOMING': return 'Upcoming';
+    case 'BLOCKED': return 'Blocked';
+    case 'AWAITING_SCHEDULE': return 'Awaiting Schedule';
+    case 'COMPLETE': return 'Complete';
+    default: return 'Awaiting Schedule';
+  }
+}
+
+function checklistVerificationStateLabel(value = '') {
+  switch (String(value || '').toUpperCase()) {
+    case 'PASS': return 'Pass';
+    case 'FAIL': return 'Fail';
+    case 'NA': return 'NA';
+    case 'VERIFIED_SESSION': return 'Session Verified';
+    case 'NOT_APPLICABLE': return 'Not Applicable';
+    default: return 'Not Verified';
+  }
+}
+
 function renderWorkspaceChecklistItem(item = {}, { checked = false, selected = false } = {}) {
   const sourceRefSummary = item.sourceRefs?.length
     ? `${item.sourceRefs.length} source${item.sourceRefs.length === 1 ? '' : 's'}`
@@ -1539,30 +1662,31 @@ function renderWorkspaceChecklistItem(item = {}, { checked = false, selected = f
     : 'Source unavailable';
   return `
     <li class="mc-ws-checklist-item ${selected ? 'active' : ''}" data-ws-checklist-id="${esc(item.id)}">
-      <label class="mc-ws-checklist-toggle">
-        <input type="checkbox" data-ws-checklist-toggle="${esc(item.id)}" ${checked ? 'checked' : ''} ${item.canToggle ? '' : 'disabled'} aria-label="Mark ${esc(item.title)} as reviewed this session">
-        <span>
-          <strong>${esc(item.title)}</strong>
-          <small>${esc(item.category)}</small>
-          <em>${esc(item.status || 'NOT_VERIFIED')}</em>
-        </span>
-      </label>
-      <button type="button" class="mc-ws-checklist-row" data-ws-checklist-id="${esc(item.id)}">
-        <strong>${esc(item.title)}</strong>
-        <span>${esc(item.description || 'No description recorded.')}</span>
-        <small>${esc(sourceRefSummary)}${item.blockedBy?.length ? ` · Blocked by ${esc(item.blockedBy.length)} item${item.blockedBy.length === 1 ? '' : 's'}` : ''}</small>
-        <em>${esc(sourceIndicator)}</em>
+      <button type="button" class="mc-ws-checklist-row" data-ws-checklist-id="${esc(item.id)}" aria-current="${selected ? 'true' : 'false'}">
+        <div class="mc-ws-checklist-row-main">
+          <div class="mc-ws-checklist-row-title">
+            <strong>${esc(item.title)}</strong>
+          </div>
+          <span>${esc(checklistQueueStateLabel(item.queueState || item.scheduleStatus || item.status))} · ${esc(checklistVerificationStateLabel(item.verificationStatus || item.verificationState || item.status))}</span>
+        </div>
+        <div class="mc-ws-checklist-row-badges">
+          <small>${esc(sourceRefSummary)}${item.blockedBy?.length ? ` · Blocked by ${esc(item.blockedBy.length)} item${item.blockedBy.length === 1 ? '' : 's'}` : ''}</small>
+          <em>${esc(sourceIndicator)}</em>
+        </div>
       </button>
     </li>`;
 }
 
-function renderWorkspaceChecklistDetail(item = {}) {
+function renderWorkspaceChecklistDetail(item = {}, sessionState = null) {
   const sourceRefs = Array.isArray(item.sourceRefs) ? item.sourceRefs : [];
   const sourceDrawings = sourceRefs.filter(ref => ref.kind === 'drawing');
   const sourceSpecifications = sourceRefs.filter(ref => ref.kind === 'specification');
   const sourceMilestones = sourceRefs.filter(ref => ref.kind === 'milestone');
   const sourceIssues = sourceRefs.filter(ref => ref.kind === 'issue');
   const relatedIssueIds = Array.isArray(item.relatedIssues) ? item.relatedIssues.map(issue => issue?.id || issue?.title).filter(Boolean) : [];
+  const verificationRecord = workspaceChecklistVerificationStore.get(state().activeProject, item.workspaceId || activeBedfordWorkspaceId || '', item.id) || null;
+  const verificationDraft = sessionState?.verificationDrafts?.[item.id] || workspaceChecklistVerificationDraftFor(item.workspaceId || activeBedfordWorkspaceId || '', item, verificationRecord);
+  const activeVerificationStatus = verificationDraft?.verificationStatus || item.verificationStatus || item.verificationState || 'NOT_VERIFIED';
   const evidenceRecords = workspaceEvidenceStore.list({ projectId: state().activeProject, workspaceId: item.workspaceId || activeBedfordWorkspaceId || '' });
   const linkedEvidence = evidenceRecords.filter(evidence => Array.isArray(evidence.linkedChecklistItemIds) && evidence.linkedChecklistItemIds.includes(item.id));
   return `
@@ -1571,22 +1695,37 @@ function renderWorkspaceChecklistDetail(item = {}) {
         <div>
           <span>${esc(item.category || 'CHECKLIST')}</span>
           <strong>${esc(item.title || 'Selected checklist item')}</strong>
-          <small>${esc(item.scope || 'WORKSPACE')} · ${esc(item.status || 'NOT_VERIFIED')} · ${esc(item.verificationState || 'NOT_VERIFIED')}</small>
+          <small>${esc(item.scope || 'WORKSPACE')} · ${esc(checklistQueueStateLabel(item.queueState || item.scheduleStatus || item.status))} · ${esc(checklistVerificationStateLabel(item.verificationStatus || item.verificationState || item.status))}</small>
         </div>
         <div class="mc-ws-observation-actions">
           <button type="button" data-ws-rfi-create="checklist" data-ws-checklist-id="${esc(item.id)}">Create RFI</button>
           <button type="button" data-ws-evidence-action="create" data-ws-evidence-link-checklist-id="${esc(item.id)}">Add Evidence</button>
           <button type="button" data-ws-evidence-action="link-existing" data-ws-evidence-link-checklist-id="${esc(item.id)}">Link Existing Evidence</button>
-          <div class="mc-ws-checklist-state ${item.status === 'BLOCKED' ? 'blocked' : item.verificationState === 'VERIFIED_SESSION' ? 'verified' : 'open'}">
-            <strong>${esc(item.status || 'NOT_VERIFIED')}</strong>
-            <span>${item.status === 'BLOCKED' ? 'Blocked by dependency' : item.verificationState === 'VERIFIED_SESSION' ? 'Reviewed this session' : 'Not verified yet'}</span>
-          </div>
         </div>
       </header>
-      <p>${esc(item.description || 'No description recorded.')}</p>
       <section class="mc-ws-checklist-panel">
         <header><strong>WHY THIS APPLIES</strong><small>${esc(item.required ? 'Required' : 'Helpful')}</small></header>
         <div class="mc-ws-empty-inline">${esc(item.notes || item.description || 'No notes recorded.')}</div>
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>SCHEDULE CONTEXT</strong><small>${esc(item.plannedInspectionWindow || item.assessmentSection || 'Awaiting Contractor Schedule')}</small></header>
+        <div class="mc-ws-checklist-items">
+          <div class="mc-ws-checklist-ref">
+            <strong>${esc(item.scheduleActivityName || item.queueState || item.plannedInspectionWindow || 'Awaiting Contractor Schedule')}</strong>
+            <span>${esc(item.assessmentSection || 'Project schedule')}</span>
+            <small>${esc(item.scheduleActivityId ? `Activity ${item.scheduleActivityId}` : item.assessmentRows ? `Rows ${item.assessmentRows}` : 'Schedule adapter')}</small>
+          </div>
+        </div>
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>PMIS SOURCE TRACEABILITY</strong><small>${esc(item.assessmentSource || 'B61_Assessment')}</small></header>
+        <div class="mc-ws-checklist-items">
+          <div class="mc-ws-checklist-ref">
+            <strong>${esc(item.assessmentSection || 'B61_Assessment')}</strong>
+            <span>${esc(item.assessmentRequirement || item.title || 'Checklist requirement')}</span>
+            <small>${esc(item.assessmentRows ? `Rows ${item.assessmentRows}` : 'Workbook traceability')}</small>
+          </div>
+        </div>
       </section>
       <section class="mc-ws-checklist-panel">
         <header><strong>SOURCE DRAWINGS</strong><small>${sourceDrawings.length}</small></header>
@@ -1595,6 +1734,31 @@ function renderWorkspaceChecklistDetail(item = {}) {
       <section class="mc-ws-checklist-panel">
         <header><strong>SPECIFICATIONS</strong><small>${sourceSpecifications.length}</small></header>
         ${sourceSpecifications.length ? renderWorkspaceChecklistSourceRefs({ sourceRefs: sourceSpecifications }) : '<div class="mc-ws-empty-inline">No governing specifications recorded.</div>'}
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>VERIFICATION</strong><small>${esc(activeVerificationStatus)}</small></header>
+        <div class="mc-ws-checklist-verification">
+          <div class="mc-ws-checklist-verification-buttons" role="group" aria-label="Verification status">
+            ${['PASS', 'FAIL', 'NA', 'NOT_VERIFIED'].map(status => `<button type="button" class="${verificationDraft?.verificationStatus === status ? 'active' : ''}" data-ws-checklist-verification-status="${esc(item.id)}" data-ws-checklist-verification-value="${esc(status)}">${esc(status === 'NOT_VERIFIED' ? 'NOT VERIFIED' : status)}</button>`).join('')}
+          </div>
+          <label>
+            Inspection Notes
+            <textarea data-ws-checklist-verification-notes="${esc(item.id)}" placeholder="Capture inspection notes, observations, and follow-up items.">${esc(verificationDraft?.notes || '')}</textarea>
+          </label>
+          <div class="mc-ws-checklist-verification-meta">
+            <div><span>Verified By</span><strong>${esc(verificationDraft?.verifiedBy || item.verifiedBy || 'Not recorded')}</strong></div>
+            <div><span>Verified At</span><strong>${esc(verificationDraft?.verifiedAt || item.verifiedAt || 'Not recorded')}</strong></div>
+          </div>
+          <div class="mc-ws-checklist-verification-actions">
+            <button type="button" data-ws-checklist-verification-save="${esc(item.id)}">Save Verification</button>
+            ${activeVerificationStatus === 'FAIL' ? `
+              <button type="button" data-ws-rfi-create="checklist" data-ws-checklist-id="${esc(item.id)}">Create RFI</button>
+              <button type="button" data-ws-observation-create="checklist" data-ws-checklist-id="${esc(item.id)}">Create Observation</button>
+              <button type="button" data-ws-evidence-action="create" data-ws-evidence-link-checklist-id="${esc(item.id)}">Add Evidence</button>
+              <button type="button" data-ws-evidence-action="link-existing" data-ws-evidence-link-checklist-id="${esc(item.id)}">Link Existing Evidence</button>
+            ` : ''}
+          </div>
+        </div>
       </section>
       <section class="mc-ws-checklist-panel">
         <header><strong>PMIS GATE</strong><small>${sourceMilestones.length}</small></header>
@@ -1613,12 +1777,6 @@ function renderWorkspaceChecklistDetail(item = {}) {
         ${item.blockedBy?.length ? `<div class="mc-ws-checklist-items">${item.blockedBy.map(blocker => `<div class="mc-ws-checklist-ref"><strong>${esc(blocker)}</strong><span>Blocking dependency</span><small>Blocker</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No blocker recorded.</div>'}
       </section>
       <section class="mc-ws-checklist-panel">
-        <header><strong>VERIFICATION STATUS</strong><small>${esc(item.canToggle ? 'Session editable' : 'Read only')}</small></header>
-        <div class="mc-ws-checklist-items">
-          <div class="mc-ws-checklist-ref"><strong>${esc(item.verificationState || 'NOT_VERIFIED')}</strong><span>${item.authoritative ? 'Authoritative completion' : item.verificationState === 'VERIFIED_SESSION' ? 'Checked during this session' : 'Session review only'}</span><small>${esc(item.required ? 'Required item' : 'Informational item')}</small></div>
-        </div>
-      </section>
-      <section class="mc-ws-checklist-panel">
         <header><strong>NOTES / SESSION CONTEXT</strong><small>${esc(item.sourceType || '')}</small></header>
         <div class="mc-ws-empty-inline">${esc(item.notes || 'No additional notes recorded.')}</div>
       </section>
@@ -1627,20 +1785,14 @@ function renderWorkspaceChecklistDetail(item = {}) {
 
 function renderWorkspaceChecklistView(checklistModel = {}, activeWorkspace = null, projectMilestoneContext = null, selectedFilter = 'all', selectedItemId = '', sessionState = null) {
   const filters = Array.isArray(checklistModel.filters) && checklistModel.filters.length ? checklistModel.filters : [];
-  const allItems = Array.isArray(checklistModel.items) ? checklistModel.items : [];
-  const filteredItems = allItems.filter(item => checklistFilterMatches(item, selectedFilter));
-  const checkedIds = sessionState?.verifiedIds instanceof Set ? sessionState.verifiedIds : new Set();
-  const withSessionState = filteredItems.map(item => ({
-    ...item,
-    checked: item.status === 'VERIFIED_SESSION' || checkedIds.has(item.id)
-  }));
-  const selected = withSessionState.find(item => item.id === selectedItemId) || withSessionState.find(item => item.status === 'BLOCKED') || withSessionState[0] || null;
+  const checklistViewState = workspaceChecklistEffectiveState(checklistModel, sessionState, selectedFilter, selectedItemId);
+  const { withSessionState, selected, checklistApplicableCount, verifiedCount } = checklistViewState;
   const grouped = [];
   for (const group of checklistModel.groups || []) {
     const items = withSessionState.filter(item => item.category === group.label);
     if (items.length) grouped.push({ ...group, items });
   }
-  const reviewedCount = withSessionState.filter(item => item.checked).length;
+  const summaryItems = checklistViewState.summaryItems;
   return `
     <section class="mc-ws-checklist" aria-label="Workspace Checklist">
       <header class="mc-ws-checklist-header">
@@ -1651,9 +1803,10 @@ function renderWorkspaceChecklistView(checklistModel = {}, activeWorkspace = nul
         </div>
         <div class="mc-ws-checklist-summary">
           <article><span>Applicable Items</span><strong>${checklistModel.counts?.applicableItems ?? withSessionState.length}</strong><small>${withSessionState.length ? 'Deterministic checklist items available' : 'No checklist items available'}</small></article>
-          <article><span>Verified This Session</span><strong>${reviewedCount}</strong><small>${withSessionState.length ? `${reviewedCount} of ${withSessionState.length} reviewed this session` : 'No session review recorded'}</small></article>
+          <article><span>Ready</span><strong class="${checklistModel.counts?.ready ? 'watch' : ''}">${checklistModel.counts?.ready ?? 0}</strong><small>${checklistModel.counts?.ready ? 'Can be reviewed now' : 'No ready items recorded'}</small></article>
           <article><span>Blocked</span><strong class="${checklistModel.counts?.blocked ? 'danger' : 'watch'}">${checklistModel.counts?.blocked ?? 0}</strong><small>${checklistModel.counts?.blocked ? 'Dependencies remain open' : 'No blocked items recorded'}</small></article>
-          <article><span>Unknown / Not Verified</span><strong>${checklistModel.counts?.unknown ?? 0}</strong><small>${checklistModel.counts?.unknown ? 'Review still needed' : 'No unknown items recorded'}</small></article>
+          <article><span>Awaiting Schedule</span><strong>${checklistModel.counts?.awaitingSchedule ?? 0}</strong><small>${checklistModel.counts?.awaitingSchedule ? 'Needs contractor schedule' : 'No schedule-limited items recorded'}</small></article>
+          <article><span>Verified</span><strong>${verifiedCount}/${checklistApplicableCount || checklistItems.length}</strong><small>${verifiedCount ? `${verifiedCount} verified item${verifiedCount === 1 ? '' : 's'}` : 'No verified items yet'}</small></article>
         </div>
       </header>
       <nav class="mc-ws-checklist-filters" aria-label="Checklist filters">
@@ -1674,14 +1827,10 @@ function renderWorkspaceChecklistView(checklistModel = {}, activeWorkspace = nul
               <div>
                 <span>${esc(selected.category || 'CHECKLIST')}</span>
                 <strong>${esc(selected.title || 'Selected checklist item')}</strong>
-                <small>${esc(selected.scope || 'WORKSPACE')} · ${esc(selected.verificationState || 'NOT_VERIFIED')} · ${esc(selected.status || 'NOT_VERIFIED')}</small>
-              </div>
-              <div class="mc-ws-checklist-state ${selected.status === 'BLOCKED' ? 'blocked' : selected.checked ? 'verified' : 'open'}">
-                <strong>${esc(selected.checked ? 'VERIFIED_SESSION' : selected.status || 'NOT_VERIFIED')}</strong>
-                <span>${selected.status === 'BLOCKED' ? 'Blocked by dependency' : selected.checked ? 'Reviewed this session' : 'Review pending'}</span>
+                <small>${esc(selected.scope || 'WORKSPACE')} · ${esc(checklistQueueStateLabel(selected.queueState || selected.scheduleStatus || selected.status))} · ${esc(checklistVerificationStateLabel(selected.verificationStatus || selected.verificationState || selected.status))}</small>
               </div>
             </header>
-            ${renderWorkspaceChecklistDetail(selected)}
+            ${renderWorkspaceChecklistDetail(selected, sessionState)}
           ` : `
             <div class="mc-ws-empty-inline">${esc(checklistModel.emptyState || 'No deterministic checklist items are available for this Workspace yet.')}</div>
           `}
@@ -3775,6 +3924,63 @@ const workspaceObservationsStore = createWorkspaceObservationsStore({ storage: g
 const workspaceRfisStore = createWorkspaceRfisStore({ storage: globalThis.localStorage, persistence: engine.workspaceRfisPersistence() });
 const workspaceEvidenceStore = createWorkspaceEvidenceStore({ storage: globalThis.localStorage, persistence: engine.workspaceEvidencePersistence() });
 const workspaceEvidenceBlobStore = engine.workspaceEvidenceBlobPersistence();
+const workspaceChecklistVerificationStore = (() => {
+  const persistence = engine.workspaceChecklistPersistence();
+  const recordsByProject = new Map();
+  const keyFor = (projectId = '', workspaceId = '', itemId = '') => `${projectId}::${workspaceId}::${itemId}`;
+  const normalize = (record = {}) => ({
+    id: String(record.id || `workspace-checklist-verification:${record.projectId || ''}:${record.workspaceId || ''}:${record.itemId || ''}`),
+    projectId: String(record.projectId || ''),
+    workspaceId: String(record.workspaceId || ''),
+    itemId: String(record.itemId || ''),
+    verificationStatus: String(record.verificationStatus || 'NOT_VERIFIED').toUpperCase() || 'NOT_VERIFIED',
+    notes: String(record.notes || ''),
+    verifiedAt: String(record.verifiedAt || ''),
+    verifiedBy: String(record.verifiedBy || ''),
+    evidenceIds: Array.isArray(record.evidenceIds) ? [...new Set(record.evidenceIds.map(value => String(value).trim()).filter(Boolean))] : [],
+    issueIds: Array.isArray(record.issueIds) ? [...new Set(record.issueIds.map(value => String(value).trim()).filter(Boolean))] : [],
+    updatedAt: String(record.updatedAt || ''),
+    createdAt: String(record.createdAt || record.updatedAt || '')
+  });
+  return Object.freeze({
+    async load(projectId = '') {
+      const needleProjectId = String(projectId || '');
+      if (!needleProjectId) return [];
+      if (!recordsByProject.has(needleProjectId)) {
+        const records = await persistence.loadVerifications(needleProjectId);
+        recordsByProject.set(needleProjectId, new Map(records.map(record => [keyFor(record.projectId, record.workspaceId, record.itemId), normalize(record)])));
+      }
+      return this.list({ projectId: needleProjectId });
+    },
+    list({ projectId = '', workspaceId = '' } = {}) {
+      const needleProjectId = String(projectId || '');
+      const needleWorkspaceId = String(workspaceId || '');
+      const projectRecords = recordsByProject.get(needleProjectId) || new Map();
+      return [...projectRecords.values()].filter(record => (!needleWorkspaceId || record.workspaceId === needleWorkspaceId)).map(record => ({ ...record }));
+    },
+    get(projectId = '', workspaceId = '', itemId = '') {
+      const projectRecords = recordsByProject.get(String(projectId || '')) || new Map();
+      const record = projectRecords.get(keyFor(projectId, workspaceId, itemId));
+      return record ? { ...record } : null;
+    },
+    async save(record = {}) {
+      const normalized = normalize(record);
+      if (!normalized.projectId || !normalized.workspaceId || !normalized.itemId) return null;
+      if (!recordsByProject.has(normalized.projectId)) recordsByProject.set(normalized.projectId, new Map());
+      const projectRecords = recordsByProject.get(normalized.projectId);
+      projectRecords.set(keyFor(normalized.projectId, normalized.workspaceId, normalized.itemId), normalized);
+      await persistence.putVerification({
+        ...normalized,
+        id: normalized.id,
+        projectId: normalized.projectId,
+        workspaceId: normalized.workspaceId,
+        itemId: normalized.itemId,
+        verificationStatus: normalized.verificationStatus
+      });
+      return { ...normalized };
+    }
+  });
+})();
 
 function captureWorkspaceDrawingFullscreenScrollState() {
   workspaceDrawingFullscreenScrollState.windowScrollY = globalThis.scrollY || globalThis.pageYOffset || 0;
@@ -8341,11 +8547,27 @@ async function renderMissionControlWorkspace() {
     pmisBuilding: activeWorkspace.pmisBuilding,
     projectMilestoneContext
   }) : 'Workspace evidence is available for review.';
+  await workspaceChecklistVerificationStore.load(state().activeProject);
+  const checklistVerificationRecords = workspaceChecklistVerificationStore.list({ projectId: state().activeProject, workspaceId: activeWorkspace?.id || '' });
+  const sanitizedChecklistVerificationRecords = [];
+  for (const record of checklistVerificationRecords) {
+    const sanitized = sanitizeWorkspaceChecklistVerificationRecord(record, activeWorkspace);
+    sanitizedChecklistVerificationRecords.push({ ...sanitized, _sanitized: undefined });
+    if (sanitized._sanitized) {
+      await workspaceChecklistVerificationStore.save({
+        ...record,
+        verifiedBy: '',
+        verifiedAt: record.verifiedAt || '',
+        verificationStatus: record.verificationStatus || 'NOT_VERIFIED'
+      });
+    }
+  }
   const checklistModel = buildWorkspaceChecklistModel({
     workspace: activeWorkspace,
     projectMilestoneContext,
     issuesModel,
-    pmisRuntime
+    pmisRuntime,
+    verificationRecords: sanitizedChecklistVerificationRecords
   });
   const timelineModel = buildWorkspaceTimelineModel({
     workspace: activeWorkspace,
@@ -8355,12 +8577,10 @@ async function renderMissionControlWorkspace() {
   });
   const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
   if (!checklistModel.filters.some(filter => String(filter.id) === String(checklistState.filter))) checklistState.filter = 'all';
-  const checklistItems = checklistModel.items.map(item => ({
-    ...item,
-    checked: item.status === 'VERIFIED_SESSION' || checklistState.verifiedIds.has(item.id)
-  }));
+  const checklistItems = checklistModel.items.map(item => ({ ...item }));
   if (checklistState.selectedItemId && !checklistItems.some(item => item.id === checklistState.selectedItemId)) checklistState.selectedItemId = '';
-  if (!checklistState.selectedItemId) checklistState.selectedItemId = checklistModel.items.find(item => item.status === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
+  if (!checklistState.selectedItemId) checklistState.selectedItemId = checklistModel.items.find(item => item.queueState === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
+  const checklistOverviewState = workspaceChecklistEffectiveState(checklistModel, checklistState, 'all', checklistState.selectedItemId);
   const timelineState = workspaceTimelineStateFor(activeWorkspace?.id || '');
   if (!timelineModel.filters.some(filter => String(filter.id) === String(timelineState.filter))) timelineState.filter = 'all';
   if (timelineState.selectedItemId && !timelineModel.items.some(item => item.id === timelineState.selectedItemId)) timelineState.selectedItemId = '';
@@ -8383,10 +8603,10 @@ async function renderMissionControlWorkspace() {
     workspaceComparisonsSessionState.selectedDimensionId = comparisonsModel.selectedDimensionId || workspaceComparisonsSessionState.selectedDimensionId;
     workspaceComparisonsSessionState.selectedRequirementId = comparisonsModel.selectedRequirementId || workspaceComparisonsSessionState.selectedRequirementId;
   }
-  const checklistDoneCount = checklistItems.filter(item => item.checked).length;
-  const checklistApplicableCount = checklistModel.counts?.applicableItems ?? checklistItems.length;
-  const checklistBlockedCount = checklistModel.counts?.blocked ?? checklistItems.filter(item => item.status === 'BLOCKED').length;
-  const checklistUnknownCount = checklistModel.counts?.unknown ?? checklistItems.filter(item => item.status === 'UNKNOWN' || item.status === 'NOT_VERIFIED').length;
+  const checklistVerifiedCount = checklistOverviewState.verifiedCount;
+  const checklistApplicableCount = checklistOverviewState.checklistApplicableCount;
+  const checklistBlockedCount = checklistModel.counts?.blocked ?? checklistItems.filter(item => item.queueState === 'BLOCKED').length;
+  const checklistUnknownCount = checklistModel.counts?.unknown ?? checklistItems.filter(item => item.verificationStatus === 'UNKNOWN' || item.verificationStatus === 'NOT_VERIFIED' || item.status === 'UNKNOWN' || item.status === 'NOT_VERIFIED').length;
   const milestoneTimeline = timelineModel.overviewItems || projectMilestoneContext?.timeline || [];
   const milestoneNextSteps = projectMilestoneContext?.nextSteps || [];
   const combinedNextSteps = [...milestoneNextSteps, ...(activeWorkspace?.nextSteps || [])];
@@ -8464,10 +8684,7 @@ async function renderMissionControlWorkspace() {
   if (rfiState.selectedRfiId && !rfisModel.rfis.some(item => item.id === rfiState.selectedRfiId)) rfiState.selectedRfiId = '';
   if (!rfiState.selectedRfiId) rfiState.selectedRfiId = rfisModel.selectedRfiId || '';
   const issuesSummaryItems = issuesModel.compactIssues.length ? issuesModel.compactIssues : issuesModel.issues.slice(0, 3);
-  const checklistSummaryItems = (checklistModel.overviewItems.length ? checklistModel.overviewItems : checklistItems.slice(0, 3)).map(item => ({
-    ...item,
-    checked: item.status === 'VERIFIED_SESSION' || checklistState.verifiedIds.has(item.id)
-  }));
+  const checklistSummaryItems = checklistOverviewState.summaryItems;
   const issueSummaryMarkup = issuesSummaryItems.length
     ? issuesSummaryItems.map(item => renderWorkspaceOverviewIssueRow(item)).join('')
     : '<li><button type="button" disabled><i>●</i><div><b>No room-specific issues recorded.</b><span>No project-level dependencies recorded.</span></div><em class="low">Info</em></button></li>';
@@ -8479,7 +8696,7 @@ async function renderMissionControlWorkspace() {
           <b>${esc(item.title)}</b>
           <span>${esc(item.description || item.notes || 'No description recorded.')}</span>
         </div>
-        <em class="${item.status === 'BLOCKED' ? 'high' : item.checked ? 'medium' : 'low'}">${esc(item.category || 'Checklist')}</em>
+        <em class="${item.queueState === 'BLOCKED' ? 'high' : item.queueState === 'READY' ? 'medium' : 'low'}">${esc(item.category || 'Checklist')} · ${esc(checklistQueueStateLabel(item.queueState || item.scheduleStatus || item.status))} · ${esc(checklistVerificationStateLabel(item.verificationStatus || item.verificationState || item.status))}</em>
       </li>`).join('')
     : '<li><i>☐</i><div><b>No deterministic checklist items are available for this Workspace yet.</b><span>Checklist derivation will appear once workspace evidence is available.</span></div><em class="low">Info</em></li>';
   const timelineSummaryItems = compactNextSteps.slice(0, 4);
@@ -8591,7 +8808,7 @@ async function renderMissionControlWorkspace() {
         <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="compare-spec">Compare to Spec</button><button data-ws-action="evidence" title="Capture shared Workspace evidence">Add Evidence</button><button data-ws-action="rfi" title="Create a local RFI draft from the active workspace context">Create RFI</button><button data-ws-action="observation">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
       </aside>
       <main class="mc-ws-main">
-        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-review', label: 'Checklist Review', value: checklistApplicableCount ? `${checklistDoneCount}/${checklistApplicableCount}` : 'No data', detail: checklistApplicableCount ? `${checklistDoneCount} of ${checklistApplicableCount} reviewed this session` : 'No deterministic checklist items recorded', tone: checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-blocked', label: 'Blocked', value: checklistBlockedCount, detail: checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded', tone: checklistBlockedCount ? 'danger' : 'watch' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'issues-questions', label: 'Open Questions', value: issuesModel.counts.questions, detail: issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.', tone: issuesModel.counts.questions ? 'watch' : 'neutral' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'documents', label: 'Related Documents', value: (activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0), detail: `${activeWorkspace?.sourceSheets?.length || 0} source sheets`, tone: 'neutral' })}</article></div></header>
+        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-verification', label: 'Verified', value: checklistApplicableCount ? `${checklistVerifiedCount}/${checklistApplicableCount}` : 'No data', detail: checklistApplicableCount ? `${checklistVerifiedCount} of ${checklistApplicableCount} items verified` : 'No deterministic checklist items recorded', tone: checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-blocked', label: 'Blocked', value: checklistBlockedCount, detail: checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded', tone: checklistBlockedCount ? 'danger' : 'watch' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'issues-questions', label: 'Open Questions', value: issuesModel.counts.questions, detail: issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.', tone: issuesModel.counts.questions ? 'watch' : 'neutral' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'documents', label: 'Related Documents', value: (activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0), detail: `${activeWorkspace?.sourceSheets?.length || 0} source sheets`, tone: 'neutral' })}</article></div></header>
         <section class="mc-ws-project-clock" aria-label="Project milestone context">
           <div><small>PROJECT PHASE</small><strong>${esc(timelineModel.summary?.projectPhase || projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
           <div><small>NTP</small><strong>${esc(projectMilestoneContext?.ntpDateLabel || 'Aug 13, 2026')}</strong></div>
@@ -8607,7 +8824,7 @@ async function renderMissionControlWorkspace() {
         <section class="mc-ws-lower">
           <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${issueSummaryMarkup}</ul></article>
           <article id="workspaceChiefInsightPanel" class="mc-ws-chief-panel"><header><strong>Chief Insight</strong><button data-ws-action="chief">Ask Chief</button></header><div class="mc-ws-chief-panel-body"><div class="mc-ws-chief-avatar">👷</div><p>${esc(chiefInsight)}</p></div></article>
-          <article id="workspaceChecklistPanel"><header><strong>SESSION REVIEW PROGRESS</strong><button type="button" data-ws-section="checklist">Open Full Checklist</button></header><p class="mc-ws-muted">Checklist review is grounded in the current workspace evidence and stays session-only unless an authoritative source says otherwise.</p><div class="mc-ws-progress"><span style="width:${checklistApplicableCount ? Math.min(100, Math.round((checklistDoneCount / checklistApplicableCount) * 100)) : 0}%"></span></div><small>${checklistDoneCount} of ${checklistApplicableCount} reviewed this session · ${checklistBlockedCount} blocked · ${checklistUnknownCount} unknown</small><ul class="mc-ws-check">${checklistSummaryMarkup}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
+          <article id="workspaceChecklistPanel"><header><strong>VERIFICATION PROGRESS</strong><button type="button" data-ws-section="checklist">Open Full Checklist</button></header><p class="mc-ws-muted">Checklist verification is grounded in the current workspace evidence and stays session-only unless an authoritative source says otherwise.</p><div class="mc-ws-progress"><span style="width:${checklistApplicableCount ? Math.min(100, Math.round((checklistVerifiedCount / checklistApplicableCount) * 100)) : 0}%"></span></div><small>${checklistVerifiedCount} of ${checklistApplicableCount} verified · ${checklistBlockedCount} blocked · ${checklistUnknownCount} unknown</small><ul class="mc-ws-check">${checklistSummaryMarkup}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
           <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${timelineSummaryMarkup}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.title)}</b><span>${esc(item.date ? item.dateLabel || item.date : item.status || '')}</span><small>${esc(item.description || item.workspaceImpact || item.nextStep || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button></article>
         </section>`}
       </main>
@@ -8823,6 +9040,44 @@ $('#missionControlContent').onclick = async event => {
     }
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsChecklistVerificationStatus) {
+    const workspaceId = activeBedfordWorkspaceId || '';
+    const itemId = String(button.dataset.wsChecklistVerificationStatus || '').trim();
+    if (!itemId) return;
+    const activeWorkspace = buildBedfordWorkspaceModel(workspaceId).activeWorkspace || null;
+    const verificationDraft = workspaceChecklistVerificationDraftFor(workspaceId, { id: itemId }, workspaceChecklistVerificationStore.get(state().activeProject, workspaceId, itemId));
+    const nextStatus = String(button.dataset.wsChecklistVerificationValue || 'NOT_VERIFIED').toUpperCase();
+    verificationDraft.verificationStatus = nextStatus;
+    if (nextStatus !== 'NOT_VERIFIED') verificationDraft.verifiedAt = verificationDraft.verifiedAt || new Date().toISOString();
+    if (nextStatus === 'NOT_VERIFIED') verificationDraft.verifiedAt = '';
+    verificationDraft.verifiedBy = verificationDraft.verifiedBy || '';
+    activeBedfordWorkspaceSection = 'checklist';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsChecklistVerificationSave) {
+    const workspaceId = activeBedfordWorkspaceId || '';
+    const itemId = String(button.dataset.wsChecklistVerificationSave || '').trim();
+    if (!itemId) return;
+    const checklistState = workspaceChecklistStateFor(workspaceId);
+    const draft = checklistState.verificationDrafts?.[itemId] || workspaceChecklistVerificationDraftFor(workspaceId, { id: itemId }, workspaceChecklistVerificationStore.get(state().activeProject, workspaceId, itemId));
+    if (!draft) return;
+    const saved = await saveWorkspaceChecklistVerification(itemId, {
+      workspaceId,
+      verificationStatus: draft.verificationStatus,
+      notes: draft.notes,
+      verifiedBy: draft.verifiedBy,
+      verifiedAt: draft.verificationStatus === 'PASS' || draft.verificationStatus === 'FAIL' || draft.verificationStatus === 'NA'
+        ? draft.verifiedAt || new Date().toISOString()
+        : ''
+    });
+    if (saved) {
+      checklistState.verificationDrafts[itemId] = { ...draft, ...saved };
+      activeBedfordWorkspaceSection = 'checklist';
+      await showMissionControlView('workspace');
+    }
     return;
   }
   if (button.dataset.wsTradeCategory) {
@@ -9156,10 +9411,10 @@ $('#missionControlContent').onclick = async event => {
     const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
     const checklistModel = buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, pmisRuntime });
     const timelineModel = buildWorkspaceTimelineModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, checklistModel });
-    if (button.dataset.wsOverviewAction === 'checklist-review') {
+    if (button.dataset.wsOverviewAction === 'checklist-verification') {
       const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
       checklistState.filter = checklistModel.counts?.blocked ? 'blocked' : 'all';
-      checklistState.selectedItemId = checklistModel.items.find(item => item.status === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
+      checklistState.selectedItemId = checklistModel.items.find(item => item.queueState === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
       activeBedfordWorkspaceSection = 'checklist';
       await showMissionControlView('workspace');
       return;
@@ -9167,7 +9422,7 @@ $('#missionControlContent').onclick = async event => {
     if (button.dataset.wsOverviewAction === 'checklist-blocked') {
       const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
       checklistState.filter = 'blocked';
-      checklistState.selectedItemId = checklistModel.items.find(item => item.status === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
+      checklistState.selectedItemId = checklistModel.items.find(item => item.queueState === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
       activeBedfordWorkspaceSection = 'checklist';
       await showMissionControlView('workspace');
       return;
@@ -10137,26 +10392,22 @@ app.addEventListener('change', async event => {
     } catch (error) { alert(error.message); }
   }
 });
-$('#missionControlContent').addEventListener('change', event => {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement)) return;
-  if (!target.matches('input[data-ws-checklist-toggle]')) return;
-  const checklistState = workspaceChecklistStateFor(activeBedfordWorkspaceId || '');
-  const itemId = target.dataset.wsChecklistToggle || '';
-  if (!itemId) return;
-  if (target.disabled) {
-    target.checked = false;
-    return;
-  }
-  if (target.checked) checklistState.verifiedIds.add(itemId);
-  else checklistState.verifiedIds.delete(itemId);
-  void renderMissionControlWorkspace();
-});
 $('#missionControlContent').addEventListener('input', event => {
   const target = event.target;
   if (target.matches?.('input[data-ws-note-search]')) {
     const notesState = workspaceNotesStateFor(activeBedfordWorkspaceId || '');
     notesState.search = target.value || '';
+    return;
+  }
+  if (target.matches?.('textarea[data-ws-checklist-verification-notes]')) {
+    const workspaceId = activeBedfordWorkspaceId || '';
+    const itemId = String(target.dataset.wsChecklistVerificationNotes || '').trim();
+    if (!itemId) return;
+    const checklistState = workspaceChecklistStateFor(workspaceId);
+    const draft = checklistState.verificationDrafts[itemId] || workspaceChecklistVerificationDraftFor(workspaceId, { id: itemId }, workspaceChecklistVerificationStore.get(state().activeProject, workspaceId, itemId));
+    if (!draft) return;
+    draft.notes = target.value || '';
+    checklistState.verificationDrafts[itemId] = draft;
     return;
   }
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
