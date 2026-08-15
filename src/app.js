@@ -3811,6 +3811,18 @@ function workspaceDisplayTitle(value = '') {
     .replace(/\s{2,}/g, ' ');
 }
 
+function workspaceRailSectionMarkup({ sectionKey = '', title = '', subtitle = '', body = '', open = true, className = '' } = {}) {
+  const classes = ['mc-ws-side-section', 'mc-ws-rail-section'];
+  if (className) classes.push(className);
+  return `<details class="${classes.join(' ')}" data-rail-section="${esc(sectionKey)}" ${open ? 'open' : ''}>
+    <summary>
+      <small>${esc(title)}</small>
+      ${subtitle ? `<strong>${esc(subtitle)}</strong>` : ''}
+    </summary>
+    <div class="mc-ws-rail-body">${body}</div>
+  </details>`;
+}
+
 function renderChiefSuggestedQuestionsMarkup() {
   return `
     <section class="mc-chief-workspace-questions" aria-label="Suggested construction questions">
@@ -3841,14 +3853,61 @@ function renderChiefSuggestedQuestionsMarkup() {
     </section>`;
 }
 
+function normalizeWorkspaceTreeState(state = {}) {
+  if (!state || typeof state !== 'object') {
+    return {
+      selectorOpen: false,
+      expandedWorkspaces: {},
+      expandedTrades: {},
+      expandedCategories: {}
+    };
+  }
+  const expandedWorkspaces = state.expandedWorkspaces && typeof state.expandedWorkspaces === 'object'
+    ? { ...state.expandedWorkspaces }
+    : {};
+  const expandedTrades = state.expandedTrades && typeof state.expandedTrades === 'object'
+    ? { ...state.expandedTrades }
+    : state.expandedTradesWorkspaceId
+      ? { [String(state.expandedTradesWorkspaceId)]: true }
+      : {};
+  const expandedCategories = state.expandedCategories && typeof state.expandedCategories === 'object'
+    ? { ...state.expandedCategories }
+    : state.expandedTradesWorkspaceId && state.expandedWorkspaceCategory
+      ? { [String(state.expandedTradesWorkspaceId)]: String(state.expandedWorkspaceCategory) }
+      : {};
+  return {
+    selectorOpen: state.selectorOpen !== false,
+    expandedWorkspaces,
+    expandedTrades,
+    expandedCategories
+  };
+}
+
 function workspaceRoomTreeMarkup(workspaceModel = {}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = [], workspaceTradesState = null) {
-  const tradesState = workspaceTradesState || { expandedTradesWorkspaceId: '', expandedWorkspaceCategory: '' };
+  const tradesSourceState = workspaceTradesState || {};
+  const tradesState = {
+    selectorOpen: tradesSourceState.selectorOpen !== false,
+    expandedWorkspaces: tradesSourceState.expandedWorkspaces && typeof tradesSourceState.expandedWorkspaces === 'object'
+      ? { ...tradesSourceState.expandedWorkspaces }
+      : {},
+    expandedTrades: tradesSourceState.expandedTrades && typeof tradesSourceState.expandedTrades === 'object'
+      ? { ...tradesSourceState.expandedTrades }
+      : tradesSourceState.expandedTradesWorkspaceId
+        ? { [String(tradesSourceState.expandedTradesWorkspaceId)]: true }
+        : {},
+    expandedCategories: tradesSourceState.expandedCategories && typeof tradesSourceState.expandedCategories === 'object'
+      ? { ...tradesSourceState.expandedCategories }
+      : tradesSourceState.expandedTradesWorkspaceId && tradesSourceState.expandedWorkspaceCategory
+        ? { [String(tradesSourceState.expandedTradesWorkspaceId)]: String(tradesSourceState.expandedWorkspaceCategory) }
+        : {}
+  };
   const workspaces = list(workspaceModel.workspaces);
   if (!workspaces.length) return '<div class="mc-ws-room-tree mc-ws-room-tree-empty"><strong>No workspaces available.</strong></div>';
   return `<div class="mc-ws-room-tree-shell">${workspaces.map(record => {
     const isActive = record.id === activeWorkspace?.id;
-    const tradesOpen = isActive && tradesState.expandedTradesWorkspaceId === record.id;
-    const activeCategoryKey = tradesOpen ? tradesState.expandedWorkspaceCategory : '';
+    const roomOpen = tradesState.expandedWorkspaces?.[record.id] ?? isActive;
+    const tradesOpen = roomOpen && (tradesState.expandedTrades?.[record.id] ?? false);
+    const activeCategoryKey = tradesOpen ? tradesState.expandedCategories?.[record.id] || '' : '';
     const roomArrow = isActive ? '▼' : '▶';
     const tradesArrow = tradesOpen ? '▼' : '▶';
     const roomLabel = workspaceDisplayTitle(record.id || record.room || 'Workspace');
@@ -3857,7 +3916,7 @@ function workspaceRoomTreeMarkup(workspaceModel = {}, activeWorkspace = null, pr
     const roomBadge = workspaceDisplayTitle(record.type || '');
     const roomSheetCount = fmt(workspaceSelectableSheets(record).length);
     const roomTradeGroups = tradesOpen && workspaceDrawingCategories.length
-      ? `<details class="mc-ws-trades" open>
+      ? `<details class="mc-ws-trades" data-ws-trades-details="${esc(record.id)}" open>
           <summary>
             <button type="button" class="mc-ws-trades-toggle active" data-ws-trades="${esc(record.id)}">
               <strong>Trades</strong>
@@ -3871,7 +3930,7 @@ function workspaceRoomTreeMarkup(workspaceModel = {}, activeWorkspace = null, pr
               const categoryOpen = activeCategoryKey === categoryKey || (!activeCategoryKey && index === 0);
               const categoryArrow = categoryOpen ? '▼' : '▶';
               return `
-              <details class="mc-ws-sheet-group" ${categoryOpen ? 'open' : ''}>
+              <details class="mc-ws-sheet-group" data-ws-sheet-group="${esc(record.id)}" data-ws-sheet-group-key="${esc(categoryKey)}" ${categoryOpen ? 'open' : ''}>
                 <summary>
                   <button type="button" class="${categoryOpen ? 'active' : ''}" data-ws-trade-category="${esc(categoryKey)}">
                     <strong>${categoryArrow} ${esc(workspaceDisplayTitle(category.label))}</strong>
@@ -3892,8 +3951,8 @@ function workspaceRoomTreeMarkup(workspaceModel = {}, activeWorkspace = null, pr
             }).join('')}</div>
           </div>
         </details>`
-      : isActive
-        ? `<details class="mc-ws-trades">
+      : isActive || roomOpen
+        ? `<details class="mc-ws-trades" data-ws-trades-details="${esc(record.id)}" ${tradesOpen ? 'open' : ''}>
             <summary>
               <button type="button" class="mc-ws-trades-toggle" data-ws-trades="${esc(record.id)}">
                 <strong>${tradesArrow} Trades</strong>
@@ -3923,18 +3982,150 @@ function workspaceNextStepPriority(item = {}) {
   return 'high';
 }
 
-function keepWorkspaceTreeOpen() {
+const WORKSPACE_NAVIGATION_STATE_KEY = 'mission-companion:workspace-navigation-state:v1';
+const DEFAULT_WORKSPACE_RAIL_STATE = Object.freeze({
+  primaryModes: true,
+  projectWorkspace: true,
+  workspaceSections: true,
+  quickActions: false,
+  settingsUtilities: false
+});
+function defaultWorkspaceNavigationState() {
+  return {
+    rail: { ...DEFAULT_WORKSPACE_RAIL_STATE },
+    tree: {
+      selectorOpen: true,
+      expandedWorkspaces: {},
+      expandedTrades: {},
+      expandedCategories: {}
+    }
+  };
+}
+function loadWorkspaceNavigationState() {
+  const fallback = defaultWorkspaceNavigationState();
+  try {
+    const raw = globalThis.localStorage?.getItem?.(WORKSPACE_NAVIGATION_STATE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return {
+      rail: { ...DEFAULT_WORKSPACE_RAIL_STATE, ...(parsed?.rail || parsed?.railSections || {}) },
+      tree: {
+        selectorOpen: parsed?.tree?.selectorOpen !== false,
+        expandedWorkspaces: parsed?.tree?.expandedWorkspaces && typeof parsed.tree.expandedWorkspaces === 'object' ? { ...parsed.tree.expandedWorkspaces } : {},
+        expandedTrades: parsed?.tree?.expandedTrades && typeof parsed.tree.expandedTrades === 'object' ? { ...parsed.tree.expandedTrades } : {},
+        expandedCategories: parsed?.tree?.expandedCategories && typeof parsed.tree.expandedCategories === 'object' ? { ...parsed.tree.expandedCategories } : {}
+      }
+    };
+  } catch {
+    return fallback;
+  }
+}
+const workspaceNavigationState = loadWorkspaceNavigationState();
+const workspaceRailSessionState = workspaceNavigationState.rail;
+const workspaceTreeSessionState = workspaceNavigationState.tree;
+function persistWorkspaceNavigationState() {
+  try {
+    globalThis.localStorage?.setItem?.(WORKSPACE_NAVIGATION_STATE_KEY, JSON.stringify({
+      rail: workspaceRailSessionState,
+      tree: workspaceTreeSessionState
+    }));
+  } catch {}
+}
+const workspaceTradesSessionState = workspaceTreeSessionState;
+
+function keepWorkspaceTreeOpen(workspaceId = '') {
   workspaceTreeSessionState.selectorOpen = true;
+  workspaceRailSessionState.projectWorkspace = true;
+  if (workspaceId) workspaceTreeSessionState.expandedWorkspaces[workspaceId] = true;
+  persistWorkspaceNavigationState();
+}
+
+function setWorkspaceTreeTradesOpen(workspaceId = '', open = true) {
+  const workspaceKey = String(workspaceId || '').trim();
+  if (!workspaceKey) return;
+  if (open) workspaceTreeSessionState.expandedTrades[workspaceKey] = true;
+  else delete workspaceTreeSessionState.expandedTrades[workspaceKey];
+  persistWorkspaceNavigationState();
+}
+
+function setWorkspaceTreeCategoryOpen(workspaceId = '', categoryKey = '', open = true) {
+  const workspaceKey = String(workspaceId || '').trim();
+  const categoryValue = String(categoryKey || '').trim();
+  if (!workspaceKey || !categoryValue) return;
+  if (open) workspaceTreeSessionState.expandedCategories[workspaceKey] = categoryValue;
+  else if (workspaceTreeSessionState.expandedCategories[workspaceKey] === categoryValue) delete workspaceTreeSessionState.expandedCategories[workspaceKey];
+  persistWorkspaceNavigationState();
 }
 
 function syncMissionControlWorkspaceTreeState() {
-  const selector = $('#missionControlSidebar .mc-mission-workspace-select');
-  if (!selector) return;
-  selector.open = !!workspaceTreeSessionState.selectorOpen;
-  if (selector.dataset.workspaceTreeBound === 'true') return;
-  selector.dataset.workspaceTreeBound = 'true';
-  selector.addEventListener('toggle', () => {
-    workspaceTreeSessionState.selectorOpen = selector.open;
+  const sidebar = $('#missionControlSidebar');
+  if (!sidebar) return;
+
+  sidebar.querySelectorAll('[data-rail-section]').forEach(section => {
+    const key = String(section.dataset.railSection || '').trim();
+    if (!key) return;
+    section.open = !!workspaceRailSessionState[key];
+    if (section.dataset.workspaceRailBound === 'true') return;
+    section.dataset.workspaceRailBound = 'true';
+    section.addEventListener('toggle', () => {
+      workspaceRailSessionState[key] = section.open;
+      if (key === 'projectWorkspace') workspaceTreeSessionState.selectorOpen = section.open;
+      persistWorkspaceNavigationState();
+    });
+  });
+
+  const selector = sidebar.querySelector('.mc-mission-workspace-select');
+  if (selector) {
+    selector.open = !!workspaceTreeSessionState.selectorOpen;
+    if (selector.dataset.workspaceTreeBound !== 'true') {
+      selector.dataset.workspaceTreeBound = 'true';
+      selector.addEventListener('toggle', () => {
+        workspaceTreeSessionState.selectorOpen = selector.open;
+        workspaceRailSessionState.projectWorkspace = selector.open;
+        persistWorkspaceNavigationState();
+      });
+    }
+  }
+
+  sidebar.querySelectorAll('.mc-ws-room-group').forEach(details => {
+    const workspaceId = String(details.dataset.wsRoomGroup || '').trim();
+    if (!workspaceId) return;
+    const open = workspaceTreeSessionState.expandedWorkspaces[workspaceId] ?? details.hasAttribute('open');
+    details.open = !!open;
+    if (details.dataset.workspaceTreeBound === 'true') return;
+    details.dataset.workspaceTreeBound = 'true';
+    details.addEventListener('toggle', () => {
+      workspaceTreeSessionState.expandedWorkspaces[workspaceId] = details.open;
+      persistWorkspaceNavigationState();
+    });
+  });
+
+  sidebar.querySelectorAll('.mc-ws-trades').forEach(details => {
+    const workspaceId = String(details.dataset.wsTradesDetails || '').trim();
+    if (!workspaceId) return;
+    const open = workspaceTreeSessionState.expandedTrades[workspaceId] ?? details.hasAttribute('open');
+    details.open = !!open;
+    if (details.dataset.workspaceTreeTradesBound === 'true') return;
+    details.dataset.workspaceTreeTradesBound = 'true';
+    details.addEventListener('toggle', () => {
+      workspaceTreeSessionState.expandedTrades[workspaceId] = details.open;
+      persistWorkspaceNavigationState();
+    });
+  });
+
+  sidebar.querySelectorAll('.mc-ws-sheet-group').forEach(details => {
+    const workspaceId = String(details.dataset.wsSheetGroup || '').trim();
+    const categoryKey = String(details.dataset.wsSheetGroupKey || '').trim();
+    if (!workspaceId || !categoryKey) return;
+    const open = workspaceTreeSessionState.expandedCategories[workspaceId] === categoryKey || (!workspaceTreeSessionState.expandedCategories[workspaceId] && details.hasAttribute('open'));
+    details.open = !!open;
+    if (details.dataset.workspaceTreeCategoryBound === 'true') return;
+    details.dataset.workspaceTreeCategoryBound = 'true';
+    details.addEventListener('toggle', () => {
+      if (details.open) workspaceTreeSessionState.expandedCategories[workspaceId] = categoryKey;
+      else if (workspaceTreeSessionState.expandedCategories[workspaceId] === categoryKey) delete workspaceTreeSessionState.expandedCategories[workspaceId];
+      persistWorkspaceNavigationState();
+    });
   });
 }
 
@@ -3952,13 +4143,6 @@ const workspaceDrawingFullscreenScrollState = {
   windowScrollY: 0,
   sidebarScrollTop: 0,
   evidenceScrollTop: 0
-};
-const workspaceTreeSessionState = {
-  selectorOpen: false
-};
-const workspaceTradesSessionState = {
-  expandedTradesWorkspaceId: '',
-  expandedWorkspaceCategory: ''
 };
 const workspaceChecklistSessionState = new Map();
 const workspaceTimelineSessionState = new Map();
@@ -8543,32 +8727,41 @@ function renderMissionControlSidebar() {
         <span>MISSION COMPANION</span>
         <strong>Unified Workspace Shell</strong>
       </div>
-      <button id="openProfessionalWorkspace" class="mc-control-settings-button" type="button" aria-label="Open Professional Workspace" title="Open Professional Workspace"><span aria-hidden="true">⚙</span></button>
     </div>
-    <div class="mc-ws-side-section">
-      <small>PRIMARY MODES</small>
-      <nav class="mc-ws-side-nav" aria-label="Primary modes">
+    ${workspaceRailSectionMarkup({
+      sectionKey: 'primaryModes',
+      title: 'PRIMARY MODES',
+      subtitle: 'Dashboard · Chief · Workspace',
+      open: workspaceRailSessionState.primaryModes,
+      body: `<nav class="mc-ws-side-nav" aria-label="Primary modes">
         <button type="button" class="${missionControlView === 'dashboard' ? 'active' : ''}" data-control-view="dashboard">Dashboard</button>
         <button type="button" class="${missionControlView === 'home' || missionControlView === 'chat' || missionControlView === 'history' ? 'active' : ''}" data-control-home aria-current="${missionControlView === 'home' || missionControlView === 'chat' || missionControlView === 'history' ? 'page' : 'false'}">Chief</button>
         <button type="button" class="${missionControlView === 'workspace' ? 'active' : ''}" data-control-view="workspace" aria-current="${missionControlView === 'workspace' ? 'page' : 'false'}">Workspace</button>
-      </nav>
-    </div>
-    <div class="mc-ws-side-section mc-mission-workspace-picker">
-      <small>PROJECT / WORKSPACE</small>
-      <button type="button" class="mc-mission-workspace-summary" data-ws-action="new" aria-label="Select workspace">${workspaceSummary}<span>${workspaceSubhead}</span></button>
-      <details class="mc-mission-workspace-select"${workspaceTreeSessionState.selectorOpen ? ' open' : ''}>
-        <summary>
-          <span>Select Workspace</span>
-          <small>Collapsed by default · open to browse rooms, trades, and sheets</small>
-        </summary>
-        <div class="mc-mission-workspace-picker-tree">
-          ${workspaceRoomTreeMarkup(workspaceModel, activeWorkspace, previewSheet, workspaceModel?.activeWorkspace?.drawingCategories || [], workspaceTradesSessionState)}
-        </div>
-      </details>
-    </div>
-    <div class="mc-ws-side-section">
-      <small>WORKSPACE SECTIONS</small>
-      <nav class="mc-ws-side-nav" aria-label="Workspace sections">
+      </nav>`
+    })}
+    ${workspaceRailSectionMarkup({
+      sectionKey: 'projectWorkspace',
+      title: 'PROJECT / WORKSPACE',
+      subtitle: workspaceSummary,
+      open: workspaceRailSessionState.projectWorkspace,
+      body: `
+        <button type="button" class="mc-mission-workspace-summary" data-ws-action="new" aria-label="Select workspace">${workspaceSubhead}<span>${workspaceSummary}</span></button>
+        <details class="mc-mission-workspace-select"${workspaceTreeSessionState.selectorOpen ? ' open' : ''}>
+          <summary>
+            <span>Select Workspace</span>
+            <small>Collapsed by default · open to browse rooms, trades, and sheets</small>
+          </summary>
+          <div class="mc-mission-workspace-picker-tree">
+            ${workspaceRoomTreeMarkup(workspaceModel, activeWorkspace, previewSheet, workspaceModel?.activeWorkspace?.drawingCategories || [], workspaceTradesSessionState)}
+          </div>
+        </details>`
+    })}
+    ${workspaceRailSectionMarkup({
+      sectionKey: 'workspaceSections',
+      title: 'WORKSPACE SECTIONS',
+      subtitle: 'Overview · Documents · Evidence · Issues · Checklist · Comparisons · Timeline · Notes',
+      open: workspaceRailSessionState.workspaceSections,
+      body: `<nav class="mc-ws-side-nav" aria-label="Workspace sections">
         <button type="button" class="${activeBedfordWorkspaceSection === 'overview' ? 'active' : ''}" data-ws-section="overview">⌂ Overview</button>
         <button type="button" class="${activeBedfordWorkspaceSection === 'documents' ? 'active' : ''}" data-ws-section="documents">▣ Documents</button>
         <button type="button" class="${activeBedfordWorkspaceSection === 'evidence' ? 'active' : ''}" data-ws-section="evidence">Evidence</button>
@@ -8577,18 +8770,40 @@ function renderMissionControlSidebar() {
         <button type="button" class="${activeBedfordWorkspaceSection === 'comparisons' ? 'active' : ''}" data-ws-section="comparisons">⇄ Comparisons</button>
         <button type="button" class="${activeBedfordWorkspaceSection === 'timeline' ? 'active' : ''}" data-ws-section="timeline">◷ Timeline</button>
         <button type="button" class="${activeBedfordWorkspaceSection === 'notes' ? 'active' : ''}" data-ws-section="notes">✎ Notes</button>
-      </nav>
-    </div>
-    <div class="mc-ws-side-section mc-ws-quick">
-      <small>QUICK ACTIONS</small>
-      <button data-ws-action="chief">Ask Chief about this</button>
-      <button data-ws-action="compare-spec">Compare to Spec</button>
-      <button data-ws-action="evidence" title="Capture shared Workspace evidence">Add Evidence</button>
-      <button data-ws-action="rfi" title="Create a local RFI draft from the active workspace context">Create RFI</button>
-      <button data-ws-action="observation">Create Observation</button>
-      <button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button>
-    </div>
+      </nav>`
+    })}
+    ${workspaceRailSectionMarkup({
+      sectionKey: 'quickActions',
+      title: 'QUICK ACTIONS',
+      subtitle: 'Ask Chief · Compare to Spec · Add Evidence · Create RFI · Create Observation · Export Package',
+      open: workspaceRailSessionState.quickActions,
+      body: `<div class="mc-ws-quick">
+        <button data-ws-action="chief">Ask Chief about this</button>
+        <button data-ws-action="compare-spec">Compare to Spec</button>
+        <button data-ws-action="evidence" title="Capture shared Workspace evidence">Add Evidence</button>
+        <button data-ws-action="rfi" title="Create a local RFI draft from the active workspace context">Create RFI</button>
+        <button data-ws-action="observation">Create Observation</button>
+        <button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button>
+      </div>`
+    })}
+    ${workspaceRailSectionMarkup({
+      sectionKey: 'settingsUtilities',
+      title: 'SETTINGS / UTILITIES',
+      subtitle: 'Workspace shell, tools, and return behavior',
+      open: workspaceRailSessionState.settingsUtilities,
+      body: `<button id="openProfessionalWorkspace" class="mc-control-settings-button" type="button" aria-label="Open Professional Workspace" title="Open Professional Workspace"><span aria-hidden="true">⚙</span>Open Professional Workspace</button>`
+    })}
     <div class="rail-foot"><span class="dot" id="healthDot"></span><span id="healthText">Starting…</span></div>`;
+}
+
+function refreshMissionControlSidebar() {
+  const missionControlSidebar = $('#missionControlSidebar');
+  if (missionControlSidebar) {
+    const scrollTop = missionControlSidebar.scrollTop || 0;
+    missionControlSidebar.innerHTML = renderMissionControlSidebar();
+    syncMissionControlWorkspaceTreeState();
+    missionControlSidebar.scrollTop = scrollTop;
+  }
 }
 
 async function renderMissionControlWorkspace() {
@@ -9077,18 +9292,16 @@ async function handleMissionControlSidebarButton(button) {
   }
   if (button.dataset.wsSelect) {
     activeBedfordWorkspaceId = button.dataset.wsSelect;
-    keepWorkspaceTreeOpen();
+    keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
     const selectedWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace;
     activeBedfordWorkspaceSheetNumber = selectedWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
-    workspaceTradesSessionState.expandedTradesWorkspaceId = '';
-    workspaceTradesSessionState.expandedWorkspaceCategory = '';
     await showMissionControlView('workspace');
     return true;
   }
   if (button.dataset.wsSheet) {
     activeBedfordWorkspaceSheetNumber = button.dataset.wsSheet;
-    keepWorkspaceTreeOpen();
+    keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return true;
@@ -9098,34 +9311,27 @@ async function handleMissionControlSidebarButton(button) {
     const target = buildWorkspaceDrawingTarget(activeWorkspace, button.dataset.wsDrawingSheet);
     if (target) drawingTarget = target;
     activeBedfordWorkspaceSheetNumber = button.dataset.wsDrawingSheet;
-    keepWorkspaceTreeOpen();
+    keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return true;
   }
   if (button.dataset.wsTrades) {
     const workspaceId = String(button.dataset.wsTrades || '').trim();
-    keepWorkspaceTreeOpen();
-    if (workspaceTradesSessionState.expandedTradesWorkspaceId === workspaceId) {
-      workspaceTradesSessionState.expandedTradesWorkspaceId = '';
-      workspaceTradesSessionState.expandedWorkspaceCategory = '';
-    } else {
-      workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
-      workspaceTradesSessionState.expandedWorkspaceCategory = '';
-    }
-    activeBedfordWorkspaceSection = 'overview';
-    await showMissionControlView('workspace');
+    keepWorkspaceTreeOpen(workspaceId);
+    setWorkspaceTreeTradesOpen(workspaceId, !(workspaceTreeSessionState.expandedTrades[workspaceId]));
+    setWorkspaceTreeCategoryOpen(workspaceId, workspaceTreeSessionState.expandedCategories[workspaceId] || '', false);
+    refreshMissionControlSidebar();
     return true;
   }
   if (button.dataset.wsTradeCategory) {
     const categoryKey = String(button.dataset.wsTradeCategory || '').trim();
     const [workspaceId] = categoryKey.split(':');
     if (workspaceId && buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.id === workspaceId) {
-      keepWorkspaceTreeOpen();
-      workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
-      workspaceTradesSessionState.expandedWorkspaceCategory = workspaceTradesSessionState.expandedWorkspaceCategory === categoryKey ? '' : categoryKey;
-      activeBedfordWorkspaceSection = 'overview';
-      await showMissionControlView('workspace');
+      keepWorkspaceTreeOpen(workspaceId);
+      setWorkspaceTreeTradesOpen(workspaceId, true);
+      setWorkspaceTreeCategoryOpen(workspaceId, categoryKey, workspaceTreeSessionState.expandedCategories[workspaceId] !== categoryKey);
+      refreshMissionControlSidebar();
     }
     return true;
   }
@@ -9145,11 +9351,9 @@ async function handleMissionControlSidebarButton(button) {
   }
   if (button.dataset.wsAction === 'new') {
     activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
-    keepWorkspaceTreeOpen();
+    keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
     activeBedfordWorkspaceSheetNumber = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
-    workspaceTradesSessionState.expandedTradesWorkspaceId = '';
-    workspaceTradesSessionState.expandedWorkspaceCategory = '';
     await showMissionControlView('workspace');
     return true;
   }
@@ -9310,27 +9514,19 @@ $('#missionControlContent').onclick = async event => {
   if (!button) return;
   if (button.dataset.wsSelect) {
     activeBedfordWorkspaceId = button.dataset.wsSelect;
-    keepWorkspaceTreeOpen();
+    keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
     const selectedWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace;
     activeBedfordWorkspaceSheetNumber = selectedWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
-    workspaceTradesSessionState.expandedTradesWorkspaceId = '';
-    workspaceTradesSessionState.expandedWorkspaceCategory = '';
     await showMissionControlView('workspace');
     return;
   }
   if (button.dataset.wsTrades) {
     const workspaceId = String(button.dataset.wsTrades || '').trim();
-    keepWorkspaceTreeOpen();
-    if (workspaceTradesSessionState.expandedTradesWorkspaceId === workspaceId) {
-      workspaceTradesSessionState.expandedTradesWorkspaceId = '';
-      workspaceTradesSessionState.expandedWorkspaceCategory = '';
-    } else {
-      workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
-      workspaceTradesSessionState.expandedWorkspaceCategory = '';
-    }
-    activeBedfordWorkspaceSection = 'overview';
-    await showMissionControlView('workspace');
+    keepWorkspaceTreeOpen(workspaceId);
+    setWorkspaceTreeTradesOpen(workspaceId, !(workspaceTreeSessionState.expandedTrades[workspaceId]));
+    setWorkspaceTreeCategoryOpen(workspaceId, workspaceTreeSessionState.expandedCategories[workspaceId] || '', false);
+    refreshMissionControlSidebar();
     return;
   }
   if (button.dataset.wsChecklistVerificationStatus) {
@@ -9375,11 +9571,10 @@ $('#missionControlContent').onclick = async event => {
     const categoryKey = String(button.dataset.wsTradeCategory || '').trim();
     const [workspaceId] = categoryKey.split(':');
     if (workspaceId && buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.id === workspaceId) {
-      keepWorkspaceTreeOpen();
-      workspaceTradesSessionState.expandedTradesWorkspaceId = workspaceId;
-      workspaceTradesSessionState.expandedWorkspaceCategory = workspaceTradesSessionState.expandedWorkspaceCategory === categoryKey ? '' : categoryKey;
-      activeBedfordWorkspaceSection = 'overview';
-      await showMissionControlView('workspace');
+      keepWorkspaceTreeOpen(workspaceId);
+      setWorkspaceTreeTradesOpen(workspaceId, true);
+      setWorkspaceTreeCategoryOpen(workspaceId, categoryKey, workspaceTreeSessionState.expandedCategories[workspaceId] !== categoryKey);
+      refreshMissionControlSidebar();
     }
     return;
   }
@@ -9691,7 +9886,7 @@ $('#missionControlContent').onclick = async event => {
   }
   if (button.dataset.wsSheet) {
     activeBedfordWorkspaceSheetNumber = button.dataset.wsSheet;
-    keepWorkspaceTreeOpen();
+    keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return;
@@ -9758,7 +9953,7 @@ $('#missionControlContent').onclick = async event => {
     const target = buildWorkspaceDrawingTarget(activeWorkspace, button.dataset.wsDrawingSheet);
     if (target) drawingTarget = target;
     activeBedfordWorkspaceSheetNumber = button.dataset.wsDrawingSheet;
-    keepWorkspaceTreeOpen();
+    keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
     activeBedfordWorkspaceSection = 'overview';
     await showMissionControlView('workspace');
     return;
@@ -9771,7 +9966,7 @@ $('#missionControlContent').onclick = async event => {
     if (selectedSheet) {
       drawingTarget = buildWorkspaceDrawingTarget(activeWorkspace, selectedSheet.sheetNumber);
       activeBedfordWorkspaceSheetNumber = selectedSheet.sheetNumber;
-      keepWorkspaceTreeOpen();
+      keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
       activeBedfordWorkspaceSection = 'documents';
       await showMissionControlView('plans');
     }
@@ -10163,11 +10358,9 @@ $('#missionControlContent').onclick = async event => {
   }
   if (button.dataset.wsAction === 'new') {
     activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
-    keepWorkspaceTreeOpen();
+    keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
     activeBedfordWorkspaceSheetNumber = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace?.sourceSheets?.[0]?.sheetNumber || '';
     activeBedfordWorkspaceSection = 'overview';
-    workspaceTradesSessionState.expandedTradesWorkspaceId = '';
-    workspaceTradesSessionState.expandedWorkspaceCategory = '';
     await showMissionControlView('workspace');
     return;
   }

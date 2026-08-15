@@ -315,6 +315,8 @@ test('Mission Control workspace defines local normalization helpers for the comp
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   assert.match(app, /const list = value => Array\.isArray\(value\) \? value : \[\];/);
   assert.match(app, /const text = value => value === null \|\| value === undefined \? '' : String\(value\)\.trim\(\);/);
+  assert.match(app, /function workspaceRailSectionMarkup\(\{/);
+  assert.match(app, /const WORKSPACE_NAVIGATION_STATE_KEY = 'mission-companion:workspace-navigation-state:v1';/);
   assert.match(app, /function workspaceRoomTreeMarkup\(workspaceModel = \{\}, activeWorkspace = null, previewSheet = null, workspaceDrawingCategories = \[\], workspaceTradesState = null\)/);
   assert.match(app, /const workspaces = list\(workspaceModel\.workspaces\);/);
 });
@@ -395,21 +397,24 @@ test('Mission Control workspace room-tree markup executes without undeclared hel
     activeWorkspace,
     { sheetNumber: '13E-100' },
     activeWorkspace.drawingCategories,
-    { expandedTradesWorkspaceId: '', expandedWorkspaceCategory: '' }
+    { expandedWorkspaces: {}, expandedTrades: {}, expandedCategories: {} }
   );
   const expandedMarkup = workspaceRoomTreeMarkup(
     workspaceModel,
     activeWorkspace,
     { sheetNumber: '13E-101' },
     activeWorkspace.drawingCategories,
-    { expandedTradesWorkspaceId: 'B13', expandedWorkspaceCategory: 'B13:electrical-power' }
+    { expandedWorkspaces: { B13: true }, expandedTrades: { B13: true }, expandedCategories: { B13: 'B13:electrical-power' } }
   );
   assert.match(collapsedMarkup, /mc-ws-room-tree-shell/);
   assert.match(collapsedMarkup, /data-ws-select="B13"/);
   assert.match(collapsedMarkup, /data-ws-trades="B13"/);
+  assert.match(collapsedMarkup, /data-ws-trades-details="B13"/);
   assert.doesNotMatch(collapsedMarkup, /data-ws-trade-category="B13:electrical-power"/);
   assert.doesNotMatch(collapsedMarkup, /data-ws-sheet="13E-101"/);
   assert.match(expandedMarkup, /data-ws-trade-category="B13:electrical-power"/);
+  assert.match(expandedMarkup, /data-ws-sheet-group="B13"/);
+  assert.match(expandedMarkup, /data-ws-sheet-group-key="B13:electrical-power"/);
   assert.match(expandedMarkup, /data-ws-sheet="13E-101"/);
   assert.match(expandedMarkup, /13E-101/);
   assert.doesNotMatch(expandedMarkup, /workspaceButtons/);
@@ -453,6 +458,13 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(sidebar, /PROJECT \/ WORKSPACE/);
   assert.match(sidebar, /WORKSPACE SECTIONS/);
   assert.match(sidebar, /QUICK ACTIONS/);
+  assert.match(sidebar, /SETTINGS \/ UTILITIES/);
+  assert.match(sidebar, /workspaceRailSectionMarkup\(\{/);
+  assert.match(sidebar, /sectionKey: 'primaryModes'/);
+  assert.match(sidebar, /sectionKey: 'projectWorkspace'/);
+  assert.match(sidebar, /sectionKey: 'workspaceSections'/);
+  assert.match(sidebar, /sectionKey: 'quickActions'/);
+  assert.match(sidebar, /sectionKey: 'settingsUtilities'/);
   assert.match(sidebar, /data-ws-section="overview"/);
   assert.match(sidebar, /data-ws-section="documents"/);
   assert.match(sidebar, /data-ws-section="comparisons"/);
@@ -496,9 +508,11 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.doesNotMatch(workspace, /mc-ws-sheet-picker/);
   assert.doesNotMatch(workspace, /ACTIVE ROOM/);
   assert.doesNotMatch(workspace, /MARKUPS & ITEMS/);
-  assert.match(app, /if \(button\.dataset\.wsSheet\) \{\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsSheet;\s*keepWorkspaceTreeOpen\(\);\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
-  assert.match(app, /if \(button\.dataset\.wsDrawingSheet\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, button\.dataset\.wsDrawingSheet\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsDrawingSheet;\s*keepWorkspaceTreeOpen\(\);\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
+  assert.match(app, /if \(button\.dataset\.wsSheet\) \{\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsSheet;\s*keepWorkspaceTreeOpen\(activeBedfordWorkspaceId\);\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
+  assert.match(app, /if \(button\.dataset\.wsDrawingSheet\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, button\.dataset\.wsDrawingSheet\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSheetNumber = button\.dataset\.wsDrawingSheet;\s*keepWorkspaceTreeOpen\(activeBedfordWorkspaceId\);\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('workspace'\);/);
   assert.match(app, /if \(button\.dataset\.wsAction === 'drawings'\) \{\s*const activeWorkspace = buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace \|\| null;\s*const target = buildWorkspaceDrawingTarget\(activeWorkspace, activeBedfordWorkspaceSheetNumber\);\s*if \(target\) drawingTarget = target;\s*activeBedfordWorkspaceSection = 'overview';\s*await showMissionControlView\('plans'\);/);
+  assert.match(app, /if \(button\.dataset\.wsTrades\) \{\s*const workspaceId = String\(button\.dataset\.wsTrades \|\| ''\)\.trim\(\);\s*keepWorkspaceTreeOpen\(workspaceId\);\s*setWorkspaceTreeTradesOpen\(workspaceId, !\(workspaceTreeSessionState\.expandedTrades\[workspaceId\]\)\);\s*setWorkspaceTreeCategoryOpen\(workspaceId, workspaceTreeSessionState\.expandedCategories\[workspaceId\] \|\| '', false\);\s*refreshMissionControlSidebar\(\);\s*return true;/);
+  assert.match(app, /if \(button\.dataset\.wsTradeCategory\) \{\s*const categoryKey = String\(button\.dataset\.wsTradeCategory \|\| ''\)\.trim\(\);\s*const \[workspaceId\] = categoryKey\.split\(':'\);\s*if \(workspaceId && buildBedfordWorkspaceModel\(activeBedfordWorkspaceId\)\.activeWorkspace\?\.\id === workspaceId\) \{\s*keepWorkspaceTreeOpen\(workspaceId\);\s*setWorkspaceTreeTradesOpen\(workspaceId, true\);\s*setWorkspaceTreeCategoryOpen\(workspaceId, categoryKey, workspaceTreeSessionState\.expandedCategories\[workspaceId\] !== categoryKey\);\s*refreshMissionControlSidebar\(\);\s*\}\s*return true;/);
   assert.match(app, /mc-ws-documents/);
   assert.match(app, /mc-ws-documents-grid/);
   assert.match(workspaceDocuments, /PRIMARY SOURCE DRAWINGS/);
@@ -519,9 +533,10 @@ test('Mission Control workspace preserves the approved wide composition and four
   assert.match(app, /action: 'checklist-verification'/);
   assert.match(app, /safeText\(workspace\?\.(?:id|workspaceId) \|\| draft\.workspaceId \|\| ''\)/);
   assert.match(css, /\.mc-ws\{grid-template-columns:240px minmax\(0,1fr\)\}/);
-  assert.match(css, /\.mc-ws-sidebar\{[^}]*display:flex;[^}]*flex-direction:column;[^}]*min-height:0;[^}]*align-self:stretch;[^}]*height:auto;[^}]*overflow-y:visible;[^}]*overflow-x:hidden\}/);
-  assert.match(css, /\.mc-ws-sidebar>\.mc-ws-side-section:first-of-type\{[^}]*display:block;[^}]*min-height:0;[^}]*overflow:visible\}/);
-  assert.match(css, /\.mc-ws-sidebar>\.mc-ws-side-section:first-of-type>\.mc-ws-side-nav\{[^}]*overflow:visible;[^}]*padding-right:0\}/);
+  assert.match(css, /\.mc-mission-shell \.mc-ws-sidebar\{[^}]*height:100dvh;[^}]*min-height:0;[^}]*overflow-y:auto;[^}]*overflow-x:hidden\}/);
+  assert.match(css, /\.mc-ws-rail-section\{[^}]*display:grid;[^}]*gap:8px;[^}]*padding:0 0 10px;[^}]*border-top:1px solid #17313c\}/);
+  assert.match(css, /\.mc-ws-rail-section>summary\{[^}]*display:grid;[^}]*gap:4px;[^}]*padding:12px 8px 10px;[^}]*cursor:pointer\}/);
+  assert.match(css, /\.mc-ws-rail-body\{[^}]*display:grid;[^}]*gap:8px;[^}]*padding:0 8px 0\}/);
   assert.match(css, /\.mc-ws-upper\{grid-template-columns:minmax\(0,2\.55fr\) minmax\(300px,1fr\)/);
   assert.match(css, /\.mc-ws-lower\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(css, /\.mc-ws-lower > article\{min-height:320px;max-height:380px;display:grid;grid-template-rows:auto minmax\(0,1fr\) auto auto;overflow:hidden\}/);

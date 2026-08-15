@@ -928,11 +928,18 @@
 
 /* Workspace UI polish */
 .mc-mission-shell{grid-template-columns:286px minmax(0,1fr);min-height:100vh;margin:0;background:linear-gradient(180deg,#06131c 0,#071119 100%)}
-.mc-mission-shell .mc-ws-sidebar{min-height:100vh;overflow-y:auto}
+.mc-mission-shell .mc-ws-sidebar{height:100dvh;min-height:0;overflow-y:auto;overflow-x:hidden}
 .mc-mission-shell .mc-ws-main{width:100%;margin:0;padding:24px 22px 28px}
 .mc-mission-brand{display:grid;gap:2px}
 .mc-mission-brand span{color:#6eaeb4;font-size:8px;letter-spacing:.14em;font-weight:800}
 .mc-mission-brand strong{color:#edf6f8;font-size:13px;letter-spacing:.08em}
+.mc-ws-rail-section{display:grid;gap:8px;padding:0 0 10px;border-top:1px solid #17313c}
+.mc-ws-rail-section>summary{display:grid;gap:4px;padding:12px 8px 10px;list-style:none;color:#819aa6;cursor:pointer}
+.mc-ws-rail-section>summary::-webkit-details-marker{display:none}
+.mc-ws-rail-section>summary small{color:#78cbc4;font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.mc-ws-rail-section>summary strong{color:#edf6f8;font-size:12px;line-height:1.35}
+.mc-ws-rail-body{display:grid;gap:8px;padding:0 8px 0}
+.mc-ws-rail-section[open]>.mc-ws-rail-body{padding-bottom:2px}
 .mc-mission-workspace-picker{gap:10px}
 .mc-mission-workspace-summary{display:grid;gap:4px;padding:10px 11px;border:1px solid #1f3a46;border-radius:10px;background:#0a1922;color:#dce9ee;text-align:left;cursor:pointer}
 .mc-mission-workspace-summary span{display:block;color:#7f9aa4;font-size:9px;line-height:1.35}
@@ -959,11 +966,13 @@
 .mc-ws-side-head button{min-height:38px;padding:9px 12px;border-radius:8px;font-size:12px}
 .mc-ws-side-section{gap:8px;padding:12px 8px 10px}
 .mc-ws-side-section strong{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#edf6f8}
+.mc-ws-side-section.mc-ws-rail-section{padding:0 0 10px}
 .mc-ws-side-nav button,.mc-ws-quick button{padding:9px 10px;border-radius:8px;line-height:1.35}
 .mc-ws-side-nav button{font-size:12px}
 .mc-ws-side-nav button:hover,.mc-ws-quick button:hover,.mc-ws-side-nav button.active{background:#0f2831;color:#eef9fb}
 .mc-ws-quick{padding-top:6px}
 .mc-ws-quick button{font-size:11px;background:#0a1923;border:1px solid #1a3641;color:#bfd0d6}
+.mc-ws-rail-section .mc-ws-quick{padding:0 8px 0}
 .mc-ws-quick button[disabled]{background:#0a1923;color:#728b96}
 .mc-ws-chief{margin-top:2px;padding:14px;text-align:left}
 .mc-ws-chief-avatar{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;background:#102733;font-size:22px;margin:0 auto 8px}
