@@ -126,6 +126,22 @@ import {
   workspaceNoteFilterOptions
 } from './workspace-notes.js';
 import {
+  buildWorkspaceObservationDraft,
+  buildWorkspaceObservationsModel,
+  createWorkspaceObservationsStore,
+  workspaceObservationSeverityOptions,
+  workspaceObservationStatusOptions,
+  workspaceObservationTimestampLabel,
+  workspaceObservationTypeOptions
+} from './workspace-observations.js';
+import {
+  buildWorkspaceRfiDraft,
+  buildWorkspaceRfisModel,
+  createWorkspaceRfisStore,
+  workspaceRfiStatusOptions,
+  workspaceRfiTimestampLabel
+} from './workspace-rfis.js';
+import {
   buildWorkspaceComparisonsModel,
   resolveWorkspaceComparisonRightWorkspaceId,
   workspaceComparisonModeLabel,
@@ -373,10 +389,29 @@ function workspaceIssuesStateFor(workspaceId = '') {
   if (!workspaceIssuesSessionState.has(workspaceId)) {
     workspaceIssuesSessionState.set(workspaceId, {
       filter: 'all',
-      selectedIssueId: ''
+      selectedIssueId: '',
+      observationFilter: 'all',
+      selectedObservationId: '',
+      rfiFilter: 'all',
+      selectedRfiId: '',
+      view: 'issues',
+      observationMode: 'view',
+      observationDraft: null,
+      rfiMode: 'view',
+      rfiDraft: null
     });
   }
-  return workspaceIssuesSessionState.get(workspaceId);
+  const state = workspaceIssuesSessionState.get(workspaceId);
+  if (!('observationFilter' in state)) state.observationFilter = 'all';
+  if (!('selectedObservationId' in state)) state.selectedObservationId = '';
+  if (!('rfiFilter' in state)) state.rfiFilter = 'all';
+  if (!('selectedRfiId' in state)) state.selectedRfiId = '';
+  if (!('view' in state)) state.view = 'issues';
+  if (!('observationMode' in state)) state.observationMode = 'view';
+  if (!('observationDraft' in state)) state.observationDraft = null;
+  if (!('rfiMode' in state)) state.rfiMode = 'view';
+  if (!('rfiDraft' in state)) state.rfiDraft = null;
+  return state;
 }
 
 function workspaceSectionAnchor(section = 'overview') {
@@ -391,12 +426,19 @@ function workspaceSectionAnchor(section = 'overview') {
   })[section] || 'workspaceOverviewPanel';
 }
 
-function buildWorkspaceChiefPrompt(workspace = null, pmisContext = '', projectMilestoneContext = null) {
+function buildWorkspaceChiefPrompt(workspace = null, pmisContext = '', projectMilestoneContext = null, workspaceContext = {}) {
   if (!workspace) return 'What should I focus on today?';
   const sourceSheetNumbers = (workspace.sourceSheets || []).map(sheet => sheet.sheetNumber).filter(Boolean);
   const specNumbers = (workspace.applicableSpecifications || []).map(spec => spec.sectionNumber).filter(Boolean);
+  const selectedSheetNumber = text(workspaceContext.selectedSheet?.sheetNumber || workspace.selectedSheetNumber || workspace.selectedSheet || '');
+  const selectedSheetTitle = text(workspaceContext.selectedSheet?.sheetTitle || workspace.selectedSheetTitle || '');
+  const selectedSheetSpecs = list(workspaceContext.selectedSheet?.applicableSpecifications || workspaceContext.selectedSheet?.specifications || workspace.applicableSpecifications || []).map(spec => text(spec?.sectionNumber)).filter(Boolean);
+  const currentIssueTitles = list(workspaceContext.issuesModel?.issues || []).slice(0, 3).map(issue => text(issue?.title)).filter(Boolean);
+  const blockedCount = Number(workspaceContext.checklistBlockedCount ?? workspaceContext.checklistModel?.counts?.blocked ?? 0);
+  const questionCount = Number(workspaceContext.issuesModel?.counts?.questions ?? 0);
+  const currentMilestoneState = text(workspaceContext.timelineModel?.summary?.currentPhaseLabel || workspaceContext.timelineModel?.summary?.projectPhase || projectMilestoneContext?.summary || projectMilestoneContext?.projectPhase || 'Preconstruction');
   const milestoneSummary = projectMilestoneContext?.summary || `Project phase: ${projectMilestoneContext?.projectPhase || 'Preconstruction'}.`;
-  return `What should I focus on for ${workspace.building ? `Building ${workspace.building}` : 'this workspace'}${workspace.room ? ` room ${workspace.room}` : ''}? Source sheets: ${sourceSheetNumbers.join(', ') || 'None recorded'}. Applicable specs: ${specNumbers.join(', ') || 'None recorded'}. PMIS context: ${pmisContext || workspace.pmisBuilding || 'Unavailable'}. ${milestoneSummary}`;
+  return `What should I focus on for ${workspace.building ? `Building ${workspace.building}` : 'this workspace'}${workspace.room ? ` room ${workspace.room}` : ''}? Selected drawing: ${selectedSheetNumber ? `${selectedSheetNumber}${selectedSheetTitle ? ` · ${selectedSheetTitle}` : ''}` : 'None recorded'}. Selected-sheet applicable specs: ${selectedSheetSpecs.length ? selectedSheetSpecs.join(', ') : 'None recorded'}. Workspace issues: ${currentIssueTitles.length ? currentIssueTitles.join(', ') : 'None recorded'}. Blocked checklist items: ${Number.isFinite(blockedCount) ? blockedCount : 0}. Open questions: ${Number.isFinite(questionCount) ? questionCount : 0}. Current milestone state: ${currentMilestoneState}. Source sheets: ${sourceSheetNumbers.join(', ') || 'None recorded'}. Applicable specs: ${specNumbers.join(', ') || 'None recorded'}. PMIS context: ${pmisContext || workspace.pmisBuilding || 'Unavailable'}. ${milestoneSummary}`;
 }
 
 function renderWorkspaceDocumentItem(item = {}, categoryId = '') {
@@ -445,6 +487,15 @@ function renderWorkspaceDocumentItem(item = {}, categoryId = '') {
 
 function renderWorkspaceIssueBadge(label, value, tone = 'neutral') {
   return `<article class="mc-ws-issue-kpi ${esc(tone)}"><span>${esc(label)}</span><strong>${esc(value)}</strong></article>`;
+}
+
+function renderWorkspaceOverviewKpiButton({ action = '', label = '', value = '', detail = '', tone = '' } = {}) {
+  return `
+    <button type="button" class="mc-ws-kpi-button ${esc(tone)}" data-ws-overview-action="${esc(action)}">
+      <span>${esc(label)}</span>
+      <strong>${esc(value)}</strong>
+      <small>${esc(detail)}</small>
+    </button>`;
 }
 
 function renderWorkspaceIssueTarget(item = {}) {
@@ -500,6 +551,614 @@ function renderWorkspaceIssueEvidence(item = {}) {
     </section>`;
 }
 
+function renderWorkspaceObservationCard(item = {}, selected = false) {
+  const selectedSheet = item.selectedSheet || item.sourceContext?.selectedSheet || null;
+  const sheetLabel = selectedSheet?.sheetNumber || item.sourceContext?.selectedSheet?.sheetNumber || 'No drawing';
+  const sheetTitle = selectedSheet?.sheetTitle || item.sourceContext?.selectedSheet?.sheetTitle || '';
+  return `
+    <li class="mc-ws-issue-card mc-ws-observation-card">
+      <button type="button" class="${selected ? 'active' : ''}" data-ws-observation-id="${esc(item.id)}">
+        <span>${esc(item.category || 'GENERAL')} · ${esc(item.severity || 'INFO')}</span>
+        <strong>${esc(item.title || 'Untitled observation')}</strong>
+        <small>${esc(item.status || 'OPEN')} · ${esc(item.room || item.workspaceId || 'Workspace')} · ${esc(workspaceObservationTimestampLabel(item.updatedAt || item.createdAt))}</small>
+        <em>${esc(sheetLabel)}${sheetTitle ? ` · ${esc(sheetTitle)}` : ''}</em>
+        <p>${esc(item.description || 'No description recorded.')}</p>
+      </button>
+    </li>`;
+}
+
+function renderWorkspaceObservationEvidence(item = {}) {
+  const selectedSheet = item.selectedSheet || item.sourceContext?.selectedSheet || null;
+  const relatedSpecifications = item.relatedSpecifications || [];
+  const relatedIssues = item.relatedIssues || [];
+  const relatedChecklistItems = item.relatedChecklistItems || [];
+  const attachments = item.attachments || [];
+  const sourceContext = item.sourceContext || {};
+  return `
+    <section class="mc-ws-issue-detail-grid">
+      <article><strong>Created</strong><span>${esc(workspaceObservationTimestampLabel(item.createdAt || item.updatedAt))}</span><small>${esc(item.status || 'OPEN')} · ${esc(item.category || 'GENERAL')}</small></article>
+      <article><strong>Location</strong><span>${esc(item.building ? `Building ${item.building}` : 'Building unavailable')}</span><small>${esc(item.room || item.workspaceId || 'Workspace')} · ${esc(item.level || 'Level unavailable')}</small></article>
+      <article><strong>Drawing</strong><span>${esc(selectedSheet?.sheetNumber || 'No drawing')}</span><small>${esc(selectedSheet?.sheetTitle || 'No selected drawing recorded.')}</small></article>
+      <article><strong>Specifications</strong><span>${esc(relatedSpecifications.length)}</span><small>${relatedSpecifications.length ? relatedSpecifications.slice(0, 2).map(spec => spec.sectionNumber).join(' · ') : 'No applicable specifications recorded.'}</small></article>
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED DRAWING</strong><small>${selectedSheet?.sheetNumber ? 1 : 0}</small></header>
+      ${selectedSheet?.sheetNumber ? `<div class="mc-ws-issue-links"><button type="button" data-ws-drawing-sheet="${esc(selectedSheet.sheetNumber)}" aria-label="Open drawing ${esc(selectedSheet.sheetNumber)}"><strong>${esc(selectedSheet.sheetNumber)}</strong><span>${esc(selectedSheet.sheetTitle || 'Selected drawing')}</span><small>${esc(selectedSheet.relationship || 'Selected drawing')}</small></button></div>` : '<div class="mc-ws-empty-inline">No selected drawing recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>APPLICABLE SPECIFICATIONS</strong><small>${relatedSpecifications.length}</small></header>
+      ${relatedSpecifications.length ? `<div class="mc-ws-issue-links">${relatedSpecifications.map(spec => `<button type="button" data-ws-spec-section="${esc(spec.sectionNumber)}" aria-label="Open specification ${esc(spec.sectionNumber)}"><strong>${esc(spec.sectionNumber)}</strong><span>${esc(spec.sectionTitle)}</span><small>${esc(spec.relationship || spec.sourceLabel || 'Applicable')}</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No applicable specifications recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED ISSUE</strong><small>${relatedIssues.length}</small></header>
+      ${relatedIssues.length ? `<div class="mc-ws-issue-links">${relatedIssues.map(issue => `<button type="button" data-ws-issue-id="${esc(issue.id)}" aria-label="Open issue ${esc(issue.title || issue.id)}"><strong>${esc(issue.title || issue.id)}</strong><span>${esc(issue.status || issue.severity || '')}</span><small>Related issue</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related issue recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED CHECKLIST ITEM</strong><small>${relatedChecklistItems.length}</small></header>
+      ${relatedChecklistItems.length ? `<div class="mc-ws-issue-links">${relatedChecklistItems.map(item => `<button type="button" data-ws-checklist-id="${esc(item.id)}" aria-label="Open checklist item ${esc(item.title || item.id)}"><strong>${esc(item.title || item.id)}</strong><span>${esc(item.status || item.category || '')}</span><small>Related checklist item</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related checklist item recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>ATTACHMENTS</strong><small>${attachments.length}</small></header>
+      ${attachments.length ? `<div class="mc-ws-issue-items">${attachments.map(attachment => `<div><strong>${esc(attachment.title || attachment.fileName || attachment.id)}</strong><span>${esc(attachment.description || attachment.fileName || '')}</span><small>${esc(attachment.kind || 'file')}</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No attachments recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>SOURCE CONTEXT</strong><small>${Object.keys(sourceContext || {}).length}</small></header>
+      ${Object.keys(sourceContext || {}).length ? `<div class="mc-ws-issue-items">${Object.entries(sourceContext).slice(0, 6).map(([key, value]) => `<div><strong>${esc(key)}</strong><span>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</span><small>Captured context</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No source context recorded.</div>'}
+    </section>`;
+}
+
+function renderWorkspaceRfiCard(item = {}, selected = false) {
+  const selectedSheet = item.selectedSheet || item.sourceContext?.selectedSheet || null;
+  const sheetLabel = selectedSheet?.sheetNumber || item.sourceContext?.selectedSheet?.sheetNumber || 'No drawing';
+  const sheetTitle = selectedSheet?.sheetTitle || item.sourceContext?.selectedSheet?.sheetTitle || '';
+  return `
+    <li class="mc-ws-issue-card mc-ws-rfi-card">
+      <button type="button" class="${selected ? 'active' : ''}" data-ws-rfi-id="${esc(item.id)}">
+        <span>${esc(item.localId || item.id || 'RFI')} · ${esc(item.status || 'DRAFT')}</span>
+        <strong>${esc(item.subject || 'Untitled RFI')}</strong>
+        <small>${esc(item.room || item.workspaceId || 'Workspace')} · ${esc(workspaceRfiTimestampLabel(item.updatedAt || item.createdAt))}${item.requestedResponseDate ? ` · Due ${esc(item.requestedResponseDate)}` : ''}</small>
+        <em>${esc(sheetLabel)}${sheetTitle ? ` · ${esc(sheetTitle)}` : ''}</em>
+        <p>${esc(item.question || 'No question recorded.')}</p>
+      </button>
+    </li>`;
+}
+
+function renderWorkspaceRfiEvidence(item = {}) {
+  const selectedSheet = item.selectedSheet || item.sourceContext?.selectedSheet || null;
+  const relatedSpecifications = item.relatedSpecifications || [];
+  const relatedIssues = item.relatedIssues || [];
+  const relatedChecklistItems = item.relatedChecklistItems || [];
+  const relatedObservations = item.relatedObservations || [];
+  const attachments = item.attachments || [];
+  const sourceContext = item.sourceContext || {};
+  return `
+    <section class="mc-ws-issue-detail-grid">
+      <article><strong>Created</strong><span>${esc(workspaceRfiTimestampLabel(item.createdAt || item.updatedAt))}</span><small>${esc(item.status || 'DRAFT')} · ${esc(item.localId || item.id || 'Local RFI')}</small></article>
+      <article><strong>Location</strong><span>${esc(item.building ? `Building ${item.building}` : 'Building unavailable')}</span><small>${esc(item.room || item.workspaceId || 'Workspace')} · ${esc(item.level || 'Level unavailable')}</small></article>
+      <article><strong>Drawing</strong><span>${esc(selectedSheet?.sheetNumber || 'No drawing')}</span><small>${esc(selectedSheet?.sheetTitle || 'No selected drawing recorded.')}</small></article>
+      <article><strong>Specifications</strong><span>${esc(relatedSpecifications.length)}</span><small>${relatedSpecifications.length ? relatedSpecifications.slice(0, 2).map(spec => spec.sectionNumber).join(' · ') : 'No applicable specifications recorded.'}</small></article>
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED DRAWING</strong><small>${selectedSheet?.sheetNumber ? 1 : 0}</small></header>
+      ${selectedSheet?.sheetNumber ? `<div class="mc-ws-issue-links"><button type="button" data-ws-drawing-sheet="${esc(selectedSheet.sheetNumber)}" aria-label="Open drawing ${esc(selectedSheet.sheetNumber)}"><strong>${esc(selectedSheet.sheetNumber)}</strong><span>${esc(selectedSheet.sheetTitle || 'Selected drawing')}</span><small>${esc(selectedSheet.relationship || 'Selected drawing')}</small></button></div>` : '<div class="mc-ws-empty-inline">No selected drawing recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>APPLICABLE SPECIFICATIONS</strong><small>${relatedSpecifications.length}</small></header>
+      ${relatedSpecifications.length ? `<div class="mc-ws-issue-links">${relatedSpecifications.map(spec => `<button type="button" data-ws-spec-section="${esc(spec.sectionNumber)}" aria-label="Open specification ${esc(spec.sectionNumber)}"><strong>${esc(spec.sectionNumber)}</strong><span>${esc(spec.sectionTitle)}</span><small>${esc(spec.relationship || spec.sourceLabel || 'Applicable')}</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No applicable specifications recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED OBSERVATION</strong><small>${relatedObservations.length}</small></header>
+      ${relatedObservations.length ? `<div class="mc-ws-issue-links">${relatedObservations.map(observation => `<button type="button" data-ws-observation-id="${esc(observation.id)}" aria-label="Open observation ${esc(observation.title || observation.id)}"><strong>${esc(observation.title || observation.id)}</strong><span>${esc(observation.status || observation.severity || '')}</span><small>Related observation</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related observation recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED ISSUE</strong><small>${relatedIssues.length}</small></header>
+      ${relatedIssues.length ? `<div class="mc-ws-issue-links">${relatedIssues.map(issue => `<button type="button" data-ws-issue-id="${esc(issue.id)}" aria-label="Open issue ${esc(issue.title || issue.id)}"><strong>${esc(issue.title || issue.id)}</strong><span>${esc(issue.status || issue.severity || '')}</span><small>Related issue</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related issue recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>RELATED CHECKLIST ITEM</strong><small>${relatedChecklistItems.length}</small></header>
+      ${relatedChecklistItems.length ? `<div class="mc-ws-issue-links">${relatedChecklistItems.map(item => `<button type="button" data-ws-checklist-id="${esc(item.id)}" aria-label="Open checklist item ${esc(item.title || item.id)}"><strong>${esc(item.title || item.id)}</strong><span>${esc(item.status || item.category || '')}</span><small>Related checklist item</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related checklist item recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>ATTACHMENTS</strong><small>${attachments.length}</small></header>
+      ${attachments.length ? `<div class="mc-ws-issue-items">${attachments.map(attachment => `<div><strong>${esc(attachment.title || attachment.fileName || attachment.id)}</strong><span>${esc(attachment.description || attachment.fileName || '')}</span><small>${esc(attachment.kind || 'file')}</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No attachments recorded.</div>'}
+    </section>
+    <section class="mc-ws-issue-panel">
+      <header><strong>SOURCE CONTEXT</strong><small>${Object.keys(sourceContext || {}).length}</small></header>
+      ${Object.keys(sourceContext || {}).length ? `<div class="mc-ws-issue-items">${Object.entries(sourceContext).slice(0, 6).map(([key, value]) => `<div><strong>${esc(key)}</strong><span>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</span><small>Captured context</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No source context recorded.</div>'}
+    </section>`;
+}
+
+function renderWorkspaceRfiEditor(draft = {}, { mode = 'create' } = {}) {
+  const sheet = draft.selectedSheet || null;
+  const relatedSpecifications = list(draft.relatedSpecifications);
+  const relatedIssues = list(draft.relatedIssues);
+  const relatedChecklistItems = list(draft.relatedChecklistItems);
+  const relatedObservations = list(draft.relatedObservations);
+  const attachments = list(draft.attachments);
+  const sourceContextEntries = Object.entries(draft.sourceContext || {}).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  return `
+    <div class="mc-ws-observation-editor">
+      <button type="button" class="modal-x" data-rfi-cancel aria-label="Close RFI editor">×</button>
+      <header class="mc-ws-modal-header">
+        <h2>${esc(mode === 'edit' ? 'Edit RFI' : 'Create RFI')}</h2>
+        <p class="mc-ws-observation-intro">Capture a Workspace RFI draft from the active context. This is a local Mission Companion record and is not an official contractor transmittal.</p>
+      </header>
+      <form data-rfi-form class="mc-ws-modal-form">
+        <div class="mc-ws-modal-scroll">
+        <section class="mc-ws-observation-context">
+          <header><strong>ACTIVE CONTEXT</strong><small>${esc(draft.status || 'DRAFT')}</small></header>
+          <div class="mc-ws-observation-context-grid">
+            <article><span>Project</span><strong>${esc(draft.projectId || 'Unavailable')}</strong></article>
+            <article><span>Workspace</span><strong>${esc(draft.room || draft.workspaceId || 'Unavailable')}</strong></article>
+            <article><span>Building</span><strong>${esc(draft.building || 'Unavailable')}</strong></article>
+            <article><span>Level</span><strong>${esc(draft.level || 'Unavailable')}</strong></article>
+            <article><span>Selected drawing</span><strong>${esc(sheet?.sheetNumber || 'Unavailable')}</strong><small>${esc(sheet?.sheetTitle || 'No drawing captured.')}</small></article>
+            <article><span>Applicable specifications</span><strong>${esc(relatedSpecifications.length)}</strong><small>${relatedSpecifications.length ? relatedSpecifications.slice(0, 3).map(spec => spec.sectionNumber).join(' · ') : 'No applicable specifications recorded.'}</small></article>
+          </div>
+        </section>
+        <div class="mc-ws-observation-form-grid">
+          <label>Subject<input type="text" data-rfi-field="subject" value="${esc(draft.subject || '')}" placeholder="Summarize the RFI subject"></label>
+          <label>Status
+            <select data-rfi-field="status">
+              ${workspaceRfiStatusOptions().map(option => `<option value="${esc(option.id)}" ${option.id === (draft.status || 'DRAFT') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+            </select>
+          </label>
+          <label>Requested Response Date<input type="date" data-rfi-field="requestedResponseDate" value="${esc(draft.requestedResponseDate || '')}"></label>
+          <label class="mc-ws-observation-form-grid-wide"> </label>
+        </div>
+        <label>Question<textarea data-rfi-field="question" placeholder="Describe the request for information">${esc(draft.question || '')}</textarea></label>
+        <label>Suggested Resolution<textarea data-rfi-field="suggestedResolution" placeholder="Optional suggested resolution">${esc(draft.suggestedResolution || '')}</textarea></label>
+        <section class="mc-ws-observation-context">
+          <header><strong>LINKED CONTEXT</strong><small>${esc(`${relatedIssues.length} issues · ${relatedChecklistItems.length} checklist items · ${relatedObservations.length} observations · ${attachments.length} attachments`)}</small></header>
+          <div class="mc-ws-observation-links">
+            <div class="mc-ws-observation-link-block">
+              <strong>Related drawing</strong>
+              <span>${esc(sheet?.sheetNumber || 'None recorded')}</span>
+              <small>${esc(sheet?.sheetTitle || 'Selected drawing context')}</small>
+            </div>
+            <div class="mc-ws-observation-link-block">
+              <strong>Applicable specifications</strong>
+              <span>${esc(relatedSpecifications.length ? relatedSpecifications.slice(0, 4).map(spec => spec.sectionNumber).join(', ') : 'None recorded')}</span>
+              <small>${esc(relatedSpecifications.length ? relatedSpecifications.slice(0, 2).map(spec => spec.sectionTitle).join(' · ') : 'No specs captured')}</small>
+            </div>
+            <div class="mc-ws-observation-link-block">
+              <strong>Related observation</strong>
+              <span>${esc(relatedObservations[0]?.title || 'None recorded')}</span>
+              <small>${esc(relatedObservations[0]?.status || 'No related observation')}</small>
+            </div>
+            <div class="mc-ws-observation-link-block">
+              <strong>Related issue</strong>
+              <span>${esc(relatedIssues[0]?.title || 'None recorded')}</span>
+              <small>${esc(relatedIssues[0]?.status || 'No related issue')}</small>
+            </div>
+            <div class="mc-ws-observation-link-block">
+              <strong>Related checklist item</strong>
+              <span>${esc(relatedChecklistItems[0]?.title || 'None recorded')}</span>
+              <small>${esc(relatedChecklistItems[0]?.status || 'No related checklist item')}</small>
+            </div>
+          </div>
+        </section>
+        <section class="mc-ws-observation-context">
+          <header><strong>ATTACHMENTS</strong><small>${attachments.length}</small></header>
+          ${attachments.length ? `<div class="mc-ws-observation-attachments">${attachments.map(attachment => `<div class="mc-ws-observation-link-block"><strong>${esc(attachment.title || attachment.fileName || attachment.id)}</strong><span>${esc(attachment.description || attachment.fileName || '')}</span><small>${esc(attachment.kind || 'file')}</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No attachments recorded.</div>'}
+          <p class="mc-ws-observation-note">Attachment ingestion can be added later if the Workspace file/photo workflow is available.</p>
+        </section>
+        <section class="mc-ws-observation-context">
+          <header><strong>SOURCE CONTEXT</strong><small>${sourceContextEntries.length}</small></header>
+          ${sourceContextEntries.length ? `<div class="mc-ws-observation-attachments">${sourceContextEntries.slice(0, 8).map(([key, value]) => `<div class="mc-ws-observation-link-block"><strong>${esc(key)}</strong><span>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</span><small>Captured</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No source context recorded.</div>'}
+        </section>
+        </div>
+      </form>
+      <div class="settings-actions">
+        <button type="button" data-rfi-save>${esc(mode === 'edit' ? 'Save RFI' : 'Save RFI')}</button>
+        <button type="button" class="subtle" data-rfi-cancel>Cancel</button>
+      </div>
+    </div>`;
+}
+
+function renderWorkspaceObservationsView(issuesModel = {}, observationsModel = {}, activeWorkspace = null, selectedFilter = 'all', selectedObservationId = '', view = 'issues') {
+  const filters = Array.isArray(observationsModel.filters) && observationsModel.filters.length ? observationsModel.filters : [];
+  const filteredObservations = Array.isArray(observationsModel.observations) ? observationsModel.observations : [];
+  const selected = filteredObservations.find(item => item.id === selectedObservationId) || observationsModel.selectedObservation || filteredObservations[0] || null;
+  const mode = String(view || 'issues') === 'observations' ? 'observations' : 'issues';
+  const statusBadges = [
+    renderWorkspaceIssueBadge('Total', observationsModel.counts?.total ?? filteredObservations.length),
+    renderWorkspaceIssueBadge('Open', observationsModel.counts?.open ?? 0),
+    renderWorkspaceIssueBadge('Closed', observationsModel.counts?.closed ?? 0),
+    renderWorkspaceIssueBadge('Linked', (observationsModel.counts?.linkedIssues ?? 0) + (observationsModel.counts?.linkedChecklistItems ?? 0))
+  ];
+  return `
+    <section class="mc-ws-issues" aria-label="Workspace Observations">
+      <header class="mc-ws-issues-header">
+        <div>
+          <span class="mc-ws-back">← Bedford Workspaces</span>
+          <h1 id="missionControlTitle" tabindex="-1">Field Observations</h1>
+          <p>${esc(activeWorkspace ? `B${activeWorkspace.building || '61'} — ${activeWorkspace.room || 'Workspace'} · ${activeWorkspace.name || 'Workspace'}` : 'Select a workspace to review field observations.')}</p>
+        </div>
+        <div class="mc-ws-issues-summary">
+          ${statusBadges.join('')}
+        </div>
+      </header>
+      <nav class="mc-ws-issue-filters" aria-label="Workspace record sections">
+        <button type="button" class="${mode === 'issues' ? 'active' : ''}" data-ws-observation-view="issues">Issues <small>${esc(observationsModel.linkedIssues ?? 0)}</small></button>
+        <button type="button" class="${mode === 'observations' ? 'active' : ''}" data-ws-observation-view="observations">Observations <small>${esc(observationsModel.counts?.total ?? filteredObservations.length)}</small></button>
+      </nav>
+      ${mode === 'issues' ? `
+        <div class="mc-ws-issues-layout">
+          <section class="mc-ws-issues-list" aria-label="Issue list">
+            <div class="mc-ws-issue-group">
+              <header><strong>ROOM-SPECIFIC ISSUES</strong><small>${observationsModel.roomIssues?.length || 0}</small></header>
+              ${Array.isArray(issuesModel.roomIssues) && issuesModel.roomIssues.length ? `<ul>${issuesModel.roomIssues.map(item => renderWorkspaceIssueCard(item, item.id === issuesModel.selectedIssueId)).join('')}</ul>` : '<div class="mc-ws-empty-inline">No room-specific issues recorded.</div>'}
+            </div>
+            <div class="mc-ws-issue-group">
+              <header><strong>PROJECT / BUILDING DEPENDENCIES</strong><small>${issuesModel.projectIssues?.length || 0}</small></header>
+              ${Array.isArray(issuesModel.projectIssues) && issuesModel.projectIssues.length ? `<ul>${issuesModel.projectIssues.map(item => renderWorkspaceIssueCard(item, item.id === issuesModel.selectedIssueId)).join('')}</ul>` : '<div class="mc-ws-empty-inline">No project-level dependencies recorded.</div>'}
+            </div>
+          </section>
+          <aside class="mc-ws-issue-detail" aria-label="Issue detail">
+            ${issuesModel.selectedIssue ? `
+              <header>
+                <div>
+                  <span>${esc(issuesModel.selectedIssue.type || 'ISSUE')} · ${esc(issuesModel.selectedIssue.scope || 'PROJECT')}</span>
+                  <strong>${esc(issuesModel.selectedIssue.title || 'Selected issue')}</strong>
+                  <small>${esc(issuesModel.selectedIssue.severity || 'INFO')} · ${esc(issuesModel.selectedIssue.status || 'OPEN')} · ${esc(issuesModel.selectedIssue.source || 'Workspace')}</small>
+                </div>
+                ${renderWorkspaceIssueTarget(issuesModel.selectedIssue)}
+              </header>
+              <p>${esc(issuesModel.selectedIssue.description || 'No description recorded.')}</p>
+              ${renderWorkspaceIssueEvidence(issuesModel.selectedIssue)}
+            ` : `
+              <div class="mc-ws-empty-inline">${esc(issuesModel.emptyState || 'No room-specific issues recorded.')}</div>
+            `}
+          </aside>
+        </div>` : `
+        <nav class="mc-ws-issue-filters" aria-label="Observation filters">
+          ${filters.map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-observation-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+        </nav>
+        <div class="mc-ws-issues-layout">
+          <section class="mc-ws-issues-list" aria-label="Observation list">
+            ${filteredObservations.length ? `<ul>${filteredObservations.map(item => renderWorkspaceObservationCard(item, item.id === selected?.id)).join('')}</ul>` : `<div class="mc-ws-empty-inline">${esc(observationsModel.emptyState || 'No field observations have been recorded for this Workspace yet.')}</div>`}
+          </section>
+          <aside class="mc-ws-issue-detail" aria-label="Observation detail">
+            ${selected ? `
+              <header>
+                <div>
+                  <span>${esc(selected.category || 'GENERAL')} · ${esc(selected.severity || 'INFO')}</span>
+                  <strong>${esc(selected.title || 'Selected observation')}</strong>
+                  <small>${esc(selected.status || 'OPEN')} · ${workspaceObservationTimestampLabel(selected.updatedAt || selected.createdAt)}</small>
+                </div>
+                <div class="mc-ws-observation-actions">
+                  <button type="button" data-ws-observation-edit="${esc(selected.id)}">Edit Observation</button>
+                  <button type="button" data-ws-observation-close="${esc(selected.id)}">${selected.status === 'CLOSED' ? 'Reopen Observation' : 'Close Observation'}</button>
+                </div>
+              </header>
+              <p>${esc(selected.description || 'No description recorded.')}</p>
+              ${renderWorkspaceObservationEvidence(selected)}
+            ` : `
+              <div class="mc-ws-empty-inline">${esc(observationsModel.emptyState || 'No field observations have been recorded for this Workspace yet.')}</div>
+            `}
+          </aside>
+        </div>
+      `}
+    </section>`;
+}
+
+function renderWorkspaceObservationEditor(draft = {}, { mode = 'create' } = {}) {
+  const sheet = draft.selectedSheet || null;
+  const relatedSpecifications = list(draft.relatedSpecifications);
+  const relatedIssues = list(draft.relatedIssues);
+  const relatedChecklistItems = list(draft.relatedChecklistItems);
+  const attachments = list(draft.attachments);
+  const sourceContextEntries = Object.entries(draft.sourceContext || {}).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  return `
+    <div class="mc-ws-observation-editor">
+      <button type="button" class="modal-x" data-observation-cancel aria-label="Close observation editor">×</button>
+      <header class="mc-ws-modal-header">
+        <h2>${esc(mode === 'edit' ? 'Edit Observation' : 'Create Observation')}</h2>
+        <p class="mc-ws-observation-intro">Capture a field observation from the active Workspace context. Saved records remain separate from deterministic Issues &amp; Risks.</p>
+      </header>
+      <form data-observation-form class="mc-ws-modal-form">
+        <div class="mc-ws-modal-scroll">
+        <section class="mc-ws-observation-context">
+          <header><strong>ACTIVE CONTEXT</strong><small>${esc(draft.status || 'OPEN')}</small></header>
+          <div class="mc-ws-observation-context-grid">
+            <article><span>Project</span><strong>${esc(draft.projectId || 'Unavailable')}</strong></article>
+            <article><span>Workspace</span><strong>${esc(draft.room || draft.workspaceId || 'Unavailable')}</strong></article>
+            <article><span>Building</span><strong>${esc(draft.building || 'Unavailable')}</strong></article>
+            <article><span>Level</span><strong>${esc(draft.level || 'Unavailable')}</strong></article>
+            <article><span>Selected drawing</span><strong>${esc(sheet?.sheetNumber || 'Unavailable')}</strong><small>${esc(sheet?.sheetTitle || 'No drawing captured.')}</small></article>
+            <article><span>Applicable specifications</span><strong>${esc(relatedSpecifications.length)}</strong><small>${relatedSpecifications.length ? relatedSpecifications.slice(0, 3).map(spec => spec.sectionNumber).join(' · ') : 'No applicable specifications recorded.'}</small></article>
+          </div>
+        </section>
+        <div class="mc-ws-observation-form-grid">
+          <label>Title<input type="text" data-observation-field="title" value="${esc(draft.title || '')}" placeholder="Summarize the observation"></label>
+          <label>Category
+            <select data-observation-field="category">
+              ${workspaceObservationTypeOptions().map(option => `<option value="${esc(option.id)}" ${option.id === (draft.category || 'GENERAL') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+            </select>
+          </label>
+          <label>Severity
+            <select data-observation-field="severity">
+              ${workspaceObservationSeverityOptions().map(option => `<option value="${esc(option.id)}" ${option.id === (draft.severity || 'INFO') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+            </select>
+          </label>
+          <label>Status
+            <select data-observation-field="status">
+              ${workspaceObservationStatusOptions().map(option => `<option value="${esc(option.id)}" ${option.id === (draft.status || 'OPEN') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <label>Description<textarea data-observation-field="description" placeholder="Describe what you observed">${esc(draft.description || '')}</textarea></label>
+        <section class="mc-ws-observation-context">
+          <header><strong>LINKED CONTEXT</strong><small>${esc(`${relatedIssues.length} issues · ${relatedChecklistItems.length} checklist items · ${attachments.length} attachments`)}</small></header>
+          <div class="mc-ws-observation-links">
+            <div class="mc-ws-observation-link-block">
+              <strong>Related drawing</strong>
+              <span>${esc(sheet?.sheetNumber || 'None recorded')}</span>
+              <small>${esc(sheet?.sheetTitle || 'Selected drawing context')}</small>
+            </div>
+            <div class="mc-ws-observation-link-block">
+              <strong>Applicable specifications</strong>
+              <span>${esc(relatedSpecifications.length ? relatedSpecifications.slice(0, 4).map(spec => spec.sectionNumber).join(', ') : 'None recorded')}</span>
+              <small>${esc(relatedSpecifications.length ? relatedSpecifications.slice(0, 2).map(spec => spec.sectionTitle).join(' · ') : 'No specs captured')}</small>
+            </div>
+            <div class="mc-ws-observation-link-block">
+              <strong>Related issue</strong>
+              <span>${esc(relatedIssues[0]?.title || 'None recorded')}</span>
+              <small>${esc(relatedIssues[0]?.status || 'No related issue')}</small>
+            </div>
+            <div class="mc-ws-observation-link-block">
+              <strong>Related checklist item</strong>
+              <span>${esc(relatedChecklistItems[0]?.title || 'None recorded')}</span>
+              <small>${esc(relatedChecklistItems[0]?.status || 'No related checklist item')}</small>
+            </div>
+          </div>
+        </section>
+        <section class="mc-ws-observation-context">
+          <header><strong>ATTACHMENTS</strong><small>${attachments.length}</small></header>
+          ${attachments.length ? `<div class="mc-ws-observation-attachments">${attachments.map(attachment => `<div class="mc-ws-observation-link-block"><strong>${esc(attachment.title || attachment.fileName || attachment.id)}</strong><span>${esc(attachment.description || attachment.fileName || '')}</span><small>${esc(attachment.kind || 'file')}</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No attachments recorded.</div>'}
+          <p class="mc-ws-observation-note">Attachment ingestion can be added later if the Workspace file/photo workflow is available.</p>
+        </section>
+        <section class="mc-ws-observation-context">
+          <header><strong>SOURCE CONTEXT</strong><small>${sourceContextEntries.length}</small></header>
+          ${sourceContextEntries.length ? `<div class="mc-ws-observation-attachments">${sourceContextEntries.slice(0, 8).map(([key, value]) => `<div class="mc-ws-observation-link-block"><strong>${esc(key)}</strong><span>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</span><small>Captured</small></div>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No source context recorded.</div>'}
+        </section>
+        </div>
+      </form>
+      <div class="settings-actions">
+        <button type="button" data-observation-save>${esc(mode === 'edit' ? 'Save Observation' : 'Save Observation')}</button>
+        <button type="button" class="subtle" data-observation-cancel>Cancel</button>
+      </div>
+    </div>`;
+}
+
+function openWorkspaceObservationModal({
+  mode = 'create',
+  workspace = null,
+  selectedSheet = null,
+  relatedIssue = null,
+  relatedChecklistItem = null,
+  relatedSpecifications = [],
+  existingObservation = null,
+  sourceContext = {}
+} = {}) {
+  const projectId = state().activeProject || BEDFORD_PROJECT_ID;
+  const draft = buildWorkspaceObservationDraft({
+    projectId,
+    workspace,
+    selectedSheet,
+    relatedIssue,
+    relatedChecklistItem,
+    relatedSpecifications,
+    sourceContext
+  });
+  if (existingObservation) {
+    draft.id = existingObservation.id || draft.id;
+    draft.createdAt = existingObservation.createdAt || draft.createdAt;
+    draft.updatedAt = existingObservation.updatedAt || draft.updatedAt;
+    draft.status = existingObservation.status || draft.status;
+    draft.category = existingObservation.category || draft.category;
+    draft.severity = existingObservation.severity || draft.severity;
+    draft.title = existingObservation.title || draft.title;
+    draft.description = existingObservation.description || draft.description;
+    draft.selectedSheet = existingObservation.selectedSheet || draft.selectedSheet;
+    draft.relatedSpecifications = list(existingObservation.relatedSpecifications).length ? existingObservation.relatedSpecifications : draft.relatedSpecifications;
+    draft.relatedIssues = list(existingObservation.relatedIssues).length ? existingObservation.relatedIssues : draft.relatedIssues;
+    draft.relatedChecklistItems = list(existingObservation.relatedChecklistItems).length ? existingObservation.relatedChecklistItems : draft.relatedChecklistItems;
+    draft.attachments = list(existingObservation.attachments).length ? existingObservation.attachments : draft.attachments;
+    draft.sourceContext = existingObservation.sourceContext || draft.sourceContext;
+  }
+  const workspaceId = safeText(workspace?.id || draft.workspaceId || '');
+  const observationState = workspaceIssuesStateFor(workspaceId);
+  observationState.observationMode = mode;
+  observationState.observationDraft = structuredClone(draft);
+  openModal(renderWorkspaceObservationEditor(draft, { mode }), () => {
+    const modal = $('#modal');
+    const titleField = modal.querySelector('[data-observation-field="title"]');
+    const categoryField = modal.querySelector('[data-observation-field="category"]');
+    const severityField = modal.querySelector('[data-observation-field="severity"]');
+    const statusField = modal.querySelector('[data-observation-field="status"]');
+    const descriptionField = modal.querySelector('[data-observation-field="description"]');
+    const saveButton = modal.querySelector('[data-observation-save]');
+    const cancelButtons = [...modal.querySelectorAll('[data-observation-cancel]')];
+    const persistObservation = async () => {
+      const payload = {
+        id: draft.id || '',
+        projectId,
+        workspaceId,
+        building: draft.building || workspace?.building || '',
+        room: draft.room || workspace?.room || workspaceId,
+        level: draft.level || workspace?.level || '',
+        status: statusField?.value || draft.status || 'OPEN',
+        category: categoryField?.value || draft.category || 'GENERAL',
+        severity: severityField?.value || draft.severity || 'INFO',
+        title: titleField?.value || draft.title || '',
+        description: descriptionField?.value || draft.description || '',
+        selectedSheet: draft.selectedSheet || null,
+        relatedSpecifications: list(draft.relatedSpecifications),
+        relatedIssues: list(draft.relatedIssues),
+        relatedChecklistItems: list(draft.relatedChecklistItems),
+        attachments: list(draft.attachments),
+        sourceContext: structuredClone(draft.sourceContext || {})
+      };
+      const saved = payload.id ? workspaceObservationsStore.update(payload.id, payload) : workspaceObservationsStore.create(payload);
+      observationState.view = 'observations';
+      observationState.observationFilter = 'all';
+      observationState.selectedObservationId = saved?.id || '';
+      observationState.observationDraft = null;
+      observationState.observationMode = 'view';
+      closeModal(true);
+      await showMissionControlView('workspace');
+    };
+    saveButton.onclick = persistObservation;
+    const cancelObservation = () => {
+      observationState.observationDraft = null;
+      observationState.observationMode = 'view';
+      closeModal(true);
+      void renderMissionControlWorkspace();
+    };
+    cancelButtons.forEach(button => {
+      button.onclick = cancelObservation;
+    });
+    modalCloseGuard = () => {
+      observationState.observationDraft = null;
+      observationState.observationMode = 'view';
+      return true;
+    };
+  });
+}
+
+function openWorkspaceRfiModal({
+  mode = 'create',
+  workspace = null,
+  selectedSheet = null,
+  relatedIssue = null,
+  relatedChecklistItem = null,
+  relatedObservation = null,
+  relatedSpecifications = [],
+  existingRfi = null,
+  sourceContext = {}
+} = {}) {
+  const projectId = state().activeProject || BEDFORD_PROJECT_ID;
+  const draft = buildWorkspaceRfiDraft({
+    projectId,
+    workspace,
+    selectedSheet,
+    relatedIssue,
+    relatedChecklistItem,
+    relatedObservation,
+    relatedSpecifications,
+    sourceContext
+  });
+  if (existingRfi) {
+    draft.id = existingRfi.id || draft.id;
+    draft.localId = existingRfi.localId || draft.localId;
+    draft.createdAt = existingRfi.createdAt || draft.createdAt;
+    draft.updatedAt = existingRfi.updatedAt || draft.updatedAt;
+    draft.status = existingRfi.status || draft.status;
+    draft.subject = existingRfi.subject || draft.subject;
+    draft.question = existingRfi.question || draft.question;
+    draft.suggestedResolution = existingRfi.suggestedResolution || draft.suggestedResolution;
+    draft.requestedResponseDate = existingRfi.requestedResponseDate || draft.requestedResponseDate;
+    draft.selectedSheet = existingRfi.selectedSheet || draft.selectedSheet;
+    draft.relatedSpecifications = list(existingRfi.relatedSpecifications).length ? existingRfi.relatedSpecifications : draft.relatedSpecifications;
+    draft.relatedIssues = list(existingRfi.relatedIssues).length ? existingRfi.relatedIssues : draft.relatedIssues;
+    draft.relatedChecklistItems = list(existingRfi.relatedChecklistItems).length ? existingRfi.relatedChecklistItems : draft.relatedChecklistItems;
+    draft.relatedObservations = list(existingRfi.relatedObservations).length ? existingRfi.relatedObservations : draft.relatedObservations;
+    draft.attachments = list(existingRfi.attachments).length ? existingRfi.attachments : draft.attachments;
+    draft.sourceContext = existingRfi.sourceContext || draft.sourceContext;
+  }
+  const workspaceId = safeText(workspace?.id || draft.workspaceId || '');
+  const rfiState = workspaceIssuesStateFor(workspaceId);
+  rfiState.rfiMode = mode;
+  rfiState.rfiDraft = structuredClone(draft);
+  openModal(renderWorkspaceRfiEditor(draft, { mode }), () => {
+    const modal = $('#modal');
+    const subjectField = modal.querySelector('[data-rfi-field="subject"]');
+    const questionField = modal.querySelector('[data-rfi-field="question"]');
+    const suggestedResolutionField = modal.querySelector('[data-rfi-field="suggestedResolution"]');
+    const requestedResponseDateField = modal.querySelector('[data-rfi-field="requestedResponseDate"]');
+    const statusField = modal.querySelector('[data-rfi-field="status"]');
+    const saveButton = modal.querySelector('[data-rfi-save]');
+    const cancelButtons = [...modal.querySelectorAll('[data-rfi-cancel]')];
+    const persistRfi = async () => {
+      const payload = {
+        id: draft.id || '',
+        localId: draft.localId || '',
+        projectId,
+        workspaceId,
+        building: draft.building || workspace?.building || '',
+        room: draft.room || workspace?.room || workspaceId,
+        level: draft.level || workspace?.level || '',
+        status: statusField?.value || draft.status || 'DRAFT',
+        subject: subjectField?.value || draft.subject || '',
+        question: questionField?.value || draft.question || '',
+        suggestedResolution: suggestedResolutionField?.value || draft.suggestedResolution || '',
+        requestedResponseDate: requestedResponseDateField?.value || draft.requestedResponseDate || '',
+        selectedSheet: draft.selectedSheet || null,
+        relatedSpecifications: list(draft.relatedSpecifications),
+        relatedIssues: list(draft.relatedIssues),
+        relatedChecklistItems: list(draft.relatedChecklistItems),
+        relatedObservations: list(draft.relatedObservations),
+        attachments: list(draft.attachments),
+        sourceContext: structuredClone(draft.sourceContext || {})
+      };
+      const saved = payload.id ? workspaceRfisStore.update(payload.id, payload) : workspaceRfisStore.create(payload);
+      rfiState.view = 'rfis';
+      rfiState.rfiFilter = 'all';
+      rfiState.selectedRfiId = saved?.id || '';
+      rfiState.rfiDraft = null;
+      rfiState.rfiMode = 'view';
+      closeModal(true);
+      await showMissionControlView('workspace');
+    };
+    saveButton.onclick = persistRfi;
+    const cancelRfi = () => {
+      rfiState.rfiDraft = null;
+      rfiState.rfiMode = 'view';
+      closeModal(true);
+      void renderMissionControlWorkspace();
+    };
+    cancelButtons.forEach(button => {
+      button.onclick = cancelRfi;
+    });
+    modalCloseGuard = () => {
+      rfiState.rfiDraft = null;
+      rfiState.rfiMode = 'view';
+      return true;
+    };
+  });
+}
+
+function openWorkspaceRfiFromWorkspaceContext({
+  workspace = null,
+  selectedSheet = null,
+  relatedIssue = null,
+  relatedChecklistItem = null,
+  relatedObservation = null,
+  projectMilestoneContext = null,
+  sourceContext = {}
+} = {}) {
+  openWorkspaceRfiModal({
+    mode: 'create',
+    workspace,
+    selectedSheet,
+    relatedIssue,
+    relatedChecklistItem,
+    relatedObservation,
+    relatedSpecifications: workspace?.applicableSpecifications || [],
+    sourceContext: {
+      launchedFrom: sourceContext.launchedFrom || 'overview',
+      projectPhase: projectMilestoneContext?.projectPhase || '',
+      ntpDateLabel: projectMilestoneContext?.ntpDateLabel || '',
+      contractCompletionDateLabel: projectMilestoneContext?.contractCompletionDateLabel || '',
+      roomScheduleStatus: projectMilestoneContext?.roomScheduleStatus || '',
+      scheduleStatus: projectMilestoneContext?.scheduleStatus || '',
+      ...structuredClone(sourceContext || {})
+    }
+  });
+}
+
 function renderWorkspaceIssueCard(item = {}, selected = false) {
   return `
     <li class="mc-ws-issue-card">
@@ -513,58 +1172,180 @@ function renderWorkspaceIssueCard(item = {}, selected = false) {
     </li>`;
 }
 
-function renderWorkspaceIssuesView(issuesModel = {}, activeWorkspace = null, projectMilestoneContext = null, selectedFilter = 'all', selectedIssueId = '') {
-  const filters = Array.isArray(issuesModel.filters) && issuesModel.filters.length ? issuesModel.filters : [];
+function renderWorkspaceOverviewIssueRow(item = {}) {
+  return `
+    <li>
+      <button type="button" class="mc-ws-overview-row-button" data-ws-issue-id="${esc(item.id)}">
+        <i>●</i>
+        <div>
+          <b>${esc(item.title)}</b>
+          <span>${esc(item.description || item.impact || 'No description recorded.')}</span>
+        </div>
+        <em class="${item.severity === 'CRITICAL' || item.severity === 'HIGH' ? 'high' : item.severity === 'MEDIUM' ? 'medium' : 'low'}">${esc(item.scope || item.type || 'Issue')}</em>
+      </button>
+    </li>`;
+}
+
+function renderWorkspaceOverviewTimelineRow(item = {}) {
+  const priority = item.status === 'COMPLETE' ? 'low' : item.status === 'PENDING_DATE' ? 'medium' : 'high';
+  return `
+    <li>
+      <button type="button" class="mc-ws-overview-row-button" data-ws-timeline-id="${esc(item.id)}">
+        <span>${esc(item.label || item.bucket || 'Milestone')}</span>
+        <strong>${esc(item.label || item.title || 'Next step')}</strong>
+        <small>${esc(item.dueDateLabel || item.dateLabel || item.status || 'Pending')}</small>
+        <em class="${priority}">${esc(item.dueDateLabel || item.status || (String(item.label || item.title || '').includes('Chief') ? 'High' : 'Medium'))}</em>
+      </button>
+    </li>`;
+}
+
+function renderWorkspaceIssuesView(issuesModel = {}, observationsModel = {}, rfisModel = {}, activeWorkspace = null, projectMilestoneContext = null, issueState = {}, observationState = {}, rfiState = {}) {
+  const selectedFilter = issueState.filter || 'all';
+  const selectedIssueId = issueState.selectedIssueId || '';
+  const observationFilter = observationState.observationFilter || 'all';
+  const selectedObservationId = observationState.selectedObservationId || '';
+  const view = observationState.view || 'issues';
+  const rfiFilter = rfiState.rfiFilter || 'all';
+  const selectedRfiId = rfiState.selectedRfiId || '';
+  const issueFilters = Array.isArray(issuesModel.filters) && issuesModel.filters.length ? issuesModel.filters : [];
   const filteredIssues = Array.isArray(issuesModel.issues) ? issuesModel.issues.filter(issue => issueFilterMatches(issue, selectedFilter)) : [];
-  const selected = filteredIssues.find(item => item.id === selectedIssueId) || filteredIssues[0] || null;
+  const selectedIssue = filteredIssues.find(item => item.id === selectedIssueId) || filteredIssues[0] || null;
   const roomIssues = filteredIssues.filter(issue => issue.scope === 'ROOM');
   const projectIssues = filteredIssues.filter(issue => issue.scope === 'PROJECT' || issue.scope === 'BUILDING');
+  const observationFilters = Array.isArray(observationsModel.filters) && observationsModel.filters.length ? observationsModel.filters : [];
+  const filteredObservations = Array.isArray(observationsModel.observations) ? observationsModel.observations.filter(item => {
+    if (observationFilter === 'open') return String(item.status || '').toUpperCase() !== 'CLOSED';
+    if (observationFilter === 'closed') return String(item.status || '').toUpperCase() === 'CLOSED';
+    return true;
+  }) : [];
+  const selectedObservation = filteredObservations.find(item => item.id === selectedObservationId) || observationsModel.selectedObservation || filteredObservations[0] || null;
+  const rfiFilters = Array.isArray(rfisModel.filters) && rfisModel.filters.length ? rfisModel.filters : [];
+  const filteredRfis = Array.isArray(rfisModel.rfis) ? rfisModel.rfis.filter(item => {
+    if (rfiFilter === 'draft') return String(item.status || '').toUpperCase() === 'DRAFT';
+    if (rfiFilter === 'open') return String(item.status || '').toUpperCase() === 'OPEN';
+    if (rfiFilter === 'answered') return String(item.status || '').toUpperCase() === 'ANSWERED';
+    if (rfiFilter === 'closed') return String(item.status || '').toUpperCase() === 'CLOSED';
+    return true;
+  }) : [];
+  const selectedRfi = filteredRfis.find(item => item.id === selectedRfiId) || rfisModel.selectedRfi || filteredRfis[0] || null;
   return `
     <section class="mc-ws-issues" aria-label="Workspace Issues">
       <header class="mc-ws-issues-header">
         <div>
           <span class="mc-ws-back">← Bedford Workspaces</span>
-          <h1 id="missionControlTitle" tabindex="-1">Issues &amp; Risks</h1>
+          <h1 id="missionControlTitle" tabindex="-1">${view === 'observations' ? 'Field Observations' : view === 'rfis' ? 'Requests for Information' : 'Issues &amp; Risks'}</h1>
           <p>${esc(activeWorkspace ? `B${activeWorkspace.building || '61'} — ${activeWorkspace.room || 'Workspace'} · ${activeWorkspace.name || 'Workspace'}` : 'Select a workspace to review issue context.')}</p>
         </div>
         <div class="mc-ws-issues-summary">
-          ${renderWorkspaceIssueBadge('Open', issuesModel.counts?.open ?? 0)}
-          ${renderWorkspaceIssueBadge('High/Critical', issuesModel.counts?.critical ?? 0, issuesModel.counts?.critical ? 'danger' : 'neutral')}
-          ${renderWorkspaceIssueBadge('Questions', issuesModel.counts?.questions ?? 0)}
-          ${renderWorkspaceIssueBadge('Dependencies', issuesModel.counts?.dependencies ?? 0)}
+          ${renderWorkspaceIssueBadge('Open', view === 'observations' ? observationsModel.counts?.open ?? 0 : view === 'rfis' ? rfisModel.counts?.open ?? 0 : issuesModel.counts?.open ?? 0)}
+          ${renderWorkspaceIssueBadge('High/Critical', view === 'observations' ? 0 : view === 'rfis' ? 0 : issuesModel.counts?.critical ?? 0, view === 'observations' || view === 'rfis' ? 'neutral' : issuesModel.counts?.critical ? 'danger' : 'neutral')}
+          ${renderWorkspaceIssueBadge(view === 'observations' ? 'Linked Issues' : view === 'rfis' ? 'Linked Context' : 'Questions', view === 'observations' ? observationsModel.counts?.linkedIssues ?? 0 : view === 'rfis' ? ((rfisModel.counts?.linkedIssues ?? 0) + (rfisModel.counts?.linkedChecklistItems ?? 0) + (rfisModel.counts?.linkedObservations ?? 0)) : issuesModel.counts?.questions ?? 0)}
+          ${renderWorkspaceIssueBadge(view === 'observations' ? 'Linked Items' : view === 'rfis' ? 'Linked Items' : 'Dependencies', view === 'observations' ? (observationsModel.counts?.linkedIssues ?? 0) + (observationsModel.counts?.linkedChecklistItems ?? 0) : view === 'rfis' ? (rfisModel.counts?.linkedIssues ?? 0) + (rfisModel.counts?.linkedChecklistItems ?? 0) + (rfisModel.counts?.linkedObservations ?? 0) : issuesModel.counts?.dependencies ?? 0)}
         </div>
       </header>
       <nav class="mc-ws-issue-filters" aria-label="Issue filters">
-        ${filters.map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-issue-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+        ${issueFilters.map(filter => `<button type="button" class="${String(filter.id) === String(selectedFilter) ? 'active' : ''}" data-ws-issue-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
       </nav>
-      <div class="mc-ws-issues-layout">
-        <section class="mc-ws-issues-list" aria-label="Issue list">
-          <div class="mc-ws-issue-group">
-            <header><strong>ROOM-SPECIFIC ISSUES</strong><small>${issuesModel.roomIssues?.length || 0}</small></header>
-            ${roomIssues.length ? `<ul>${roomIssues.map(item => renderWorkspaceIssueCard(item, item.id === selected?.id)).join('')}</ul>` : '<div class="mc-ws-empty-inline">No room-specific issues recorded.</div>'}
-          </div>
-          <div class="mc-ws-issue-group">
-            <header><strong>PROJECT / BUILDING DEPENDENCIES</strong><small>${projectIssues.length}</small></header>
-            ${projectIssues.length ? `<ul>${projectIssues.map(item => renderWorkspaceIssueCard(item, item.id === selected?.id)).join('')}</ul>` : '<div class="mc-ws-empty-inline">No project-level dependencies recorded.</div>'}
-          </div>
-        </section>
-        <aside class="mc-ws-issue-detail" aria-label="Issue detail">
-          ${selected ? `
-            <header>
-              <div>
-                <span>${esc(selected.type || 'ISSUE')} · ${esc(selected.scope || 'PROJECT')}</span>
-                <strong>${esc(selected.title || 'Selected issue')}</strong>
-                <small>${esc(selected.severity || 'INFO')} · ${esc(selected.status || 'OPEN')} · ${esc(selected.source || 'Workspace')}</small>
-              </div>
-              ${renderWorkspaceIssueTarget(selected)}
-            </header>
-            <p>${esc(selected.description || 'No description recorded.')}</p>
-            ${renderWorkspaceIssueEvidence(selected)}
-          ` : `
-            <div class="mc-ws-empty-inline">${esc(issuesModel.emptyState || 'No room-specific issues recorded.')}</div>
-          `}
-        </aside>
-      </div>
+      <nav class="mc-ws-issue-filters" aria-label="Workspace records">
+        <button type="button" class="${view === 'issues' ? 'active' : ''}" data-ws-observation-view="issues">Issues <small>${esc(issuesModel.issues?.length || 0)}</small></button>
+        <button type="button" class="${view === 'observations' ? 'active' : ''}" data-ws-observation-view="observations">Observations <small>${esc(observationsModel.counts?.total ?? filteredObservations.length)}</small></button>
+        <button type="button" class="${view === 'rfis' ? 'active' : ''}" data-ws-rfi-view="rfis">RFIs <small>${esc(rfisModel.counts?.total ?? filteredRfis.length)}</small></button>
+      </nav>
+      ${view === 'observations' ? `
+        <nav class="mc-ws-issue-filters" aria-label="Observation filters">
+          ${observationFilters.map(filter => `<button type="button" class="${String(filter.id) === String(observationFilter) ? 'active' : ''}" data-ws-observation-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+        </nav>
+        <div class="mc-ws-issues-layout">
+          <section class="mc-ws-issues-list" aria-label="Observation list">
+            ${filteredObservations.length ? `<ul>${filteredObservations.map(item => renderWorkspaceObservationCard(item, item.id === selectedObservation?.id)).join('')}</ul>` : `<div class="mc-ws-empty-inline">${esc(observationsModel.emptyState || 'No field observations have been recorded for this Workspace yet.')}</div>`}
+          </section>
+          <aside class="mc-ws-issue-detail" aria-label="Observation detail">
+            ${selectedObservation ? `
+              <header>
+                <div>
+                  <span>${esc(selectedObservation.category || 'GENERAL')} · ${esc(selectedObservation.severity || 'INFO')}</span>
+                  <strong>${esc(selectedObservation.title || 'Selected observation')}</strong>
+                  <small>${esc(selectedObservation.status || 'OPEN')} · ${workspaceObservationTimestampLabel(selectedObservation.updatedAt || selectedObservation.createdAt)}</small>
+                </div>
+                <div class="mc-ws-observation-actions">
+                  <button type="button" data-ws-rfi-create="observation" data-ws-observation-id="${esc(selectedObservation.id)}">Create RFI</button>
+                  <button type="button" data-ws-observation-edit="${esc(selectedObservation.id)}">Edit Observation</button>
+                  <button type="button" data-ws-observation-close="${esc(selectedObservation.id)}">${selectedObservation.status === 'CLOSED' ? 'Reopen Observation' : 'Close Observation'}</button>
+                </div>
+              </header>
+              <p>${esc(selectedObservation.description || 'No description recorded.')}</p>
+              ${renderWorkspaceObservationEvidence(selectedObservation)}
+            ` : `
+              <div class="mc-ws-empty-inline">${esc(observationsModel.emptyState || 'No field observations have been recorded for this Workspace yet.')}</div>
+            `}
+          </aside>
+        </div>
+      ` : view === 'rfis' ? `
+        <nav class="mc-ws-issue-filters" aria-label="RFI filters">
+          ${rfiFilters.map(filter => `<button type="button" class="${String(filter.id) === String(rfiFilter) ? 'active' : ''}" data-ws-rfi-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+        </nav>
+        <div class="mc-ws-issues-layout">
+          <section class="mc-ws-issues-list" aria-label="RFI list">
+            ${filteredRfis.length ? `<ul>${filteredRfis.map(item => renderWorkspaceRfiCard(item, item.id === selectedRfi?.id)).join('')}</ul>` : `<div class="mc-ws-empty-inline">${esc(rfisModel.emptyState || 'No RFIs have been recorded for this Workspace yet.')}</div>`}
+          </section>
+          <aside class="mc-ws-issue-detail" aria-label="RFI detail">
+            ${selectedRfi ? `
+              <header>
+                <div>
+                  <span>${esc(selectedRfi.localId || selectedRfi.id || 'Local RFI')} · ${esc(selectedRfi.status || 'DRAFT')}</span>
+                  <strong>${esc(selectedRfi.subject || 'Selected RFI')}</strong>
+                  <small>${esc(workspaceRfiTimestampLabel(selectedRfi.updatedAt || selectedRfi.createdAt))}${selectedRfi.requestedResponseDate ? ` · Due ${esc(selectedRfi.requestedResponseDate)}` : ''}</small>
+                </div>
+                <div class="mc-ws-observation-actions">
+                  <button type="button" data-ws-rfi-chief="${esc(selectedRfi.id)}">Ask Chief about this RFI</button>
+                  <button type="button" data-ws-rfi-edit="${esc(selectedRfi.id)}">Edit RFI</button>
+                  ${selectedRfi.status === 'DRAFT' ? `<button type="button" data-ws-rfi-delete="${esc(selectedRfi.id)}">Delete Draft</button>` : `<button type="button" data-ws-rfi-close="${esc(selectedRfi.id)}">${selectedRfi.status === 'CLOSED' ? 'Reopen RFI' : 'Close RFI'}</button>`}
+                </div>
+              </header>
+              <p>${esc(selectedRfi.question || 'No question recorded.')}</p>
+              <section class="mc-ws-issue-panel">
+                <header><strong>SUGGESTED RESOLUTION</strong><small>${esc(selectedRfi.status || 'DRAFT')}</small></header>
+                ${selectedRfi.suggestedResolution ? `<div class="mc-ws-empty-inline">${esc(selectedRfi.suggestedResolution)}</div>` : '<div class="mc-ws-empty-inline">No suggested resolution recorded.</div>'}
+              </section>
+              ${renderWorkspaceRfiEvidence(selectedRfi)}
+            ` : `
+              <div class="mc-ws-empty-inline">${esc(rfisModel.emptyState || 'No RFIs have been recorded for this Workspace yet.')}</div>
+            `}
+          </aside>
+        </div>
+      ` : `
+        <div class="mc-ws-issues-layout">
+          <section class="mc-ws-issues-list" aria-label="Issue list">
+            <div class="mc-ws-issue-group">
+              <header><strong>ROOM-SPECIFIC ISSUES</strong><small>${issuesModel.roomIssues?.length || 0}</small></header>
+              ${roomIssues.length ? `<ul>${roomIssues.map(item => renderWorkspaceIssueCard(item, item.id === selectedIssue?.id)).join('')}</ul>` : '<div class="mc-ws-empty-inline">No room-specific issues recorded.</div>'}
+            </div>
+            <div class="mc-ws-issue-group">
+              <header><strong>PROJECT / BUILDING DEPENDENCIES</strong><small>${projectIssues.length}</small></header>
+              ${projectIssues.length ? `<ul>${projectIssues.map(item => renderWorkspaceIssueCard(item, item.id === selectedIssue?.id)).join('')}</ul>` : '<div class="mc-ws-empty-inline">No project-level dependencies recorded.</div>'}
+            </div>
+          </section>
+          <aside class="mc-ws-issue-detail" aria-label="Issue detail">
+            ${selectedIssue ? `
+              <header>
+                <div>
+                  <span>${esc(selectedIssue.type || 'ISSUE')} · ${esc(selectedIssue.scope || 'PROJECT')}</span>
+                  <strong>${esc(selectedIssue.title || 'Selected issue')}</strong>
+                  <small>${esc(selectedIssue.severity || 'INFO')} · ${esc(selectedIssue.status || 'OPEN')} · ${esc(selectedIssue.source || 'Workspace')}</small>
+                </div>
+                <div class="mc-ws-observation-actions">
+                  <button type="button" data-ws-rfi-create="issue" data-ws-issue-id="${esc(selectedIssue.id)}">Create RFI</button>
+                  ${renderWorkspaceIssueTarget(selectedIssue)}
+                </div>
+              </header>
+              <p>${esc(selectedIssue.description || 'No description recorded.')}</p>
+              ${renderWorkspaceIssueEvidence(selectedIssue)}
+            ` : `
+              <div class="mc-ws-empty-inline">${esc(issuesModel.emptyState || 'No room-specific issues recorded.')}</div>
+            `}
+          </aside>
+        </div>
+      `}
     </section>`;
 }
 
@@ -640,9 +1421,12 @@ function renderWorkspaceChecklistDetail(item = {}) {
           <strong>${esc(item.title || 'Selected checklist item')}</strong>
           <small>${esc(item.scope || 'WORKSPACE')} · ${esc(item.status || 'NOT_VERIFIED')} · ${esc(item.verificationState || 'NOT_VERIFIED')}</small>
         </div>
-        <div class="mc-ws-checklist-state ${item.status === 'BLOCKED' ? 'blocked' : item.verificationState === 'VERIFIED_SESSION' ? 'verified' : 'open'}">
-          <strong>${esc(item.status || 'NOT_VERIFIED')}</strong>
-          <span>${item.status === 'BLOCKED' ? 'Blocked by dependency' : item.verificationState === 'VERIFIED_SESSION' ? 'Reviewed this session' : 'Not verified yet'}</span>
+        <div class="mc-ws-observation-actions">
+          <button type="button" data-ws-rfi-create="checklist" data-ws-checklist-id="${esc(item.id)}">Create RFI</button>
+          <div class="mc-ws-checklist-state ${item.status === 'BLOCKED' ? 'blocked' : item.verificationState === 'VERIFIED_SESSION' ? 'verified' : 'open'}">
+            <strong>${esc(item.status || 'NOT_VERIFIED')}</strong>
+            <span>${item.status === 'BLOCKED' ? 'Blocked by dependency' : item.verificationState === 'VERIFIED_SESSION' ? 'Reviewed this session' : 'Not verified yet'}</span>
+          </div>
         </div>
       </header>
       <p>${esc(item.description || 'No description recorded.')}</p>
@@ -1539,6 +2323,8 @@ const workspaceComparisonsSessionState = {
   selectedRequirementId: ''
 };
 const workspaceNotesStore = createWorkspaceNotesStore({ storage: globalThis.localStorage, persistence: engine.workspaceNotesPersistence() });
+const workspaceObservationsStore = createWorkspaceObservationsStore({ storage: globalThis.localStorage, persistence: engine.workspaceObservationsPersistence() });
+const workspaceRfisStore = createWorkspaceRfisStore({ storage: globalThis.localStorage, persistence: engine.workspaceRfisPersistence() });
 
 function captureWorkspaceDrawingFullscreenScrollState() {
   workspaceDrawingFullscreenScrollState.windowScrollY = globalThis.scrollY || globalThis.pageYOffset || 0;
@@ -6177,22 +6963,48 @@ async function renderMissionControlWorkspace() {
   if ((notesState.mode === 'create' || notesState.mode === 'edit') && !notesState.draft) {
     notesState.draft = workspaceNotesDraftForWorkspace(activeWorkspace, state().activeProject);
   }
+  await workspaceObservationsStore.load(state().activeProject);
+  const observationState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+  if (!['issues', 'observations'].includes(observationState.view)) observationState.view = 'issues';
+  const observationRecords = workspaceObservationsStore.list({ projectId: state().activeProject, workspaceId: activeWorkspace?.id || '' });
+  const observationsModel = buildWorkspaceObservationsModel({
+    projectId: state().activeProject,
+    workspace: activeWorkspace,
+    issuesModel,
+    checklistModel,
+    timelineModel,
+    observations: observationRecords,
+    observationsStore: workspaceObservationsStore,
+    filter: observationState.observationFilter,
+    selectedObservationId: observationState.selectedObservationId
+  });
+  if (!observationsModel.filters.some(filter => String(filter.id) === String(observationState.observationFilter))) observationState.observationFilter = 'all';
+  if (observationState.selectedObservationId && !observationsModel.observations.some(item => item.id === observationState.selectedObservationId)) observationState.selectedObservationId = '';
+  if (!observationState.selectedObservationId) observationState.selectedObservationId = observationsModel.selectedObservationId || '';
+  await workspaceRfisStore.load(state().activeProject);
+  const rfiState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+  if (!['issues', 'observations', 'rfis'].includes(rfiState.view)) rfiState.view = 'issues';
+  const rfisModel = buildWorkspaceRfisModel({
+    projectId: state().activeProject,
+    workspace: activeWorkspace,
+    issuesModel,
+    checklistModel,
+    rfis: workspaceRfisStore.list({ projectId: state().activeProject, workspaceId: activeWorkspace?.id || '' }),
+    rfisStore: workspaceRfisStore,
+    filter: rfiState.rfiFilter,
+    selectedRfiId: rfiState.selectedRfiId
+  });
+  if (!rfisModel.filters.some(filter => String(filter.id) === String(rfiState.rfiFilter))) rfiState.rfiFilter = 'all';
+  if (rfiState.selectedRfiId && !rfisModel.rfis.some(item => item.id === rfiState.selectedRfiId)) rfiState.selectedRfiId = '';
+  if (!rfiState.selectedRfiId) rfiState.selectedRfiId = rfisModel.selectedRfiId || '';
   const issuesSummaryItems = issuesModel.compactIssues.length ? issuesModel.compactIssues : issuesModel.issues.slice(0, 3);
   const checklistSummaryItems = (checklistModel.overviewItems.length ? checklistModel.overviewItems : checklistItems.slice(0, 3)).map(item => ({
     ...item,
     checked: item.status === 'VERIFIED_SESSION' || checklistState.verifiedIds.has(item.id)
   }));
   const issueSummaryMarkup = issuesSummaryItems.length
-    ? issuesSummaryItems.map(item => `
-      <li>
-        <i>●</i>
-        <div>
-          <b>${esc(item.title)}</b>
-          <span>${esc(item.description || item.impact || 'No description recorded.')}</span>
-        </div>
-        <em class="${item.severity === 'CRITICAL' || item.severity === 'HIGH' ? 'high' : item.severity === 'MEDIUM' ? 'medium' : 'low'}">${esc(item.scope || item.type || 'Issue')}</em>
-      </li>`).join('')
-    : '<li><i>●</i><div><b>No room-specific issues recorded.</b><span>No project-level dependencies recorded.</span></div><em class="low">Info</em></li>';
+    ? issuesSummaryItems.map(item => renderWorkspaceOverviewIssueRow(item)).join('')
+    : '<li><button type="button" disabled><i>●</i><div><b>No room-specific issues recorded.</b><span>No project-level dependencies recorded.</span></div><em class="low">Info</em></button></li>';
   const checklistSummaryMarkup = checklistSummaryItems.length
     ? checklistSummaryItems.map(item => `
       <li>
@@ -6204,6 +7016,10 @@ async function renderMissionControlWorkspace() {
         <em class="${item.status === 'BLOCKED' ? 'high' : item.checked ? 'medium' : 'low'}">${esc(item.category || 'Checklist')}</em>
       </li>`).join('')
     : '<li><i>☐</i><div><b>No deterministic checklist items are available for this Workspace yet.</b><span>Checklist derivation will appear once workspace evidence is available.</span></div><em class="low">Info</em></li>';
+  const timelineSummaryItems = compactNextSteps.slice(0, 4);
+  const timelineSummaryMarkup = timelineSummaryItems.length
+    ? timelineSummaryItems.map(item => renderWorkspaceOverviewTimelineRow(item)).join('')
+    : '<li><button type="button" disabled><span>Timeline</span><strong>No next steps recorded</strong><small>Milestone chronology unavailable</small><em class="low">Info</em></button></li>';
   const workspaceDrawingCategories = activeWorkspace?.drawingCategories || [];
   const workspaceDrawingTree = workspaceRoomTreeMarkup(workspaceModel, activeWorkspace, previewSheet, workspaceDrawingCategories, workspaceTradesSessionState);
   const relatedDocumentItems = (activeWorkspace?.sourceEvidence || []).slice(0, 4).map(item => `
@@ -6304,10 +7120,10 @@ async function renderMissionControlWorkspace() {
           <button type="button" class="${activeBedfordWorkspaceSection === 'timeline' ? 'active' : ''}" data-ws-section="timeline">◷ Timeline</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'notes' ? 'active' : ''}" data-ws-section="notes">✎ Notes</button>
         </nav>
-        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="compare-spec">Compare to Spec</button><button data-ws-action="rfi" disabled title="Create RFI is not configured yet">Create RFI</button><button data-ws-action="observation" disabled title="Create Observation is not configured yet">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
+        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="compare-spec">Compare to Spec</button><button data-ws-action="rfi" title="Create a local RFI draft from the active workspace context">Create RFI</button><button data-ws-action="observation">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
       </aside>
       <main class="mc-ws-main">
-        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article><span>Checklist Review</span><strong class="${checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger'}">${checklistApplicableCount ? `${checklistDoneCount}/${checklistApplicableCount}` : 'No data'}</strong><small>${checklistApplicableCount ? `${checklistDoneCount} of ${checklistApplicableCount} reviewed this session` : 'No deterministic checklist items recorded'}</small></article><article><span>Blocked</span><strong class="${checklistBlockedCount ? 'danger' : 'watch'}">${checklistBlockedCount}</strong><small>${checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded'}</small></article><article><span>Open Questions</span><strong>${issuesModel.counts.questions}</strong><small>${issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.'}</small></article><article><span>Related Documents</span><strong>${(activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0)}</strong><small>${activeWorkspace?.sourceSheets?.length || 0} source sheets</small></article></div></header>
+        <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-review', label: 'Checklist Review', value: checklistApplicableCount ? `${checklistDoneCount}/${checklistApplicableCount}` : 'No data', detail: checklistApplicableCount ? `${checklistDoneCount} of ${checklistApplicableCount} reviewed this session` : 'No deterministic checklist items recorded', tone: checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-blocked', label: 'Blocked', value: checklistBlockedCount, detail: checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded', tone: checklistBlockedCount ? 'danger' : 'watch' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'issues-questions', label: 'Open Questions', value: issuesModel.counts.questions, detail: issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.', tone: issuesModel.counts.questions ? 'watch' : 'neutral' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'documents', label: 'Related Documents', value: (activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0), detail: `${activeWorkspace?.sourceSheets?.length || 0} source sheets`, tone: 'neutral' })}</article></div></header>
         <section class="mc-ws-project-clock" aria-label="Project milestone context">
           <div><small>PROJECT PHASE</small><strong>${esc(timelineModel.summary?.projectPhase || projectMilestoneContext?.projectPhase || 'Preconstruction')}</strong></div>
           <div><small>NTP</small><strong>${esc(projectMilestoneContext?.ntpDateLabel || 'Aug 13, 2026')}</strong></div>
@@ -6315,7 +7131,7 @@ async function renderMissionControlWorkspace() {
           <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(timelineModel.summary?.roomScheduleStatus || projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
         </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
-        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, activeWorkspace, projectMilestoneContext, issueState.filter, issueState.selectedIssueId) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
+        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, observationsModel, rfisModel, activeWorkspace, projectMilestoneContext, issueState, observationState, rfiState) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
         <section class="mc-ws-upper">
           <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button><button data-ws-action="toggle-fullscreen" aria-pressed="${workspaceDrawingFullscreen ? 'true' : 'false'}">${esc(workspaceFullscreenLabel)}</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
@@ -6324,7 +7140,7 @@ async function renderMissionControlWorkspace() {
           <article id="workspaceIssuesPanel"><header><strong>ISSUES & RISKS</strong><button data-ws-action="chief">Ask Chief</button></header><ul class="mc-ws-risks">${issueSummaryMarkup}</ul></article>
           <article id="workspaceChiefInsightPanel" class="mc-ws-chief-panel"><header><strong>Chief Insight</strong><button data-ws-action="chief">Ask Chief</button></header><div class="mc-ws-chief-panel-body"><div class="mc-ws-chief-avatar">👷</div><p>${esc(chiefInsight)}</p></div></article>
           <article id="workspaceChecklistPanel"><header><strong>SESSION REVIEW PROGRESS</strong><button type="button" data-ws-section="checklist">Open Full Checklist</button></header><p class="mc-ws-muted">Checklist review is grounded in the current workspace evidence and stays session-only unless an authoritative source says otherwise.</p><div class="mc-ws-progress"><span style="width:${checklistApplicableCount ? Math.min(100, Math.round((checklistDoneCount / checklistApplicableCount) * 100)) : 0}%"></span></div><small>${checklistDoneCount} of ${checklistApplicableCount} reviewed this session · ${checklistBlockedCount} blocked · ${checklistUnknownCount} unknown</small><ul class="mc-ws-check">${checklistSummaryMarkup}</ul><button class="mc-ws-wide" data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View Workspace Specifications' : 'No workspace specifications'}</button></article>
-          <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${compactNextSteps.map(item => `<li><span>${esc(item.label)}</span><em class="${workspaceNextStepPriority(item)}">${esc(item.dueDateLabel || item.status || (item.label.includes('Chief') ? 'High' : 'Medium'))}</em></li>`).join('')}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.title)}</b><span>${esc(item.date ? item.dateLabel || item.date : item.status || '')}</span><small>${esc(item.description || item.workspaceImpact || item.nextStep || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button></article>
+          <article id="workspaceTimelinePanel"><header><strong>NEXT STEPS</strong><button type="button" data-ws-section="timeline">Focus</button></header><ul class="mc-ws-next">${timelineSummaryMarkup}</ul>${remainingNextSteps > 0 ? `<p class="mc-ws-next-summary">+ ${remainingNextSteps} more milestone step${remainingNextSteps === 1 ? '' : 's'} in Timeline.</p>` : ''}<div class="mc-ws-timeline" aria-label="Milestone chronology">${milestoneTimeline.map(item => `<div><b>${esc(item.title)}</b><span>${esc(item.date ? item.dateLabel || item.date : item.status || '')}</span><small>${esc(item.description || item.workspaceImpact || item.nextStep || '')}</small></div>`).join('')}</div><button class="mc-ws-wide" data-ws-action="drawings">${previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawing Viewer'}</button></article>
         </section>`}
       </main>
     </section>`;
@@ -6699,6 +7515,63 @@ $('#missionControlContent').onclick = async event => {
     await showMissionControlView('workspace');
     return;
   }
+  if (button.dataset.wsOverviewAction) {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const pmisRuntime = missionPmisRuntimeData();
+    const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
+    const checklistModel = buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, pmisRuntime });
+    const timelineModel = buildWorkspaceTimelineModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, checklistModel });
+    if (button.dataset.wsOverviewAction === 'checklist-review') {
+      const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
+      checklistState.filter = checklistModel.counts?.blocked ? 'blocked' : 'all';
+      checklistState.selectedItemId = checklistModel.items.find(item => item.status === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
+      activeBedfordWorkspaceSection = 'checklist';
+      await showMissionControlView('workspace');
+      return;
+    }
+    if (button.dataset.wsOverviewAction === 'checklist-blocked') {
+      const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
+      checklistState.filter = 'blocked';
+      checklistState.selectedItemId = checklistModel.items.find(item => item.status === 'BLOCKED')?.id || checklistModel.selectedItemId || '';
+      activeBedfordWorkspaceSection = 'checklist';
+      await showMissionControlView('workspace');
+      return;
+    }
+    if (button.dataset.wsOverviewAction === 'issues-questions') {
+      const issueState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+      issueState.filter = 'question';
+      issueState.selectedIssueId = issuesModel.issues.find(issue => issueFilterMatches(issue, 'question'))?.id || '';
+      activeBedfordWorkspaceSection = 'issues';
+      await showMissionControlView('workspace');
+      return;
+    }
+    if (button.dataset.wsOverviewAction === 'documents') {
+      activeBedfordWorkspaceSection = 'documents';
+      await showMissionControlView('workspace');
+      return;
+    }
+    if (button.dataset.wsOverviewAction === 'chief') {
+      activeBedfordWorkspaceSection = 'overview';
+      await showMissionControlView('home');
+      const prompt = $('#missionControlPrompt');
+      if (prompt) {
+        const selectedSheet = activeWorkspace?.sourceSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+          || activeWorkspace?.relatedSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+          || null;
+        prompt.value = buildWorkspaceChiefPrompt(activeWorkspace, activeWorkspace?.pmisBuilding || '', projectMilestoneContext, {
+          selectedSheet,
+          issuesModel,
+          checklistModel,
+          timelineModel,
+          checklistBlockedCount: checklistModel.counts?.blocked ?? 0
+        });
+        prompt.focus();
+      }
+      return;
+    }
+  }
   if (button.dataset.wsDrawingSheet) {
     const activeWorkspace = buildBedfordWorkspaceModel(activeBedfordWorkspaceId).activeWorkspace || null;
     const target = buildWorkspaceDrawingTarget(activeWorkspace, button.dataset.wsDrawingSheet);
@@ -6730,12 +7603,14 @@ $('#missionControlContent').onclick = async event => {
     const checklistState = workspaceChecklistStateFor(activeBedfordWorkspaceId || '');
     checklistState.filter = button.dataset.wsChecklistFilter;
     checklistState.selectedItemId = '';
+    activeBedfordWorkspaceSection = 'checklist';
     await showMissionControlView('workspace');
     return;
   }
   if (button.dataset.wsChecklistId) {
     const checklistState = workspaceChecklistStateFor(activeBedfordWorkspaceId || '');
     checklistState.selectedItemId = button.dataset.wsChecklistId;
+    activeBedfordWorkspaceSection = 'checklist';
     await showMissionControlView('workspace');
     return;
   }
@@ -6743,12 +7618,14 @@ $('#missionControlContent').onclick = async event => {
     const timelineState = workspaceTimelineStateFor(activeBedfordWorkspaceId || '');
     timelineState.filter = button.dataset.wsTimelineFilter;
     timelineState.selectedItemId = '';
+    activeBedfordWorkspaceSection = 'timeline';
     await showMissionControlView('workspace');
     return;
   }
   if (button.dataset.wsTimelineId) {
     const timelineState = workspaceTimelineStateFor(activeBedfordWorkspaceId || '');
     timelineState.selectedItemId = button.dataset.wsTimelineId;
+    activeBedfordWorkspaceSection = 'timeline';
     await showMissionControlView('workspace');
     return;
   }
@@ -6761,13 +7638,66 @@ $('#missionControlContent').onclick = async event => {
     const issueState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
     issueState.filter = button.dataset.wsIssueFilter;
     issueState.selectedIssueId = '';
+    activeBedfordWorkspaceSection = 'issues';
     await showMissionControlView('workspace');
     return;
   }
   if (button.dataset.wsIssueId) {
     const issueState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
     issueState.selectedIssueId = button.dataset.wsIssueId;
+    activeBedfordWorkspaceSection = 'issues';
     await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsObservationView) {
+    const observationState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+    observationState.view = button.dataset.wsObservationView === 'observations' ? 'observations' : 'issues';
+    activeBedfordWorkspaceSection = 'issues';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsObservationFilter) {
+    const observationState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+    observationState.view = 'observations';
+    observationState.observationFilter = button.dataset.wsObservationFilter;
+    activeBedfordWorkspaceSection = 'issues';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsObservationEdit) {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const pmisRuntime = missionPmisRuntimeData();
+    const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
+    const checklistModel = buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, pmisRuntime });
+    const selectedObservation = workspaceObservationsStore.get(button.dataset.wsObservationEdit);
+    if (!selectedObservation) return;
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    openWorkspaceObservationModal({
+      mode: 'edit',
+      workspace: activeWorkspace,
+      selectedSheet: selectedObservation.selectedSheet || selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || selectableSheets[0] || null,
+      relatedIssue: issuesModel.issues.find(item => item.id === workspaceIssuesStateFor(activeWorkspace?.id || '').selectedIssueId) || null,
+      relatedChecklistItem: checklistModel.items.find(item => item.id === workspaceChecklistStateFor(activeWorkspace?.id || '').selectedItemId) || null,
+      relatedSpecifications: selectedObservation.relatedSpecifications || activeWorkspace?.applicableSpecifications || [],
+      existingObservation: selectedObservation,
+      sourceContext: selectedObservation.sourceContext || {}
+    });
+    return;
+  }
+  if (button.dataset.wsObservationClose) {
+    const current = workspaceObservationsStore.get(button.dataset.wsObservationClose);
+    if (!current) return;
+    const nextStatus = String(current.status || '').toUpperCase() === 'CLOSED' ? 'OPEN' : 'CLOSED';
+    const saved = workspaceObservationsStore.close(current.id, nextStatus === 'CLOSED');
+    if (saved) {
+      const observationState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+      observationState.view = 'observations';
+      observationState.selectedObservationId = saved.id;
+      activeBedfordWorkspaceSection = 'issues';
+      await showMissionControlView('workspace');
+    }
     return;
   }
   if (button.dataset.wsSection) {
@@ -6812,6 +7742,196 @@ $('#missionControlContent').onclick = async event => {
     workspaceComparisonsSessionState.selectedRequirementId = '';
     activeBedfordWorkspaceSection = 'comparisons';
     await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsAction === 'rfi') {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    const selectedSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || selectableSheets[0] || null;
+    const rfiState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+    rfiState.view = 'rfis';
+    openWorkspaceRfiFromWorkspaceContext({
+      workspace: activeWorkspace,
+      selectedSheet,
+      projectMilestoneContext,
+      sourceContext: {
+        launchedFrom: activeBedfordWorkspaceSection || 'overview',
+        currentSection: activeBedfordWorkspaceSection || 'overview'
+      }
+    });
+    return;
+  }
+  if (button.dataset.wsRfiCreate) {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const pmisRuntime = missionPmisRuntimeData();
+    const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
+    const checklistModel = buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, pmisRuntime });
+    const observationState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+    const issueState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+    const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    const selectedSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || selectableSheets[0] || null;
+    const relatedIssue = button.dataset.wsRfiCreate === 'issue'
+      ? issuesModel.issues.find(item => item.id === button.dataset.wsIssueId) || issuesModel.issues.find(item => item.id === issueState.selectedIssueId) || null
+      : null;
+    const relatedChecklistItem = button.dataset.wsRfiCreate === 'checklist'
+      ? checklistModel.items.find(item => item.id === button.dataset.wsChecklistId) || checklistModel.items.find(item => item.id === checklistState.selectedItemId) || null
+      : null;
+    const relatedObservation = button.dataset.wsRfiCreate === 'observation'
+      ? workspaceObservationsStore.get(button.dataset.wsObservationId) || workspaceObservationsStore.get(observationState.selectedObservationId) || null
+      : null;
+    openWorkspaceRfiFromWorkspaceContext({
+      workspace: activeWorkspace,
+      selectedSheet,
+      relatedIssue,
+      relatedChecklistItem,
+      relatedObservation,
+      projectMilestoneContext,
+      sourceContext: {
+        launchedFrom: button.dataset.wsRfiCreate || 'overview',
+        currentSection: activeBedfordWorkspaceSection || 'overview'
+      }
+    });
+    return;
+  }
+  if (button.dataset.wsAction === 'observation') {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const pmisRuntime = missionPmisRuntimeData();
+    const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
+    const checklistModel = buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, pmisRuntime });
+    const issueState = workspaceIssuesStateFor(activeWorkspace?.id || '');
+    const selectedIssue = activeBedfordWorkspaceSection === 'issues'
+      ? issuesModel.issues.find(item => item.id === issueState.selectedIssueId) || null
+      : null;
+    const checklistState = workspaceChecklistStateFor(activeWorkspace?.id || '');
+    const currentChecklistItem = activeBedfordWorkspaceSection === 'checklist'
+      ? checklistModel.items.find(item => item.id === checklistState.selectedItemId) || null
+      : null;
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    const selectedSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+      || selectableSheets[0]
+      || null;
+    openWorkspaceObservationModal({
+      mode: 'create',
+      workspace: activeWorkspace,
+      selectedSheet,
+      relatedIssue: selectedIssue,
+      relatedChecklistItem: currentChecklistItem,
+      relatedSpecifications: activeWorkspace?.applicableSpecifications || [],
+      sourceContext: {
+        launchedFrom: activeBedfordWorkspaceSection || 'overview',
+        projectPhase: projectMilestoneContext?.projectPhase || '',
+        ntpDateLabel: projectMilestoneContext?.ntpDateLabel || '',
+        contractCompletionDateLabel: projectMilestoneContext?.contractCompletionDateLabel || '',
+        roomScheduleStatus: projectMilestoneContext?.roomScheduleStatus || '',
+      scheduleStatus: projectMilestoneContext?.scheduleStatus || ''
+      }
+    });
+    return;
+  }
+  if (button.dataset.wsRfiView) {
+    const rfiState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+    rfiState.view = button.dataset.wsRfiView === 'rfis' ? 'rfis' : 'issues';
+    activeBedfordWorkspaceSection = 'issues';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsRfiFilter) {
+    const rfiState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+    rfiState.view = 'rfis';
+    rfiState.rfiFilter = button.dataset.wsRfiFilter;
+    rfiState.selectedRfiId = '';
+    activeBedfordWorkspaceSection = 'issues';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsRfiId) {
+    const rfiState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+    rfiState.view = 'rfis';
+    rfiState.selectedRfiId = button.dataset.wsRfiId;
+    activeBedfordWorkspaceSection = 'issues';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsRfiEdit) {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const pmisRuntime = missionPmisRuntimeData();
+    const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
+    const checklistModel = buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, pmisRuntime });
+    const existingRfi = workspaceRfisStore.get(button.dataset.wsRfiEdit);
+    if (!existingRfi) return;
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    openWorkspaceRfiModal({
+      mode: 'edit',
+      workspace: activeWorkspace,
+      selectedSheet: existingRfi.selectedSheet || selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || selectableSheets[0] || null,
+      relatedIssue: issuesModel.issues.find(item => item.id === existingRfi.relatedIssues?.[0]?.id) || null,
+      relatedChecklistItem: checklistModel.items.find(item => item.id === existingRfi.relatedChecklistItems?.[0]?.id) || null,
+      relatedObservation: workspaceObservationsStore.get(existingRfi.relatedObservations?.[0]?.id) || null,
+      relatedSpecifications: existingRfi.relatedSpecifications || activeWorkspace?.applicableSpecifications || [],
+      existingRfi,
+      sourceContext: existingRfi.sourceContext || {}
+    });
+    return;
+  }
+  if (button.dataset.wsRfiDelete) {
+    const current = workspaceRfisStore.get(button.dataset.wsRfiDelete);
+    if (!current) return;
+    const removed = workspaceRfisStore.delete(current.id);
+    if (removed) {
+      const rfiState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+      rfiState.view = 'rfis';
+      rfiState.selectedRfiId = '';
+      activeBedfordWorkspaceSection = 'issues';
+      await showMissionControlView('workspace');
+    }
+    return;
+  }
+  if (button.dataset.wsRfiClose) {
+    const current = workspaceRfisStore.get(button.dataset.wsRfiClose);
+    if (!current) return;
+    const nextStatus = String(current.status || '').toUpperCase() === 'CLOSED' ? 'OPEN' : 'CLOSED';
+    const saved = workspaceRfisStore.close(current.id, nextStatus === 'CLOSED');
+    if (saved) {
+      const rfiState = workspaceIssuesStateFor(activeBedfordWorkspaceId || '');
+      rfiState.view = 'rfis';
+      rfiState.selectedRfiId = saved.id;
+      activeBedfordWorkspaceSection = 'issues';
+      await showMissionControlView('workspace');
+    }
+    return;
+  }
+  if (button.dataset.wsRfiChief) {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const pmisRuntime = missionPmisRuntimeData();
+    const issuesModel = buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime });
+    const checklistModel = buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, pmisRuntime });
+    const timelineModel = buildWorkspaceTimelineModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel, checklistModel });
+    const selectedRfi = workspaceRfisStore.get(button.dataset.wsRfiChief);
+    if (!selectedRfi) return;
+    activeBedfordWorkspaceSection = 'overview';
+    await showMissionControlView('home');
+    const prompt = $('#missionControlPrompt');
+    if (prompt) {
+      prompt.value = `${buildWorkspaceChiefPrompt(activeWorkspace, activeWorkspace?.pmisBuilding || '', projectMilestoneContext, {
+        selectedSheet: selectedRfi.selectedSheet || activeWorkspace?.sourceSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || activeWorkspace?.relatedSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || null,
+        issuesModel,
+        checklistModel,
+        timelineModel,
+        checklistBlockedCount: checklistModel.counts?.blocked ?? 0
+      })}\n\nRFI draft context:\nSubject: ${selectedRfi.subject || 'Untitled RFI'}\nQuestion: ${selectedRfi.question || 'No question recorded.'}\nSuggested resolution: ${selectedRfi.suggestedResolution || 'No suggested resolution recorded.'}\nStatus: ${selectedRfi.status || 'DRAFT'}\nRequested response date: ${selectedRfi.requestedResponseDate || 'Unavailable'}`;
+      prompt.focus();
+    }
     return;
   }
   if (button.dataset.wsAction === 'drawings') {
@@ -6867,7 +7987,16 @@ $('#missionControlContent').onclick = async event => {
     await showMissionControlView('home');
     const prompt = $('#missionControlPrompt');
     if (prompt) {
-      prompt.value = buildWorkspaceChiefPrompt(activeWorkspace, activeWorkspace?.pmisBuilding || '', projectMilestoneContext);
+      const selectedSheet = activeWorkspace?.sourceSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+        || activeWorkspace?.relatedSheets?.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber)
+        || null;
+      prompt.value = buildWorkspaceChiefPrompt(activeWorkspace, activeWorkspace?.pmisBuilding || '', projectMilestoneContext, {
+        selectedSheet,
+        issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }),
+        checklistModel: buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }), pmisRuntime: missionPmisRuntimeData() }),
+        timelineModel: buildWorkspaceTimelineModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }), checklistModel: buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }), pmisRuntime: missionPmisRuntimeData() }) }),
+        checklistBlockedCount: buildWorkspaceChecklistModel({ workspace: activeWorkspace, projectMilestoneContext, issuesModel: buildWorkspaceIssuesModel({ workspace: activeWorkspace, projectMilestoneContext, pmisRuntime: missionPmisRuntimeData() }), pmisRuntime: missionPmisRuntimeData() }).counts?.blocked ?? 0
+      });
       prompt.focus();
     }
     return;

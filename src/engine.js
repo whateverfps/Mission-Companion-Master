@@ -1105,6 +1105,22 @@ export const engine = {
     };
   },
 
+  workspaceObservationsPersistence() {
+    return {
+      loadObservations: async (projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === 'workspace-observation' && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record)),
+      putObservation: async record => putMany('stateRecords', [{ id: `workspace-observation:${record.projectId}:${record.workspaceId}:${record.id}`, kind: 'workspace-observation', projectId: record.projectId, workspaceId: record.workspaceId, observationCategory: record.category, record: structuredClone(record), updatedAt: record.updatedAt }]),
+      deleteObservation: async (observationId, projectId = state.activeProject, workspaceId = '') => tx('stateRecords', 'readwrite', store => store.delete(`workspace-observation:${projectId}:${workspaceId}:${observationId}`))
+    };
+  },
+
+  workspaceRfisPersistence() {
+    return {
+      loadRfis: async (projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === 'workspace-rfi' && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record)),
+      putRfi: async record => putMany('stateRecords', [{ id: `workspace-rfi:${record.projectId}:${record.workspaceId}:${record.id}`, kind: 'workspace-rfi', projectId: record.projectId, workspaceId: record.workspaceId, rfiStatus: record.status, record: structuredClone(record), updatedAt: record.updatedAt }]),
+      deleteRfi: async (rfiId, projectId = state.activeProject, workspaceId = '') => tx('stateRecords', 'readwrite', store => store.delete(`workspace-rfi:${projectId}:${workspaceId}:${rfiId}`))
+    };
+  },
+
   constructionGraphPersistence() {
     const records = async (kind, projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === kind && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record));
     return {
