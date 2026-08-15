@@ -117,6 +117,14 @@ import { buildWorkspaceIssuesModel, issueFilterMatches } from './workspace-issue
 import { buildWorkspaceChecklistModel, checklistFilterMatches } from './workspace-checklist.js';
 import { buildWorkspaceTimelineModel, timelineFilterMatches } from './workspace-timeline.js';
 import {
+  buildWorkspaceEvidenceDraft,
+  buildWorkspaceEvidenceModel,
+  createWorkspaceEvidenceStore,
+  normalizeType as normalizeWorkspaceEvidenceType,
+  workspaceEvidenceTypeLabel,
+  WORKSPACE_EVIDENCE_TYPES
+} from './workspace-evidence.js';
+import {
   buildWorkspaceNotesEvidenceChoices,
   buildWorkspaceNotesModel,
   createWorkspaceNotesStore,
@@ -385,6 +393,27 @@ function workspaceNotesChoiceByKindAndId(model = {}, kind = '', id = '') {
   return null;
 }
 
+function workspaceEvidenceStateFor(workspaceId = '') {
+  if (!workspaceEvidenceSessionState.has(workspaceId)) {
+    workspaceEvidenceSessionState.set(workspaceId, {
+      filter: 'all',
+      selectedEvidenceId: '',
+      mode: 'view',
+      draft: null,
+      selectedLinkTarget: '',
+      facet: ''
+    });
+  }
+  const state = workspaceEvidenceSessionState.get(workspaceId);
+  if (!('filter' in state)) state.filter = 'all';
+  if (!('selectedEvidenceId' in state)) state.selectedEvidenceId = '';
+  if (!('mode' in state)) state.mode = 'view';
+  if (!('draft' in state)) state.draft = null;
+  if (!('selectedLinkTarget' in state)) state.selectedLinkTarget = '';
+  if (!('facet' in state)) state.facet = '';
+  return state;
+}
+
 function workspaceIssuesStateFor(workspaceId = '') {
   if (!workspaceIssuesSessionState.has(workspaceId)) {
     workspaceIssuesSessionState.set(workspaceId, {
@@ -418,6 +447,7 @@ function workspaceSectionAnchor(section = 'overview') {
   return ({
     overview: 'workspaceOverviewPanel',
     documents: 'workspaceDocumentsPanel',
+    evidence: 'workspaceEvidencePanel',
     issues: 'workspaceIssuesPanel',
     checklist: 'workspaceChecklistPanel',
     comparisons: 'workspaceComparisonsPanel',
@@ -1228,6 +1258,11 @@ function renderWorkspaceIssuesView(issuesModel = {}, observationsModel = {}, rfi
     return true;
   }) : [];
   const selectedRfi = filteredRfis.find(item => item.id === selectedRfiId) || rfisModel.selectedRfi || filteredRfis[0] || null;
+  const evidenceRecords = workspaceEvidenceStore.list({ projectId: state().activeProject, workspaceId: activeWorkspace?.id || '' });
+  const linkedEvidenceForIssue = issueId => evidenceRecords.filter(evidence => Array.isArray(evidence.linkedIssueIds) && evidence.linkedIssueIds.includes(issueId));
+  const linkedEvidenceForObservation = observationId => evidenceRecords.filter(evidence => Array.isArray(evidence.linkedObservationIds) && evidence.linkedObservationIds.includes(observationId));
+  const linkedEvidenceForRfi = rfiId => evidenceRecords.filter(evidence => Array.isArray(evidence.linkedRfiIds) && evidence.linkedRfiIds.includes(rfiId));
+  const linkedEvidenceForChecklist = checklistId => evidenceRecords.filter(evidence => Array.isArray(evidence.linkedChecklistItemIds) && evidence.linkedChecklistItemIds.includes(checklistId));
   return `
     <section class="mc-ws-issues" aria-label="Workspace Issues">
       <header class="mc-ws-issues-header">
@@ -1268,12 +1303,18 @@ function renderWorkspaceIssuesView(issuesModel = {}, observationsModel = {}, rfi
                   <small>${esc(selectedObservation.status || 'OPEN')} · ${workspaceObservationTimestampLabel(selectedObservation.updatedAt || selectedObservation.createdAt)}</small>
                 </div>
                 <div class="mc-ws-observation-actions">
+                  <button type="button" data-ws-evidence-action="create" data-ws-evidence-link-observation-id="${esc(selectedObservation.id)}">Add Evidence</button>
+                  <button type="button" data-ws-evidence-action="link-existing" data-ws-evidence-link-observation-id="${esc(selectedObservation.id)}">Link Existing Evidence</button>
                   <button type="button" data-ws-rfi-create="observation" data-ws-observation-id="${esc(selectedObservation.id)}">Create RFI</button>
                   <button type="button" data-ws-observation-edit="${esc(selectedObservation.id)}">Edit Observation</button>
                   <button type="button" data-ws-observation-close="${esc(selectedObservation.id)}">${selectedObservation.status === 'CLOSED' ? 'Reopen Observation' : 'Close Observation'}</button>
                 </div>
               </header>
               <p>${esc(selectedObservation.description || 'No description recorded.')}</p>
+              <section class="mc-ws-issue-panel">
+                <header><strong>SHARED EVIDENCE</strong><small>${linkedEvidenceForObservation(selectedObservation.id).length}</small></header>
+                ${renderWorkspaceLinkedEvidence(linkedEvidenceForObservation(selectedObservation.id), 'observation', selectedObservation.id)}
+              </section>
               ${renderWorkspaceObservationEvidence(selectedObservation)}
             ` : `
               <div class="mc-ws-empty-inline">${esc(observationsModel.emptyState || 'No field observations have been recorded for this Workspace yet.')}</div>
@@ -1297,12 +1338,18 @@ function renderWorkspaceIssuesView(issuesModel = {}, observationsModel = {}, rfi
                   <small>${esc(workspaceRfiTimestampLabel(selectedRfi.updatedAt || selectedRfi.createdAt))}${selectedRfi.requestedResponseDate ? ` · Due ${esc(selectedRfi.requestedResponseDate)}` : ''}</small>
                 </div>
                 <div class="mc-ws-observation-actions">
+                  <button type="button" data-ws-evidence-action="create" data-ws-evidence-link-rfi-id="${esc(selectedRfi.id)}">Add Evidence</button>
+                  <button type="button" data-ws-evidence-action="link-existing" data-ws-evidence-link-rfi-id="${esc(selectedRfi.id)}">Link Existing Evidence</button>
                   <button type="button" data-ws-rfi-chief="${esc(selectedRfi.id)}">Ask Chief about this RFI</button>
                   <button type="button" data-ws-rfi-edit="${esc(selectedRfi.id)}">Edit RFI</button>
                   ${selectedRfi.status === 'DRAFT' ? `<button type="button" data-ws-rfi-delete="${esc(selectedRfi.id)}">Delete Draft</button>` : `<button type="button" data-ws-rfi-close="${esc(selectedRfi.id)}">${selectedRfi.status === 'CLOSED' ? 'Reopen RFI' : 'Close RFI'}</button>`}
                 </div>
               </header>
               <p>${esc(selectedRfi.question || 'No question recorded.')}</p>
+              <section class="mc-ws-issue-panel">
+                <header><strong>SUPPORTING EVIDENCE</strong><small>${linkedEvidenceForRfi(selectedRfi.id).length}</small></header>
+                ${renderWorkspaceLinkedEvidence(linkedEvidenceForRfi(selectedRfi.id), 'rfi', selectedRfi.id)}
+              </section>
               <section class="mc-ws-issue-panel">
                 <header><strong>SUGGESTED RESOLUTION</strong><small>${esc(selectedRfi.status || 'DRAFT')}</small></header>
                 ${selectedRfi.suggestedResolution ? `<div class="mc-ws-empty-inline">${esc(selectedRfi.suggestedResolution)}</div>` : '<div class="mc-ws-empty-inline">No suggested resolution recorded.</div>'}
@@ -1334,12 +1381,18 @@ function renderWorkspaceIssuesView(issuesModel = {}, observationsModel = {}, rfi
                   <small>${esc(selectedIssue.severity || 'INFO')} · ${esc(selectedIssue.status || 'OPEN')} · ${esc(selectedIssue.source || 'Workspace')}</small>
                 </div>
                 <div class="mc-ws-observation-actions">
+                  <button type="button" data-ws-evidence-action="create" data-ws-evidence-link-issue-id="${esc(selectedIssue.id)}">Add Evidence</button>
+                  <button type="button" data-ws-evidence-action="link-existing" data-ws-evidence-link-issue-id="${esc(selectedIssue.id)}">Link Existing Evidence</button>
                   <button type="button" data-ws-rfi-create="issue" data-ws-issue-id="${esc(selectedIssue.id)}">Create RFI</button>
                   ${renderWorkspaceIssueTarget(selectedIssue)}
                 </div>
               </header>
               <p>${esc(selectedIssue.description || 'No description recorded.')}</p>
               ${renderWorkspaceIssueEvidence(selectedIssue)}
+              <section class="mc-ws-issue-panel">
+                <header><strong>RELATED EVIDENCE</strong><small>${linkedEvidenceForIssue(selectedIssue.id).length}</small></header>
+                ${renderWorkspaceLinkedEvidence(linkedEvidenceForIssue(selectedIssue.id), 'issue', selectedIssue.id)}
+              </section>
             ` : `
               <div class="mc-ws-empty-inline">${esc(issuesModel.emptyState || 'No room-specific issues recorded.')}</div>
             `}
@@ -1413,6 +1466,8 @@ function renderWorkspaceChecklistDetail(item = {}) {
   const sourceMilestones = sourceRefs.filter(ref => ref.kind === 'milestone');
   const sourceIssues = sourceRefs.filter(ref => ref.kind === 'issue');
   const relatedIssueIds = Array.isArray(item.relatedIssues) ? item.relatedIssues.map(issue => issue?.id || issue?.title).filter(Boolean) : [];
+  const evidenceRecords = workspaceEvidenceStore.list({ projectId: state().activeProject, workspaceId: item.workspaceId || activeBedfordWorkspaceId || '' });
+  const linkedEvidence = evidenceRecords.filter(evidence => Array.isArray(evidence.linkedChecklistItemIds) && evidence.linkedChecklistItemIds.includes(item.id));
   return `
     <section class="mc-ws-checklist-detail" aria-label="Checklist detail">
       <header>
@@ -1423,6 +1478,8 @@ function renderWorkspaceChecklistDetail(item = {}) {
         </div>
         <div class="mc-ws-observation-actions">
           <button type="button" data-ws-rfi-create="checklist" data-ws-checklist-id="${esc(item.id)}">Create RFI</button>
+          <button type="button" data-ws-evidence-action="create" data-ws-evidence-link-checklist-id="${esc(item.id)}">Add Evidence</button>
+          <button type="button" data-ws-evidence-action="link-existing" data-ws-evidence-link-checklist-id="${esc(item.id)}">Link Existing Evidence</button>
           <div class="mc-ws-checklist-state ${item.status === 'BLOCKED' ? 'blocked' : item.verificationState === 'VERIFIED_SESSION' ? 'verified' : 'open'}">
             <strong>${esc(item.status || 'NOT_VERIFIED')}</strong>
             <span>${item.status === 'BLOCKED' ? 'Blocked by dependency' : item.verificationState === 'VERIFIED_SESSION' ? 'Reviewed this session' : 'Not verified yet'}</span>
@@ -1449,6 +1506,10 @@ function renderWorkspaceChecklistDetail(item = {}) {
       <section class="mc-ws-checklist-panel">
         <header><strong>RELATED ISSUE</strong><small>${sourceIssues.length || relatedIssueIds.length}</small></header>
         ${sourceIssues.length ? renderWorkspaceChecklistSourceRefs({ sourceRefs: sourceIssues }) : relatedIssueIds.length ? `<div class="mc-ws-checklist-items">${relatedIssueIds.map(issueId => `<button type="button" data-ws-issue-id="${esc(issueId)}"><strong>${esc(issueId)}</strong><span>Open related issue</span><small>Workspace issue</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No related issue recorded.</div>'}
+      </section>
+      <section class="mc-ws-checklist-panel">
+        <header><strong>EVIDENCE</strong><small>${linkedEvidence.length}</small></header>
+        ${renderWorkspaceLinkedEvidence(linkedEvidence, 'checklist', item.id)}
       </section>
       <section class="mc-ws-checklist-panel">
         <header><strong>BLOCKER</strong><small>${item.blockedBy?.length || 0}</small></header>
@@ -2144,8 +2205,1031 @@ function renderWorkspaceDocumentsView(workspaceModel, activeWorkspace, projectMi
         </div>
       </header>
       <p class="mc-ws-documents-intro">Documents are derived from the selected workspace record, its source sheets, applicable specifications, and project milestones.</p>
-      ${categoryMarkup || `<div class="mc-ws-empty-inline">${esc(documentsModel.emptyState || 'No Workspace documents available for this record.')}</div>`}
+      <div class="mc-ws-documents-grid">
+        ${categoryMarkup || `<div class="mc-ws-empty-inline">${esc(documentsModel.emptyState || 'No Workspace documents available for this record.')}</div>`}
+        <section class="mc-ws-documents-category mc-ws-documents-evidence" data-doc-category="shared-evidence">
+          <header>
+            <div>
+              <span>Workspace Evidence</span>
+              <small>Durable project-local evidence records linked to this Workspace.</small>
+            </div>
+            <button type="button" data-ws-section="evidence">Open Evidence Viewer</button>
+          </header>
+          <div class="mc-ws-documents-empty">Saved evidence opens in the dedicated Evidence viewer so you can browse, filter, and inspect every record without losing context.</div>
+        </section>
+      </div>
     </section>`;
+}
+
+function workspaceEvidenceLinkCount(item = {}) {
+  return (
+    (Array.isArray(item.linkedIssueIds) ? item.linkedIssueIds.length : 0)
+    + (Array.isArray(item.linkedChecklistItemIds) ? item.linkedChecklistItemIds.length : 0)
+    + (Array.isArray(item.linkedObservationIds) ? item.linkedObservationIds.length : 0)
+    + (Array.isArray(item.linkedRfiIds) ? item.linkedRfiIds.length : 0)
+  );
+}
+
+function renderWorkspaceEvidenceCard(item = {}, selected = false) {
+  const linkedCount = workspaceEvidenceLinkCount(item);
+  return `
+    <li class="mc-ws-evidence-card ${selected ? 'active' : ''}">
+      <button type="button" data-ws-evidence-id="${esc(item.id)}">
+        <span>${esc(workspaceEvidenceTypeLabel(item.type || 'NOTE'))}</span>
+        <strong>${esc(item.title || item.fileName || item.id || 'Untitled evidence')}</strong>
+        <small>${esc(item.workspaceId || 'Workspace')} · ${esc(item.selectedSheet?.sheetNumber || 'No drawing')} · ${esc(workspaceEvidenceTimestampLabel(item.createdAt || item.updatedAt))}</small>
+        <em>${esc(linkedCount)} linked</em>
+      </button>
+    </li>`;
+}
+
+function workspaceEvidenceTimestampLabel(timestamp = '') {
+  if (!timestamp) return 'Unavailable';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return date.toLocaleString();
+}
+
+function renderWorkspaceEvidenceDetail(item = {}) {
+  const selectedSheet = item.selectedSheet || null;
+  const relatedSpecifications = item.relatedSpecifications || [];
+  const linkedIssueIds = Array.isArray(item.linkedIssueIds) ? item.linkedIssueIds : [];
+  const linkedChecklistItemIds = Array.isArray(item.linkedChecklistItemIds) ? item.linkedChecklistItemIds : [];
+  const linkedObservationIds = Array.isArray(item.linkedObservationIds) ? item.linkedObservationIds : [];
+  const linkedRfiIds = Array.isArray(item.linkedRfiIds) ? item.linkedRfiIds : [];
+  const isBinaryEvidence = ['PHOTO', 'FILE'].includes(String(item.type || '').toUpperCase());
+  const previewActionMarkup = isBinaryEvidence ? `<button type="button" class="mc-ws-evidence-preview-action" data-ws-evidence-action="preview" data-ws-evidence-id="${esc(item.id)}" data-ws-evidence-project-id="${esc(item.projectId || '')}" data-ws-evidence-workspace-id="${esc(item.workspaceId || '')}" data-ws-evidence-storage-ref="${esc(item.storageRef || '')}" data-ws-evidence-file-name="${esc(item.fileName || '')}">${item.type === 'PHOTO' ? '<span>Open Photo Preview</span>' : '<span>Open File</span>'}${item.type === 'PHOTO' ? workspaceEvidenceDetailPreviewMarkup(item) : `<strong>${esc(item.fileName || item.title || 'Attached file')}</strong><small>${esc(item.mimeType || 'application/octet-stream')} · ${esc(Number(item.size || 0))} bytes</small>`}</button>` : '';
+  return `
+    <section class="mc-ws-evidence-detail" aria-label="Evidence detail">
+      <header>
+        <div>
+          <span>${esc(workspaceEvidenceTypeLabel(item.type || 'NOTE'))}</span>
+          <strong>${esc(item.title || item.fileName || item.id || 'Untitled evidence')}</strong>
+          <small>${esc(item.workspaceId || 'Workspace')} · ${esc(item.updatedAt || item.createdAt || 'Unavailable')}</small>
+        </div>
+        <div class="mc-ws-observation-actions">
+          <button type="button" data-ws-evidence-action="create">Add Evidence</button>
+          <button type="button" data-ws-evidence-action="link-existing">Link Existing Evidence</button>
+        </div>
+      </header>
+      <p>${esc(item.description || 'No description recorded.')}</p>
+      <section class="mc-ws-issue-panel">
+        <header><strong>SELECTED DRAWING</strong><small>${selectedSheet?.sheetNumber ? 1 : 0}</small></header>
+        ${selectedSheet?.sheetNumber ? `<div class="mc-ws-issue-links"><button type="button" data-ws-drawing-sheet="${esc(selectedSheet.sheetNumber)}" aria-label="Open drawing ${esc(selectedSheet.sheetNumber)}"><strong>${esc(selectedSheet.sheetNumber)}</strong><span>${esc(selectedSheet.sheetTitle || 'Selected drawing')}</span><small>${esc(selectedSheet.relationship || 'Selected drawing')}</small></button></div>` : '<div class="mc-ws-empty-inline">No selected drawing recorded.</div>'}
+      </section>
+      <section class="mc-ws-issue-panel">
+        <header><strong>APPLICABLE SPECIFICATIONS</strong><small>${relatedSpecifications.length}</small></header>
+        ${relatedSpecifications.length ? `<div class="mc-ws-issue-links">${relatedSpecifications.map(spec => `<button type="button" data-ws-spec-section="${esc(spec.sectionNumber)}" aria-label="Open specification ${esc(spec.sectionNumber)}"><strong>${esc(spec.sectionNumber)}</strong><span>${esc(spec.sectionTitle)}</span><small>${esc(spec.relationship || spec.sourceLabel || 'Applicable')}</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No applicable specifications recorded.</div>'}
+      </section>
+      ${isBinaryEvidence ? `
+      <section class="mc-ws-issue-panel">
+        <header><strong>ATTACHED FILE</strong><small>${esc(item.fileName || 'Unavailable')}</small></header>
+        ${previewActionMarkup}
+      </section>` : ''}
+      <section class="mc-ws-issue-panel">
+        <header><strong>LINKED RECORDS</strong><small>${linkedIssueIds.length + linkedChecklistItemIds.length + linkedObservationIds.length + linkedRfiIds.length}</small></header>
+        <div class="mc-ws-evidence-link-groups">
+          <div>
+            <strong>Issues</strong>
+            ${linkedIssueIds.length ? `<div class="mc-ws-issue-links">${linkedIssueIds.map(id => `<button type="button" data-ws-issue-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked issue</span><small>Issue</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked issues recorded.</div>'}
+          </div>
+          <div>
+            <strong>Checklist items</strong>
+            ${linkedChecklistItemIds.length ? `<div class="mc-ws-issue-links">${linkedChecklistItemIds.map(id => `<button type="button" data-ws-checklist-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked checklist item</span><small>Checklist</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked checklist items recorded.</div>'}
+          </div>
+          <div>
+            <strong>Observations</strong>
+            ${linkedObservationIds.length ? `<div class="mc-ws-issue-links">${linkedObservationIds.map(id => `<button type="button" data-ws-observation-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked observation</span><small>Observation</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked observations recorded.</div>'}
+          </div>
+          <div>
+            <strong>RFIs</strong>
+            ${linkedRfiIds.length ? `<div class="mc-ws-issue-links">${linkedRfiIds.map(id => `<button type="button" data-ws-rfi-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked RFI</span><small>RFI</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked RFIs recorded.</div>'}
+          </div>
+        </div>
+      </section>
+    </section>`;
+}
+
+function renderWorkspaceLinkedEvidence(records = [], relationKind = '', relationId = '') {
+  if (!records.length) return '<div class="mc-ws-empty-inline">No shared evidence recorded.</div>';
+  return `<div class="mc-ws-evidence-list">${records.map(item => `
+    <div class="mc-ws-evidence-link-block">
+      <strong>${esc(item.title || item.fileName || item.id || 'Untitled evidence')}</strong>
+      <span>${esc(workspaceEvidenceTypeLabel(item.type || 'NOTE'))} · ${esc(item.selectedSheet?.sheetNumber || 'No drawing')}</span>
+      <small>
+        ${esc(item.selectedSheet?.sheetTitle || item.description || 'Shared evidence')}
+        <button type="button" data-ws-evidence-unlink="${esc(item.id)}" data-ws-evidence-relation-kind="${esc(relationKind)}" data-ws-evidence-relation-id="${esc(relationId)}">Unlink</button>
+      </small>
+    </div>`).join('')}</div>`;
+}
+
+function workspaceEvidenceBlobIdFor(record = {}) {
+  return workspaceEvidenceBlobStore.blobIdFor(record.projectId || state().activeProject || BEDFORD_PROJECT_ID, record.workspaceId || '', record.id || '');
+}
+
+function workspaceEvidenceStorageRefFor(record = {}) {
+  return text(record?.storageRef || '') || workspaceEvidenceBlobIdFor(record);
+}
+
+function workspaceEvidenceReleasePreview(evidenceId = '') {
+  const entry = workspaceEvidenceBlobPreviewState.get(evidenceId);
+  if (entry?.objectUrl) URL.revokeObjectURL(entry.objectUrl);
+  workspaceEvidenceBlobPreviewState.delete(evidenceId);
+}
+
+function workspaceEvidenceReleaseAllPreviews() {
+  for (const evidenceId of [...workspaceEvidenceBlobPreviewState.keys()]) {
+    workspaceEvidenceReleasePreview(evidenceId);
+  }
+}
+
+function workspaceEvidenceDetailPreviewMarkup(item = {}) {
+  if (!['PHOTO', 'FILE'].includes(String(item.type || '').toUpperCase())) return '';
+  const storageRef = workspaceEvidenceStorageRefFor(item);
+  if (!storageRef) {
+    return '<div class="mc-ws-empty-inline">No binary file is linked to this evidence record yet.</div>';
+  }
+  return `<div class="mc-ws-evidence-media" data-ws-evidence-preview data-ws-evidence-id="${esc(item.id)}" data-ws-evidence-project-id="${esc(item.projectId || '')}" data-ws-evidence-workspace-id="${esc(item.workspaceId || '')}" data-ws-evidence-storage-ref="${esc(storageRef)}" data-ws-evidence-file-name="${esc(item.fileName || '')}"><div class="mc-ws-empty-inline">Loading attached file…</div></div>`;
+}
+
+async function hydrateWorkspaceEvidenceBlobPreviews() {
+  const previewElements = [...document.querySelectorAll('[data-ws-evidence-preview], [data-ws-evidence-viewer-media]')];
+  await Promise.all(previewElements.map(async element => {
+    const evidenceId = element.dataset.wsEvidenceId || '';
+    const projectId = element.dataset.wsEvidenceProjectId || state().activeProject || BEDFORD_PROJECT_ID;
+    const workspaceId = element.dataset.wsEvidenceWorkspaceId || '';
+    const storageRef = element.dataset.wsEvidenceStorageRef || workspaceEvidenceBlobIdFor({ id: evidenceId, projectId, workspaceId });
+    if (!evidenceId || !storageRef) {
+      element.innerHTML = '<div class="mc-ws-empty-inline">No binary file is linked to this evidence record yet.</div>';
+      return;
+    }
+    workspaceEvidenceReleasePreview(evidenceId);
+    const blobRecord = await workspaceEvidenceBlobStore.loadBlob(evidenceId, projectId, workspaceId);
+    if (!blobRecord?.blob) {
+      element.innerHTML = '<div class="mc-ws-empty-inline">Attached file is missing from durable storage.</div>';
+      return;
+    }
+    const objectUrl = URL.createObjectURL(blobRecord.blob);
+    workspaceEvidenceBlobPreviewState.set(evidenceId, {
+      objectUrl,
+      projectId,
+      workspaceId,
+      storageRef,
+      mimeType: blobRecord.mimeType || blobRecord.blob?.type || '',
+      fileName: blobRecord.fileName || ''
+    });
+    const fileName = esc(blobRecord.fileName || element.dataset.wsEvidenceFileName || 'Attached file');
+    const mimeType = esc(blobRecord.mimeType || blobRecord.blob?.type || 'application/octet-stream');
+    const previewUrl = esc(objectUrl);
+    const isImage = /^image\//i.test(blobRecord.mimeType || blobRecord.blob?.type || '');
+    const isPdf = /pdf$/i.test(blobRecord.mimeType || blobRecord.blob?.type || '');
+    if (element.dataset.wsEvidenceViewerMedia !== undefined) {
+      element.innerHTML = isImage
+        ? `<figure class="mc-ws-evidence-viewer-figure"><img src="${previewUrl}" alt="${fileName}"></figure>`
+        : isPdf
+          ? `<figure class="mc-ws-evidence-viewer-figure"><object data="${previewUrl}" type="${mimeType}" aria-label="${fileName}"></object></figure><div class="mc-ws-evidence-viewer-actions"><a class="mc-ws-evidence-download" href="${previewUrl}" download="${fileName}">Open / Download file</a></div>`
+          : `<div class="mc-ws-evidence-viewer-file"><strong>${fileName}</strong><span>${mimeType}</span><a class="mc-ws-evidence-download" href="${previewUrl}" download="${fileName}">Open / Download file</a></div>`;
+      return;
+    }
+    element.innerHTML = isImage
+      ? `<figure class="mc-ws-evidence-media-preview"><img src="${previewUrl}" alt="${fileName}"></figure>`
+      : `<a class="mc-ws-evidence-download" href="${previewUrl}" download="${fileName}">Open ${fileName}</a><small>${mimeType}</small>`;
+  }));
+}
+
+async function openWorkspaceEvidencePreviewModal({ evidenceId = '', projectId = '', workspaceId = '', storageRef = '', fileName = '', mimeType = '', type = '' } = {}) {
+  const resolvedStorageRef = text(storageRef || '') || workspaceEvidenceBlobIdFor({ id: evidenceId, projectId, workspaceId });
+  if (!evidenceId || !resolvedStorageRef) return;
+  const blobRecord = await workspaceEvidenceBlobStore.loadBlob(evidenceId, projectId || state().activeProject || BEDFORD_PROJECT_ID, workspaceId || '');
+  if (!blobRecord?.blob) {
+    openModal(`
+      <div class="mc-ws-evidence-preview-modal">
+        <button type="button" class="modal-x" data-evidence-preview-close aria-label="Close evidence preview">×</button>
+        <header class="mc-ws-modal-header">
+          <h2>Evidence Preview</h2>
+          <p>Attached binary content is missing from durable storage.</p>
+        </header>
+        <div class="mc-ws-empty-inline">The saved evidence record still exists, but the Blob could not be resolved from storageRef ${esc(resolvedStorageRef)}.</div>
+      </div>`, () => {
+      $('#modal').querySelector('[data-evidence-preview-close]')?.addEventListener('click', () => closeModal(true));
+    });
+    return;
+  }
+  const objectUrl = URL.createObjectURL(blobRecord.blob);
+  const resolvedType = String(type || blobRecord.mimeType || blobRecord.blob.type || '').toLowerCase();
+  const safeName = esc(blobRecord.fileName || fileName || 'Attached file');
+  const safeMime = esc(blobRecord.mimeType || mimeType || blobRecord.blob.type || 'application/octet-stream');
+  openModal(`
+    <div class="mc-ws-evidence-preview-modal">
+      <button type="button" class="modal-x" data-evidence-preview-close aria-label="Close evidence preview">×</button>
+      <header class="mc-ws-modal-header">
+        <h2>${resolvedType.startsWith('image/') ? 'Photo Preview' : 'File Preview'}</h2>
+        <p>${safeName} · ${safeMime}</p>
+      </header>
+      <div class="mc-ws-evidence-preview-body">
+        ${resolvedType.startsWith('image/')
+          ? `<figure class="mc-ws-evidence-preview-figure"><img src="${esc(objectUrl)}" alt="${safeName}"></figure>`
+          : `<div class="mc-ws-evidence-preview-file"><strong>${safeName}</strong><span>${safeMime}</span><a href="${esc(objectUrl)}" download="${safeName}">Open / Download file</a></div>`}
+      </div>
+    </div>`, () => {
+      const close = () => {
+        URL.revokeObjectURL(objectUrl);
+        closeModal(true);
+      };
+      $('#modal').querySelector('[data-evidence-preview-close]')?.addEventListener('click', close);
+      $('#modal').addEventListener('click', event => {
+        if (event.target === $('#modal')) close();
+      }, { once: true });
+    });
+}
+
+function workspaceEvidenceFileMeta(file = null, { workspaceId = '', type = 'FILE' } = {}) {
+  if (!file || typeof file !== 'object') return null;
+  const fileName = text(file.name || '');
+  if (!fileName) return null;
+  const size = Number(file.size || 0) || 0;
+  const lastModified = Number(file.lastModified || Date.now()) || Date.now();
+  return {
+    fileName,
+    mimeType: text(file.type || (String(type).toUpperCase() === 'PHOTO' ? 'image/*' : 'application/octet-stream')),
+    size,
+    lastModified
+  };
+}
+
+function renderWorkspaceEvidenceExistingCards(records = []) {
+  if (!records.length) return '<div class="mc-ws-empty-inline">No evidence has been recorded for this Workspace yet.</div>';
+  return `<div class="mc-ws-evidence-existing-grid">${records.map(item => `
+    <article class="mc-ws-evidence-existing-card">
+      <button type="button" class="mc-ws-evidence-existing-card-main" data-evidence-open-detail="${esc(item.id)}">
+        <span>${esc(workspaceEvidenceTypeLabel(item.type || 'NOTE'))}</span>
+        <strong>${esc(item.title || item.fileName || item.id || 'Untitled evidence')}</strong>
+        <small>${esc(item.selectedSheet?.sheetNumber || 'No drawing')} · ${esc(workspaceEvidenceTimestampLabel(item.createdAt || item.updatedAt))}</small>
+        <em>${esc(item.selectedSheet?.sheetTitle || item.description || 'Shared evidence')}</em>
+      </button>
+      <button type="button" class="mc-ws-evidence-action-label" data-evidence-link-existing="${esc(item.id)}">Link Existing</button>
+    </article>`).join('')}</div>`;
+}
+
+function workspaceEvidenceFacetKey(kind = '', value = '') {
+  return `${String(kind || '').trim().toLowerCase()}:${String(value || '').trim()}`;
+}
+
+function workspaceEvidenceFacetLabel(kind = '', value = '') {
+  const label = String(value || '').trim();
+  const suffix = String(kind || '').trim().toLowerCase();
+  if (!label) return '';
+  return suffix === 'building'
+    ? `Building ${label}`
+    : suffix === 'workspace'
+      ? label
+      : suffix === 'room'
+        ? `Room ${label}`
+        : suffix === 'drawing'
+          ? `Drawing ${label}`
+          : suffix === 'specification'
+            ? `Spec ${label}`
+            : suffix === 'tag'
+              ? `#${label}`
+              : suffix === 'issue'
+                ? `Issue ${label}`
+                : suffix === 'observation'
+                  ? `Observation ${label}`
+                  : suffix === 'rfi'
+                    ? `RFI ${label}`
+                    : suffix === 'checklist'
+                      ? `Checklist ${label}`
+                      : label;
+}
+
+function workspaceEvidenceMatchesFacet(item = {}, facet = '') {
+  const [kind = '', rawValue = ''] = String(facet || '').split(':');
+  const value = String(rawValue || '').trim();
+  if (!kind || !value) return true;
+  const building = String(item.building || '').trim();
+  const workspaceId = String(item.workspaceId || '').trim();
+  const room = String(item.room || '').trim();
+  const sheetNumber = String(item.selectedSheet?.sheetNumber || '').trim();
+  const tags = list(item.tags).map(tag => String(tag || '').trim());
+  const relatedSpecs = list(item.relatedSpecifications).map(spec => String(spec.sectionNumber || '').trim());
+  const linkedIssues = list(item.linkedIssueIds).map(id => String(id || '').trim());
+  const linkedChecklistItems = list(item.linkedChecklistItemIds).map(id => String(id || '').trim());
+  const linkedObservations = list(item.linkedObservationIds).map(id => String(id || '').trim());
+  const linkedRfis = list(item.linkedRfiIds).map(id => String(id || '').trim());
+  switch (kind) {
+    case 'building':
+      return building === value;
+    case 'workspace':
+      return workspaceId === value || room === value;
+    case 'room':
+      return room === value;
+    case 'drawing':
+      return sheetNumber === value;
+    case 'specification':
+      return relatedSpecs.includes(value);
+    case 'tag':
+      return tags.includes(value);
+    case 'issue':
+      return linkedIssues.includes(value);
+    case 'checklist':
+      return linkedChecklistItems.includes(value);
+    case 'observation':
+      return linkedObservations.includes(value);
+    case 'rfi':
+      return linkedRfis.includes(value);
+    default:
+      return true;
+  }
+}
+
+function workspaceEvidenceFacetOptions(records = []) {
+  const tally = new Map();
+  const add = (kind, value, label) => {
+    const key = workspaceEvidenceFacetKey(kind, value);
+    if (!value) return;
+    const entry = tally.get(key) || { kind, value, label: workspaceEvidenceFacetLabel(kind, label || value), count: 0 };
+    entry.count += 1;
+    tally.set(key, entry);
+  };
+  for (const item of list(records)) {
+    add('building', item.building, item.building);
+    add('workspace', item.workspaceId, item.room || item.workspaceId);
+    add('room', item.room, item.room);
+    add('drawing', item.selectedSheet?.sheetNumber, item.selectedSheet?.sheetNumber);
+    list(item.relatedSpecifications).forEach(spec => add('specification', spec.sectionNumber, spec.sectionNumber));
+    list(item.tags).forEach(tag => add('tag', tag, tag));
+    list(item.linkedIssueIds).forEach(id => add('issue', id, id));
+    list(item.linkedChecklistItemIds).forEach(id => add('checklist', id, id));
+    list(item.linkedObservationIds).forEach(id => add('observation', id, id));
+    list(item.linkedRfiIds).forEach(id => add('rfi', id, id));
+  }
+  return [...tally.values()];
+}
+
+function workspaceEvidenceRecordsByType(records = []) {
+  const grouped = new Map(WORKSPACE_EVIDENCE_TYPES.map(type => [type.id, []]));
+  for (const item of list(records)) {
+    const key = String(item.type || 'NOTE').toUpperCase();
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(item);
+  }
+  return grouped;
+}
+
+function workspaceEvidenceSelectedModeLabel(item = {}) {
+  const type = String(item.type || 'NOTE').toUpperCase();
+  return type === 'PHOTO'
+    ? 'PHOTO'
+    : type === 'FILE'
+      ? 'FILE'
+      : type === 'DRAWING'
+        ? 'DRAWING'
+        : type === 'SPECIFICATION'
+          ? 'SPECIFICATION'
+        : 'NOTE';
+}
+
+function workspaceEvidenceDisplayTitle(item = {}) {
+  return item.title || item.fileName || item.id || 'Untitled evidence';
+}
+
+function workspaceEvidenceDisplaySubtitle(item = {}) {
+  const parts = [
+    workspaceEvidenceTypeLabel(item.type || 'NOTE'),
+    item.workspaceId || 'Workspace',
+    item.selectedSheet?.sheetNumber || 'No drawing',
+    workspaceEvidenceTimestampLabel(item.createdAt || item.updatedAt)
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function workspaceEvidenceFilteredRecords(model = {}, state = {}) {
+  const facet = text(state?.facet || '');
+  const records = list(model?.allEvidence || []);
+  return facet ? records.filter(item => workspaceEvidenceMatchesFacet(item, facet)) : records;
+}
+
+function workspaceEvidenceFirstVisibleId(records = [], selectedEvidenceId = '') {
+  const selected = list(records).find(item => item.id === selectedEvidenceId) || null;
+  return selected?.id || list(records)[0]?.id || '';
+}
+
+function renderWorkspaceEvidenceViewerMedia(item = {}) {
+  const type = String(item.type || 'NOTE').toUpperCase();
+  if (type === 'PHOTO' || type === 'FILE') {
+    return `<div class="mc-ws-evidence-viewer-media" data-ws-evidence-viewer-media data-ws-evidence-id="${esc(item.id)}" data-ws-evidence-project-id="${esc(item.projectId || '')}" data-ws-evidence-workspace-id="${esc(item.workspaceId || '')}" data-ws-evidence-storage-ref="${esc(item.storageRef || '')}" data-ws-evidence-file-name="${esc(item.fileName || '')}"><div class="mc-ws-empty-inline">Loading attached file…</div></div>`;
+  }
+  if (type === 'DRAWING') {
+    const sheet = item.selectedSheet || null;
+    return sheet?.sheetNumber
+      ? `<div class="mc-ws-evidence-viewer-card"><strong>${esc(sheet.sheetNumber)}</strong><span>${esc(sheet.sheetTitle || 'Selected drawing')}</span><small>${esc(sheet.relationship || 'Selected drawing')}</small><button type="button" data-ws-drawing-sheet="${esc(sheet.sheetNumber)}">Open in Drawings</button></div>`
+      : '<div class="mc-ws-empty-inline">No drawing reference is recorded for this evidence.</div>';
+  }
+  if (type === 'SPECIFICATION') {
+    const specs = list(item.relatedSpecifications);
+    return specs.length
+      ? `<div class="mc-ws-evidence-viewer-specs">${specs.map(spec => `<button type="button" data-ws-spec-section="${esc(spec.sectionNumber)}"><strong>${esc(spec.sectionNumber)}</strong><span>${esc(spec.sectionTitle)}</span><small>${esc(spec.relationship || spec.sourceLabel || 'Applicable specification')}</small></button>`).join('')}</div>`
+      : '<div class="mc-ws-empty-inline">No specification reference is recorded for this evidence.</div>';
+  }
+  const textValue = item.description || item.title || 'No note content recorded.';
+  return `<article class="mc-ws-evidence-viewer-note"><strong>${esc(item.title || 'Note')}</strong><p>${esc(textValue)}</p></article>`;
+}
+
+function renderWorkspaceEvidenceToc(workspaceEvidenceModel = {}, evidenceState = {}) {
+  const activeFilter = text(evidenceState.filter || 'all').toLowerCase();
+  const activeFacet = text(evidenceState.facet || '');
+  const visibleRecords = workspaceEvidenceFilteredRecords(workspaceEvidenceModel, evidenceState);
+  const groupedRecords = workspaceEvidenceRecordsByType(visibleRecords);
+  const filterButtons = [
+    { id: 'all', label: 'All Evidence', count: workspaceEvidenceModel.counts?.total || 0 },
+    ...WORKSPACE_EVIDENCE_TYPES.map(type => ({
+      id: type.id,
+      label: `${type.label}${type.id === 'PHOTO' ? 's' : type.id === 'FILE' ? 's' : type.id === 'DRAWING' ? 's' : type.id === 'SPECIFICATION' ? 's' : 's'}`,
+      count: ({
+        PHOTO: workspaceEvidenceModel.counts?.photos || 0,
+        FILE: workspaceEvidenceModel.counts?.files || 0,
+        DRAWING: workspaceEvidenceModel.counts?.drawings || 0,
+        SPECIFICATION: workspaceEvidenceModel.counts?.specifications || 0,
+        NOTE: workspaceEvidenceModel.counts?.notes || 0
+      })[type.id] || 0
+    }))
+  ];
+  const facetOptions = workspaceEvidenceFacetOptions(workspaceEvidenceModel.allEvidence || []);
+  return `
+    <section class="mc-ws-evidence-toc" aria-label="Evidence library">
+      <header class="mc-ws-evidence-toc-header">
+        <div>
+          <span>EVIDENCE</span>
+          <strong>${workspaceEvidenceModel.counts?.total || 0} records</strong>
+        </div>
+        <button type="button" data-ws-evidence-action="create">Add Evidence</button>
+      </header>
+      <nav class="mc-ws-issue-filters mc-ws-evidence-filters" aria-label="Evidence type filters">
+        ${filterButtons.map(filter => `<button type="button" class="${String(filter.id) === String(activeFilter) ? 'active' : ''}" data-ws-evidence-filter="${esc(filter.id)}">${esc(filter.label)} <small>${esc(filter.count)}</small></button>`).join('')}
+      </nav>
+      <nav class="mc-ws-evidence-facets" aria-label="Evidence refinements">
+        ${facetOptions.length ? facetOptions.map(facet => `<button type="button" class="${facet.key === activeFacet ? 'active' : ''}" data-ws-evidence-facet="${esc(facet.key)}">${esc(facet.label)} <small>${esc(facet.count)}</small></button>`).join('') : '<div class="mc-ws-empty-inline">No refinements available.</div>'}
+      </nav>
+      <div class="mc-ws-evidence-toc-groups">
+        ${[...groupedRecords.entries()].map(([type, records]) => {
+          const label = WORKSPACE_EVIDENCE_TYPES.find(item => item.id === type)?.label || type;
+          return `
+            <section class="mc-ws-evidence-toc-group" data-evidence-group="${esc(type)}">
+              <header><strong>${esc(label)}s</strong><small>${esc(records.length)}</small></header>
+              ${records.length ? `<div class="mc-ws-evidence-toc-items">${records.map(item => `
+                <button type="button" class="mc-ws-evidence-toc-item ${item.id === evidenceState.selectedEvidenceId ? 'active' : ''}" data-ws-evidence-open="${esc(item.id)}">
+                  <strong>${esc(workspaceEvidenceDisplayTitle(item))}</strong>
+                  <span>${esc(item.workspaceId || 'Workspace')} · ${esc(item.selectedSheet?.sheetNumber || 'No drawing')}</span>
+                  <small>${esc(workspaceEvidenceTimestampLabel(item.createdAt || item.updatedAt))}</small>
+                </button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No records in this group.</div>'}
+            </section>`;
+        }).join('')}
+      </div>
+    </section>`;
+}
+
+function renderWorkspaceEvidenceContext(item = {}, activeWorkspace = null, projectMilestoneContext = null, evidenceState = {}) {
+  const linkedIssueIds = Array.isArray(item.linkedIssueIds) ? item.linkedIssueIds : [];
+  const linkedChecklistItemIds = Array.isArray(item.linkedChecklistItemIds) ? item.linkedChecklistItemIds : [];
+  const linkedObservationIds = Array.isArray(item.linkedObservationIds) ? item.linkedObservationIds : [];
+  const linkedRfiIds = Array.isArray(item.linkedRfiIds) ? item.linkedRfiIds : [];
+  const selectedSheet = item.selectedSheet || null;
+  const relatedSpecifications = list(item.relatedSpecifications);
+  const fileMeta = item.type === 'PHOTO' || item.type === 'FILE'
+    ? `${item.fileName || 'Unavailable'} · ${item.mimeType || 'application/octet-stream'} · ${Number(item.size || 0) || 0} bytes`
+    : '';
+  return `
+    <section class="mc-ws-evidence-context" aria-label="Evidence context">
+      <header>
+        <div>
+          <span>${esc(workspaceEvidenceTypeLabel(item.type || 'NOTE'))}</span>
+          <strong>${esc(workspaceEvidenceDisplayTitle(item))}</strong>
+          <small>${esc(item.workspaceId || 'Workspace')} · ${esc(item.updatedAt || item.createdAt || 'Unavailable')}</small>
+        </div>
+        <div class="mc-ws-evidence-context-actions">
+          <button type="button" data-ws-evidence-edit="${esc(item.id)}">Edit Evidence</button>
+          <button type="button" data-ws-evidence-link-record="${esc(item.id)}">Link to Record</button>
+          <button type="button" data-ws-evidence-delete="${esc(item.id)}">Delete Evidence</button>
+        </div>
+      </header>
+      <section class="mc-ws-issue-panel">
+        <header><strong>EVIDENCE DETAILS</strong><small>${esc(item.type || 'NOTE')}</small></header>
+        <div class="mc-ws-evidence-details-grid">
+          <article><span>Title</span><strong>${esc(item.title || 'Untitled evidence')}</strong></article>
+          <article><span>Type</span><strong>${esc(workspaceEvidenceTypeLabel(item.type || 'NOTE'))}</strong></article>
+          <article><span>Description</span><strong>${esc(item.description || 'No description recorded.')}</strong></article>
+          <article><span>Tags</span><strong>${esc(list(item.tags).length ? list(item.tags).join(', ') : 'None recorded')}</strong></article>
+          <article><span>Created</span><strong>${esc(item.createdAt || 'Unavailable')}</strong></article>
+          ${fileMeta ? `<article><span>File</span><strong>${esc(fileMeta)}</strong></article>` : ''}
+        </div>
+      </section>
+      <section class="mc-ws-issue-panel">
+        <header><strong>SOURCE CONTEXT</strong><small>${esc(activeWorkspace?.id || item.workspaceId || 'Workspace')}</small></header>
+        <div class="mc-ws-evidence-details-grid">
+          <article><span>Project</span><strong>${esc(item.projectId || state().activeProject || BEDFORD_PROJECT_ID)}</strong></article>
+          <article><span>Building</span><strong>${esc(item.building || activeWorkspace?.building || 'Unavailable')}</strong></article>
+          <article><span>Workspace</span><strong>${esc(item.workspaceId || activeWorkspace?.id || 'Unavailable')}</strong></article>
+          <article><span>Level</span><strong>${esc(item.level || activeWorkspace?.level || 'Unavailable')}</strong></article>
+          <article><span>Selected Drawing</span><strong>${esc(selectedSheet?.sheetNumber || 'Unavailable')}</strong><small>${esc(selectedSheet?.sheetTitle || 'No drawing recorded.')}</small></article>
+          <article><span>Applicable Specifications</span><strong>${esc(relatedSpecifications.length)}</strong><small>${relatedSpecifications.length ? relatedSpecifications.slice(0, 3).map(spec => spec.sectionNumber).join(' · ') : 'No applicable specifications recorded.'}</small></article>
+        </div>
+      </section>
+      <section class="mc-ws-issue-panel">
+        <header><strong>LINKED RECORDS</strong><small>${linkedIssueIds.length + linkedChecklistItemIds.length + linkedObservationIds.length + linkedRfiIds.length}</small></header>
+        <div class="mc-ws-evidence-link-groups">
+          <div>
+            <strong>Issues</strong>
+            ${linkedIssueIds.length ? `<div class="mc-ws-issue-links">${linkedIssueIds.map(id => `<button type="button" data-ws-issue-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked issue</span><small>Issue</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked issues recorded.</div>'}
+          </div>
+          <div>
+            <strong>Checklist items</strong>
+            ${linkedChecklistItemIds.length ? `<div class="mc-ws-issue-links">${linkedChecklistItemIds.map(id => `<button type="button" data-ws-checklist-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked checklist item</span><small>Checklist</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked checklist items recorded.</div>'}
+          </div>
+          <div>
+            <strong>Observations</strong>
+            ${linkedObservationIds.length ? `<div class="mc-ws-issue-links">${linkedObservationIds.map(id => `<button type="button" data-ws-observation-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked observation</span><small>Observation</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked observations recorded.</div>'}
+          </div>
+          <div>
+            <strong>RFIs</strong>
+            ${linkedRfiIds.length ? `<div class="mc-ws-issue-links">${linkedRfiIds.map(id => `<button type="button" data-ws-rfi-id="${esc(id)}"><strong>${esc(id)}</strong><span>Linked RFI</span><small>RFI</small></button>`).join('')}</div>` : '<div class="mc-ws-empty-inline">No linked RFIs recorded.</div>'}
+          </div>
+        </div>
+      </section>
+    </section>`;
+}
+
+function renderWorkspaceEvidenceView(workspaceModel, activeWorkspace, projectMilestoneContext) {
+  const evidenceState = workspaceEvidenceStateFor(activeWorkspace?.id || '');
+  const projectId = state().activeProject || BEDFORD_PROJECT_ID;
+  const evidenceRecords = workspaceEvidenceStore.list({ projectId, workspaceId: activeWorkspace?.id || '' });
+  const evidenceModel = buildWorkspaceEvidenceModel({
+    projectId,
+    workspace: activeWorkspace,
+    evidence: evidenceRecords,
+    filter: evidenceState.filter,
+    selectedEvidenceId: evidenceState.selectedEvidenceId
+  });
+  if (!evidenceModel.filters.some(filter => String(filter.id) === String(evidenceState.filter))) evidenceState.filter = 'all';
+  const visibleEvidence = workspaceEvidenceFilteredRecords(evidenceModel, evidenceState);
+  const selectedEvidence = visibleEvidence.find(item => item.id === evidenceState.selectedEvidenceId)
+    || evidenceModel.allEvidence.find(item => item.id === evidenceState.selectedEvidenceId)
+    || visibleEvidence[0]
+    || evidenceModel.allEvidence[0]
+    || null;
+  if (!selectedEvidence) {
+    evidenceState.selectedEvidenceId = '';
+  } else if (selectedEvidence.id !== evidenceState.selectedEvidenceId) {
+    evidenceState.selectedEvidenceId = selectedEvidence.id;
+  }
+  const tocMarkup = renderWorkspaceEvidenceToc(evidenceModel, evidenceState);
+  const viewerMarkup = selectedEvidence
+    ? `
+      <section class="mc-ws-evidence-viewer" aria-label="Evidence viewer">
+        <header class="mc-ws-evidence-viewer-header">
+          <div>
+            <span>${esc(workspaceEvidenceSelectedModeLabel(selectedEvidence))}</span>
+            <h2>${esc(workspaceEvidenceDisplayTitle(selectedEvidence))}</h2>
+            <p>${esc(workspaceEvidenceDisplaySubtitle(selectedEvidence))}</p>
+          </div>
+          <div class="mc-ws-evidence-viewer-actions">
+            ${['PHOTO', 'FILE'].includes(String(selectedEvidence.type || '').toUpperCase()) ? `<button type="button" data-ws-evidence-preview-open="${esc(selectedEvidence.id)}">Open Full Preview</button>` : ''}
+            ${selectedEvidence.type === 'DRAWING' && selectedEvidence.selectedSheet?.sheetNumber ? `<button type="button" data-ws-drawing-sheet="${esc(selectedEvidence.selectedSheet.sheetNumber)}">Open in Drawings</button>` : ''}
+            ${selectedEvidence.type === 'SPECIFICATION' && selectedEvidence.relatedSpecifications?.[0]?.sectionNumber ? `<button type="button" data-ws-spec-section="${esc(selectedEvidence.relatedSpecifications[0].sectionNumber)}">Open Specification</button>` : ''}
+          </div>
+        </header>
+        <div class="mc-ws-evidence-viewer-body">
+          ${renderWorkspaceEvidenceViewerMedia(selectedEvidence)}
+        </div>
+      </section>`
+    : '<div class="mc-ws-empty-inline">No evidence is currently selected.</div>';
+  const contextMarkup = selectedEvidence
+    ? renderWorkspaceEvidenceContext(selectedEvidence, activeWorkspace, projectMilestoneContext, evidenceState)
+    : '<div class="mc-ws-empty-inline">Select an evidence record to see details.</div>';
+  return `
+    <section class="mc-ws-evidence-workspace" aria-labelledby="missionControlTitle">
+      <aside class="mc-ws-evidence-sidebar">${tocMarkup}</aside>
+      <main class="mc-ws-evidence-main">${viewerMarkup}</main>
+      <aside class="mc-ws-evidence-context-pane">${contextMarkup}</aside>
+    </section>`;
+}
+
+async function openWorkspaceEvidence(evidenceId = '') {
+  const id = String(evidenceId || '').trim();
+  if (!id) return null;
+  await workspaceEvidenceStore.load(state().activeProject);
+  const evidence = workspaceEvidenceStore.get(id);
+  if (!evidence) return null;
+  const workspaceModel = buildBedfordWorkspaceModel(evidence.workspaceId || activeBedfordWorkspaceId, {
+    selectedSheetNumber: evidence.selectedSheet?.sheetNumber || activeBedfordWorkspaceSheetNumber,
+    drawingLinks: bedfordRelationshipLinksForSheet(evidence.selectedSheet?.sheetNumber || activeBedfordWorkspaceSheetNumber)
+  });
+  const activeWorkspace = workspaceModel.activeWorkspace || null;
+  activeBedfordWorkspaceId = activeWorkspace?.id || evidence.workspaceId || activeBedfordWorkspaceId;
+  activeBedfordWorkspaceSection = 'evidence';
+  const evidenceState = workspaceEvidenceStateFor(activeBedfordWorkspaceId || evidence.workspaceId || '');
+  evidenceState.mode = 'view';
+  evidenceState.selectedEvidenceId = evidence.id;
+  evidenceState.draft = null;
+  evidenceState.selectedLinkTarget = '';
+  await showMissionControlView('workspace');
+  return evidence;
+}
+
+function renderWorkspaceEvidenceEditor(draft = {}, { mode = 'create', workspaceEvidence = [], selectedSpecificationNumber = '', fileMeta = null } = {}) {
+  const sheet = draft.selectedSheet || null;
+  const relatedSpecifications = list(draft.relatedSpecifications);
+  const currentType = normalizeWorkspaceEvidenceType(draft.type || 'NOTE');
+  const currentSpecification = relatedSpecifications.find(spec => spec.sectionNumber === selectedSpecificationNumber) || relatedSpecifications[0] || null;
+  const linkTargetSummary = [
+    draft.linkedIssueIds?.length ? `${draft.linkedIssueIds.length} issue${draft.linkedIssueIds.length === 1 ? '' : 's'}` : '',
+    draft.linkedChecklistItemIds?.length ? `${draft.linkedChecklistItemIds.length} checklist item${draft.linkedChecklistItemIds.length === 1 ? '' : 's'}` : '',
+    draft.linkedObservationIds?.length ? `${draft.linkedObservationIds.length} observation${draft.linkedObservationIds.length === 1 ? '' : 's'}` : '',
+    draft.linkedRfiIds?.length ? `${draft.linkedRfiIds.length} RFI${draft.linkedRfiIds.length === 1 ? '' : 's'}` : ''
+  ].filter(Boolean).join(' · ') || 'No linked records selected';
+  const fileSummary = fileMeta || (currentType === 'PHOTO' || currentType === 'FILE' ? {
+    fileName: draft.fileName || '',
+    mimeType: draft.mimeType || '',
+    size: Number(draft.size || 0) || 0,
+    storageRef: draft.storageRef || ''
+  } : null);
+  const fileSummaryMarkup = fileSummary?.fileName
+    ? `<div class="mc-ws-evidence-file-summary"><strong>${esc(fileSummary.fileName)}</strong><span>${esc(fileSummary.mimeType || 'application/octet-stream')} · ${esc(fileSummary.size || 0)} bytes</span><small>File will be stored durably when saved.</small></div>`
+    : '';
+  const filePickerMarkup = currentType === 'PHOTO' || currentType === 'FILE'
+    ? `<label class="mc-ws-evidence-file-picker">${esc(currentType === 'PHOTO' ? 'Add Photo / Choose Photo' : 'Choose File')}<input type="file" data-evidence-file ${currentType === 'PHOTO' ? 'accept="image/*"' : ''}></label>${fileSummaryMarkup || '<div class="mc-ws-empty-inline">File metadata will be derived automatically from the selected file.</div>'}`
+    : currentType === 'DRAWING'
+      ? `<section class="mc-ws-observation-context mc-ws-evidence-source-context"><header><strong>SELECTED DRAWING</strong><small>${esc(sheet?.sheetNumber ? 'Default' : 'Unavailable')}</small></header><div class="mc-ws-observation-links"><div class="mc-ws-observation-link-block"><strong>${esc(sheet?.sheetNumber || 'No drawing selected')}</strong><span>${esc(sheet?.sheetTitle || 'The currently selected drawing will be attached to this evidence record.')}</span><small>${esc(sheet?.relationship || 'Selected drawing')}</small></div></div></section>`
+      : currentType === 'SPECIFICATION'
+        ? `<label>Specification<select data-evidence-spec-section>${relatedSpecifications.length ? relatedSpecifications.map(spec => `<option value="${esc(spec.sectionNumber)}" ${spec.sectionNumber === (currentSpecification?.sectionNumber || '') ? 'selected' : ''}>${esc(spec.sectionNumber)} — ${esc(spec.sectionTitle)}</option>`).join('') : '<option value="">No applicable specifications available</option>'}</select></label>`
+        : '';
+  return `
+    <div class="mc-ws-evidence-editor">
+      <button type="button" class="modal-x" data-evidence-cancel aria-label="Close evidence editor">×</button>
+      <header class="mc-ws-modal-header">
+        <h2>${esc(mode === 'link' ? 'Link Existing Evidence' : mode === 'edit' ? 'Edit Evidence' : 'Add Evidence')}</h2>
+        <p class="mc-ws-observation-intro">Capture shared Workspace evidence and link it to the active records without duplicating content.</p>
+      </header>
+      <form data-evidence-form class="mc-ws-modal-form">
+        <div class="mc-ws-modal-scroll">
+          <section class="mc-ws-observation-context">
+            <header><strong>ACTIVE CONTEXT</strong><small>${esc(draft.type || 'NOTE')}</small></header>
+            <div class="mc-ws-observation-context-grid">
+              <article><span>Project</span><strong>${esc(draft.projectId || 'Unavailable')}</strong></article>
+              <article><span>Workspace</span><strong>${esc(draft.room || draft.workspaceId || 'Unavailable')}</strong></article>
+              <article><span>Building</span><strong>${esc(draft.building || 'Unavailable')}</strong></article>
+              <article><span>Level</span><strong>${esc(draft.level || 'Unavailable')}</strong></article>
+              <article><span>Selected drawing</span><strong>${esc(sheet?.sheetNumber || 'Unavailable')}</strong><small>${esc(sheet?.sheetTitle || 'No drawing captured.')}</small></article>
+              <article><span>Applicable specifications</span><strong>${esc(relatedSpecifications.length)}</strong><small>${relatedSpecifications.length ? relatedSpecifications.slice(0, 3).map(spec => spec.sectionNumber).join(' · ') : 'No applicable specifications recorded.'}</small></article>
+            </div>
+          </section>
+          <div class="mc-ws-evidence-form-grid">
+            <label>Type
+              <select data-evidence-field="type">
+                ${WORKSPACE_EVIDENCE_TYPES.map(option => `<option value="${esc(option.id)}" ${option.id === (draft.type || 'NOTE') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+              </select>
+            </label>
+            <label>Title<input type="text" data-evidence-field="title" value="${esc(draft.title || '')}" placeholder="Summarize the evidence"></label>
+            <label>Tags<input type="text" data-evidence-field="tags" value="${esc(Array.isArray(draft.tags) ? draft.tags.join(', ') : '')}" placeholder="field, photo, coordination"></label>
+            ${filePickerMarkup}
+          </div>
+          <label>Description<textarea data-evidence-field="description" placeholder="Describe the evidence or its context">${esc(draft.description || '')}</textarea></label>
+          <section class="mc-ws-observation-context">
+            <header><strong>LINKED CONTEXT</strong><small>${esc(linkTargetSummary)}</small></header>
+            <div class="mc-ws-observation-links">
+              <div class="mc-ws-observation-link-block">
+                <strong>Selected drawing</strong>
+                <span>${esc(sheet?.sheetNumber || 'None recorded')}</span>
+                <small>${esc(sheet?.sheetTitle || 'Selected drawing context')}</small>
+              </div>
+              <div class="mc-ws-observation-link-block">
+                <strong>Applicable specifications</strong>
+                <span>${esc(relatedSpecifications.length ? relatedSpecifications.slice(0, 4).map(spec => spec.sectionNumber).join(', ') : 'None recorded')}</span>
+                <small>${esc(relatedSpecifications.length ? relatedSpecifications.slice(0, 2).map(spec => spec.sectionTitle).join(' · ') : 'No specs captured')}</small>
+              </div>
+            </div>
+          </section>
+      <section class="mc-ws-observation-context">
+            <header><strong>EXISTING EVIDENCE</strong><small>${workspaceEvidence.length}</small></header>
+            ${renderWorkspaceEvidenceExistingCards(workspaceEvidence)}
+          </section>
+        </div>
+      </form>
+      <div class="settings-actions">
+        <button type="button" data-evidence-save>${esc(mode === 'edit' ? 'Save Evidence' : 'Save Evidence')}</button>
+        <button type="button" class="subtle" data-evidence-cancel>Cancel</button>
+      </div>
+    </div>`;
+}
+
+function openWorkspaceEvidenceModal({
+  mode = 'create',
+  workspace = null,
+  selectedSheet = null,
+  relatedSpecifications = [],
+  existingEvidence = null,
+  sourceContext = {},
+  linkedIssueId = '',
+  linkedChecklistItemId = '',
+  linkedObservationId = '',
+  linkedRfiId = '',
+  type = 'NOTE',
+  title = '',
+  description = '',
+  fileName = '',
+  mimeType = '',
+  size = 0,
+  storageRef = ''
+} = {}) {
+  const projectId = state().activeProject || BEDFORD_PROJECT_ID;
+  const workspaceId = safeText(workspace?.id || '');
+  const draft = buildWorkspaceEvidenceDraft({
+    projectId,
+    workspace,
+    selectedSheet,
+    relatedSpecifications,
+    sourceContext,
+    type,
+    title,
+    description,
+    fileName,
+    mimeType,
+    size,
+    storageRef,
+    linkedIssueIds: linkedIssueId ? [linkedIssueId] : [],
+    linkedChecklistItemIds: linkedChecklistItemId ? [linkedChecklistItemId] : [],
+    linkedObservationIds: linkedObservationId ? [linkedObservationId] : [],
+    linkedRfiIds: linkedRfiId ? [linkedRfiId] : []
+  });
+  let selectedSpecificationNumber = text(draft.sourceContext?.selectedSpecificationNumber || draft.relatedSpecifications?.[0]?.sectionNumber || '');
+  let fileMeta = null;
+  if (existingEvidence) {
+    draft.id = existingEvidence.id || draft.id;
+    draft.createdAt = existingEvidence.createdAt || draft.createdAt;
+    draft.updatedAt = existingEvidence.updatedAt || draft.updatedAt;
+    draft.type = existingEvidence.type || draft.type;
+    draft.title = existingEvidence.title || draft.title;
+    draft.description = existingEvidence.description || draft.description;
+    draft.fileName = existingEvidence.fileName || draft.fileName;
+    draft.mimeType = existingEvidence.mimeType || draft.mimeType;
+    draft.size = Number(existingEvidence.size || draft.size) || 0;
+    draft.storageRef = existingEvidence.storageRef || draft.storageRef;
+    draft.tags = list(existingEvidence.tags).length ? existingEvidence.tags : draft.tags;
+    draft.pinned = Boolean(existingEvidence.pinned ?? draft.pinned);
+    draft.archived = Boolean(existingEvidence.archived ?? draft.archived);
+    draft.selectedSheet = existingEvidence.selectedSheet || draft.selectedSheet;
+    draft.relatedSpecifications = list(existingEvidence.relatedSpecifications).length ? existingEvidence.relatedSpecifications : draft.relatedSpecifications;
+    draft.linkedIssueIds = list(existingEvidence.linkedIssueIds).length ? existingEvidence.linkedIssueIds : draft.linkedIssueIds;
+    draft.linkedChecklistItemIds = list(existingEvidence.linkedChecklistItemIds).length ? existingEvidence.linkedChecklistItemIds : draft.linkedChecklistItemIds;
+    draft.linkedObservationIds = list(existingEvidence.linkedObservationIds).length ? existingEvidence.linkedObservationIds : draft.linkedObservationIds;
+    draft.linkedRfiIds = list(existingEvidence.linkedRfiIds).length ? existingEvidence.linkedRfiIds : draft.linkedRfiIds;
+    draft.sourceContext = existingEvidence.sourceContext || draft.sourceContext;
+    selectedSpecificationNumber = text(existingEvidence.sourceContext?.selectedSpecificationNumber || selectedSpecificationNumber || draft.relatedSpecifications?.[0]?.sectionNumber || '');
+  }
+  const evidenceState = workspaceEvidenceStateFor(workspaceId);
+  evidenceState.mode = mode;
+  evidenceState.draft = structuredClone(draft);
+  evidenceState.selectedLinkTarget = '';
+  let selectedBinaryFile = null;
+  const workspaceEvidence = workspaceEvidenceStore.list({ projectId, workspaceId });
+  const mountEditor = () => {
+    const modal = $('#modal');
+    const field = name => modal.querySelector(`[data-evidence-field="${name}"]`);
+    const typeField = field('type');
+    const titleField = field('title');
+    const tagsField = field('tags');
+    const descriptionField = field('description');
+    const fileField = modal.querySelector('[data-evidence-file]');
+    const specField = modal.querySelector('[data-evidence-spec-section]');
+    const saveButton = modal.querySelector('[data-evidence-save]');
+    const cancelButtons = [...modal.querySelectorAll('[data-evidence-cancel]')];
+    const detailButtons = [...modal.querySelectorAll('[data-evidence-open-detail]')];
+    const linkButtons = [...modal.querySelectorAll('[data-evidence-link-existing]')];
+    const reRender = () => {
+      const currentType = typeField?.value || draft.type || 'NOTE';
+      const nextDraft = {
+        ...draft,
+        type: currentType,
+        title: titleField?.value || draft.title || '',
+        description: descriptionField?.value || draft.description || '',
+        tags: normalizeWorkspaceNoteTags(tagsField?.value || (Array.isArray(draft.tags) ? draft.tags.join(', ') : ''))
+      };
+      evidenceState.draft = structuredClone(nextDraft);
+      $('#modalBody').innerHTML = renderWorkspaceEvidenceEditor(nextDraft, {
+        mode,
+        workspaceEvidence,
+        selectedSpecificationNumber,
+        fileMeta
+      });
+      mountEditor();
+    };
+    const persistEvidence = async () => {
+      const currentType = typeField?.value || draft.type || 'NOTE';
+      const selectedFile = fileField?.files?.[0] || selectedBinaryFile || null;
+      const evidenceId = draft.id || existingEvidence?.id || (selectedFile && ['PHOTO', 'FILE'].includes(currentType) ? createIdentifier() : '');
+      draft.id = evidenceId;
+      evidenceState.draft = structuredClone(draft);
+      const blobId = evidenceId ? workspaceEvidenceBlobStore.blobIdFor(projectId, workspaceId, evidenceId) : '';
+      if (selectedFile && (currentType === 'PHOTO' || currentType === 'FILE')) {
+        fileMeta = workspaceEvidenceFileMeta(selectedFile, { workspaceId, type: currentType });
+      } else if (currentType !== 'PHOTO' && currentType !== 'FILE') {
+        fileMeta = null;
+      }
+      if (selectedFile && (currentType === 'PHOTO' || currentType === 'FILE') && blobId) {
+        try {
+          const blobRecord = await workspaceEvidenceBlobStore.putBlob({
+            id: blobId,
+            evidenceId,
+            projectId,
+            workspaceId,
+            fileName: fileMeta?.fileName || selectedFile.name || '',
+            mimeType: fileMeta?.mimeType || selectedFile.type || 'application/octet-stream',
+            size: Number(fileMeta?.size || selectedFile.size || 0) || 0,
+            blob: selectedFile,
+            createdAt: existingEvidence?.createdAt || draft.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          const readbackRecord = await workspaceEvidenceBlobStore.loadBlob(evidenceId, projectId, workspaceId);
+          if (!readbackRecord?.blob) {
+            const message = `Workspace evidence blob write could not be verified for ${blobId}.`;
+            logger.warning(message, { evidenceId, projectId, workspaceId, storageRef: blobId });
+            alert(message);
+            return;
+          }
+        } catch (error) {
+          logger.warning('Workspace evidence blob persistence failed', {
+            message: error?.message || String(error),
+            evidenceId,
+            workspaceId
+          });
+          return;
+        }
+      }
+      const selectedSpecification = currentType === 'SPECIFICATION'
+        ? (relatedSpecifications.find(spec => spec.sectionNumber === (specField?.value || selectedSpecificationNumber)) || relatedSpecifications[0] || null)
+        : null;
+      const derivedFileMeta = currentType === 'PHOTO' || currentType === 'FILE'
+        ? (fileMeta || {
+            fileName: text(draft.fileName || existingEvidence?.fileName || ''),
+            mimeType: text(draft.mimeType || existingEvidence?.mimeType || ''),
+            size: Number(draft.size || existingEvidence?.size || 0) || 0,
+            storageRef: text(draft.storageRef || existingEvidence?.storageRef || '')
+          })
+        : {
+            fileName: text(draft.fileName || existingEvidence?.fileName || ''),
+            mimeType: text(draft.mimeType || existingEvidence?.mimeType || ''),
+            size: Number(draft.size || existingEvidence?.size || 0) || 0,
+            storageRef: text(draft.storageRef || existingEvidence?.storageRef || '')
+          };
+      const durableStorageRef = selectedFile && (currentType === 'PHOTO' || currentType === 'FILE')
+        ? blobId
+        : text(existingEvidence?.storageRef || draft.storageRef || '');
+      const payload = {
+        id: evidenceId || draft.id || '',
+        projectId,
+        workspaceId,
+        building: draft.building || workspace?.building || '',
+        room: draft.room || workspace?.room || workspaceId,
+        level: draft.level || workspace?.level || '',
+        type: currentType,
+        title: titleField?.value || draft.title || '',
+        description: descriptionField?.value || draft.description || '',
+        fileName: derivedFileMeta.fileName || '',
+        mimeType: derivedFileMeta.mimeType || '',
+        size: Number(derivedFileMeta.size || 0) || 0,
+        storageRef: durableStorageRef || derivedFileMeta.storageRef || '',
+        tags: normalizeWorkspaceNoteTags(tagsField?.value || (Array.isArray(draft.tags) ? draft.tags.join(', ') : '')),
+        pinned: Boolean(draft.pinned),
+        archived: Boolean(draft.archived),
+        selectedSheet: currentType === 'DRAWING' ? (draft.selectedSheet || null) : draft.selectedSheet || null,
+        relatedSpecifications: currentType === 'SPECIFICATION'
+          ? (selectedSpecification ? [selectedSpecification] : list(draft.relatedSpecifications))
+          : list(draft.relatedSpecifications),
+        linkedIssueIds: list(draft.linkedIssueIds),
+        linkedChecklistItemIds: list(draft.linkedChecklistItemIds),
+        linkedObservationIds: list(draft.linkedObservationIds),
+        linkedRfiIds: list(draft.linkedRfiIds),
+        sourceContext: {
+          ...structuredClone(draft.sourceContext || {}),
+          selectedSpecificationNumber: currentType === 'SPECIFICATION'
+            ? (specField?.value || selectedSpecificationNumber || selectedSpecification?.sectionNumber || '')
+            : (draft.sourceContext?.selectedSpecificationNumber || selectedSpecificationNumber || '')
+        }
+      };
+      const saveMethod = existingEvidence?.id ? 'update' : 'create';
+      const saved = saveMethod === 'update'
+        ? workspaceEvidenceStore.update(payload.id, payload)
+        : workspaceEvidenceStore.create(payload);
+      const metadataReadback = workspaceEvidenceStore.list({ projectId, workspaceId }).filter(record => record.id === evidenceId);
+      if (!saved?.id || saved.id !== evidenceId || !metadataReadback.some(record => record.id === evidenceId)) {
+        if (selectedFile && (currentType === 'PHOTO' || currentType === 'FILE') && blobId) {
+          try {
+            await workspaceEvidenceBlobStore.deleteBlob(evidenceId, projectId, workspaceId);
+          } catch (error) {
+            logger.warning('Workspace evidence blob cleanup failed after metadata save failure', {
+              message: error?.message || String(error),
+              evidenceId,
+              projectId,
+              workspaceId,
+              storageRef: blobId
+            });
+          }
+        }
+        const message = `Workspace evidence metadata save failed for ${evidenceId}.`;
+        logger.warning(message, {
+          evidenceId,
+          projectId,
+          workspaceId,
+          storageRef: payload.storageRef || '',
+          method: saveMethod,
+          saved: saved ? { id: saved.id, projectId: saved.projectId, workspaceId: saved.workspaceId } : null,
+          metadataReadback
+        });
+        alert(message);
+        return;
+      }
+      evidenceState.mode = 'view';
+      evidenceState.draft = null;
+      evidenceState.selectedEvidenceId = saved?.id || '';
+      closeModal(true);
+      await showMissionControlView('workspace');
+    };
+    saveButton.onclick = persistEvidence;
+    const cancelEvidence = () => {
+      evidenceState.mode = 'view';
+      evidenceState.draft = null;
+      closeModal(true);
+      void renderMissionControlWorkspace();
+    };
+    cancelButtons.forEach(button => {
+      button.onclick = cancelEvidence;
+    });
+    linkButtons.forEach(button => {
+      button.onclick = async () => {
+        const target = workspaceEvidenceStore.get(button.dataset.evidenceLinkExisting);
+        if (!target) return;
+        const next = workspaceEvidenceStore.link(target.id, {
+          issueId: linkedIssueId || '',
+          checklistItemId: linkedChecklistItemId || '',
+          observationId: linkedObservationId || '',
+          rfiId: linkedRfiId || ''
+        });
+        evidenceState.mode = 'view';
+        evidenceState.draft = null;
+        evidenceState.selectedEvidenceId = next?.id || target.id;
+        closeModal(true);
+        await showMissionControlView('workspace');
+      };
+    });
+    detailButtons.forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = workspaceEvidenceStore.get(button.dataset.evidenceOpenDetail);
+        if (!target) return;
+        evidenceState.mode = 'view';
+        evidenceState.draft = null;
+        evidenceState.selectedEvidenceId = target.id;
+        evidenceState.selectedLinkTarget = '';
+        closeModal(true);
+        await openWorkspaceEvidence(target.id);
+      };
+    });
+    modalCloseGuard = () => {
+      evidenceState.mode = 'view';
+      evidenceState.draft = null;
+      return true;
+    };
+    if (typeField) {
+      typeField.onchange = () => {
+        draft.type = typeField.value || draft.type || 'NOTE';
+        if (typeField.value === 'SPECIFICATION') {
+          selectedSpecificationNumber = specField?.value || selectedSpecificationNumber || draft.relatedSpecifications?.[0]?.sectionNumber || '';
+        }
+        reRender();
+      };
+    }
+    if (fileField) {
+      fileField.onchange = () => {
+        const selectedFile = fileField.files?.[0] || null;
+        selectedBinaryFile = selectedFile;
+        fileMeta = selectedFile ? workspaceEvidenceFileMeta(selectedFile, { workspaceId, type: typeField?.value || draft.type || 'FILE' }) : null;
+        reRender();
+      };
+    }
+    if (specField) {
+      specField.onchange = () => {
+        selectedSpecificationNumber = specField.value || selectedSpecificationNumber || '';
+        evidenceState.draft = structuredClone({
+          ...draft,
+          sourceContext: {
+            ...structuredClone(draft.sourceContext || {}),
+            selectedSpecificationNumber
+          }
+        });
+      };
+    }
+  };
+  openModal(renderWorkspaceEvidenceEditor(draft, { mode, workspaceEvidence, selectedSpecificationNumber, fileMeta }), mountEditor);
 }
 
 function buildWorkspaceDrawingTarget(workspace = null, sheetNumber = '') {
@@ -2316,6 +3400,8 @@ const workspaceChecklistSessionState = new Map();
 const workspaceTimelineSessionState = new Map();
 const workspaceNotesSessionState = new Map();
 const workspaceIssuesSessionState = new Map();
+const workspaceEvidenceSessionState = new Map();
+const workspaceEvidenceBlobPreviewState = new Map();
 const workspaceComparisonsSessionState = {
   mode: WORKSPACE_COMPARISON_MODES.WORKSPACE,
   rightWorkspaceId: '',
@@ -2325,6 +3411,8 @@ const workspaceComparisonsSessionState = {
 const workspaceNotesStore = createWorkspaceNotesStore({ storage: globalThis.localStorage, persistence: engine.workspaceNotesPersistence() });
 const workspaceObservationsStore = createWorkspaceObservationsStore({ storage: globalThis.localStorage, persistence: engine.workspaceObservationsPersistence() });
 const workspaceRfisStore = createWorkspaceRfisStore({ storage: globalThis.localStorage, persistence: engine.workspaceRfisPersistence() });
+const workspaceEvidenceStore = createWorkspaceEvidenceStore({ storage: globalThis.localStorage, persistence: engine.workspaceEvidencePersistence() });
+const workspaceEvidenceBlobStore = engine.workspaceEvidenceBlobPersistence();
 
 function captureWorkspaceDrawingFullscreenScrollState() {
   workspaceDrawingFullscreenScrollState.windowScrollY = globalThis.scrollY || globalThis.pageYOffset || 0;
@@ -6943,6 +8031,22 @@ async function renderMissionControlWorkspace() {
   const compactNextSteps = combinedNextSteps.slice(0, 5);
   const remainingNextSteps = Math.max(0, combinedNextSteps.length - compactNextSteps.length);
   const documentsModel = buildWorkspaceDocumentsModel({ workspace: activeWorkspace, projectMilestoneContext });
+  await workspaceEvidenceStore.load(state().activeProject);
+  const evidenceState = workspaceEvidenceStateFor(activeWorkspace?.id || '');
+  const evidenceRecords = workspaceEvidenceStore.list({ projectId: state().activeProject, workspaceId: activeWorkspace?.id || '' });
+  const evidenceModel = buildWorkspaceEvidenceModel({
+    projectId: state().activeProject,
+    workspace: activeWorkspace,
+    evidence: evidenceRecords,
+    filter: evidenceState.filter,
+    selectedEvidenceId: evidenceState.selectedEvidenceId
+  });
+  if (!evidenceModel.filters.some(filter => String(filter.id) === String(evidenceState.filter))) evidenceState.filter = 'all';
+  if (evidenceState.selectedEvidenceId && !evidenceModel.allEvidence.some(item => item.id === evidenceState.selectedEvidenceId)) evidenceState.selectedEvidenceId = '';
+  if (!evidenceState.selectedEvidenceId) evidenceState.selectedEvidenceId = evidenceModel.selectedEvidenceId || '';
+  const evidenceViewMarkup = activeBedfordWorkspaceSection === 'evidence'
+    ? renderWorkspaceEvidenceView(workspaceContextModel, activeWorkspace, projectMilestoneContext)
+    : '';
   const notesState = workspaceNotesStateFor(activeWorkspace?.id || '');
   await workspaceNotesStore.load(state().activeProject);
   const notesModel = buildWorkspaceNotesModel({
@@ -7106,6 +8210,7 @@ async function renderMissionControlWorkspace() {
           <div class="mc-ws-empty-inline">${esc(documentsModel.emptyState || 'No Workspace documents available for this record.')}</div>
         </section>`;
   const notesViewMarkup = renderWorkspaceNotesView(notesModel, activeWorkspace, projectMilestoneContext, notesState);
+  workspaceEvidenceReleaseAllPreviews();
   $('#missionControlContent').innerHTML = `
     <section class="mc-ws ${workspaceDrawingFullscreen ? 'workspace-fullscreen' : ''}" aria-labelledby="missionControlTitle">
       <aside class="mc-ws-sidebar">
@@ -7114,13 +8219,14 @@ async function renderMissionControlWorkspace() {
         <nav class="mc-ws-side-nav" aria-label="Workspace sections">
           <button type="button" class="${activeBedfordWorkspaceSection === 'overview' ? 'active' : ''}" data-ws-section="overview">⌂ Overview</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'documents' ? 'active' : ''}" data-ws-section="documents">▣ Documents</button>
+          <button type="button" class="${activeBedfordWorkspaceSection === 'evidence' ? 'active' : ''}" data-ws-section="evidence">Evidence</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'issues' ? 'active' : ''}" data-ws-section="issues">◇ Issues</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'checklist' ? 'active' : ''}" data-ws-section="checklist">☑ Checklist</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'comparisons' ? 'active' : ''}" data-ws-section="comparisons">⇄ Comparisons</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'timeline' ? 'active' : ''}" data-ws-section="timeline">◷ Timeline</button>
           <button type="button" class="${activeBedfordWorkspaceSection === 'notes' ? 'active' : ''}" data-ws-section="notes">✎ Notes</button>
         </nav>
-        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="compare-spec">Compare to Spec</button><button data-ws-action="rfi" title="Create a local RFI draft from the active workspace context">Create RFI</button><button data-ws-action="observation">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
+        <div class="mc-ws-side-section mc-ws-quick"><small>QUICK ACTIONS</small><button data-ws-action="chief">Ask Chief about this</button><button data-ws-action="compare-spec">Compare to Spec</button><button data-ws-action="evidence" title="Capture shared Workspace evidence">Add Evidence</button><button data-ws-action="rfi" title="Create a local RFI draft from the active workspace context">Create RFI</button><button data-ws-action="observation">Create Observation</button><button data-ws-action="package" disabled title="Export Package is not configured yet">Export Package</button></div>
       </aside>
       <main class="mc-ws-main">
         <header class="mc-ws-header"><div><span class="mc-ws-back">← Bedford Workspaces</span><h1 id="missionControlTitle" tabindex="-1">B${esc(activeWorkspace?.building || '61')} — Telecom Room ${esc(activeWorkspace?.room || 'Workspace')}</h1><p>Investigate, analyze, and build your work package.</p></div><div class="mc-ws-kpis"><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-review', label: 'Checklist Review', value: checklistApplicableCount ? `${checklistDoneCount}/${checklistApplicableCount}` : 'No data', detail: checklistApplicableCount ? `${checklistDoneCount} of ${checklistApplicableCount} reviewed this session` : 'No deterministic checklist items recorded', tone: checklistBlockedCount ? 'watch' : checklistApplicableCount ? 'watch' : 'danger' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'checklist-blocked', label: 'Blocked', value: checklistBlockedCount, detail: checklistBlockedCount ? 'Dependencies remain open' : 'No blocked checklist items recorded', tone: checklistBlockedCount ? 'danger' : 'watch' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'issues-questions', label: 'Open Questions', value: issuesModel.counts.questions, detail: issuesModel.counts.questions ? `${issuesModel.counts.questions} open question${issuesModel.counts.questions === 1 ? '' : 's'}` : 'No open questions recorded.', tone: issuesModel.counts.questions ? 'watch' : 'neutral' })}</article><article>${renderWorkspaceOverviewKpiButton({ action: 'documents', label: 'Related Documents', value: (activeWorkspace?.sourceEvidence?.length || 0) + (activeWorkspace?.relatedSheets?.length || 0), detail: `${activeWorkspace?.sourceSheets?.length || 0} source sheets`, tone: 'neutral' })}</article></div></header>
@@ -7131,7 +8237,7 @@ async function renderMissionControlWorkspace() {
           <div><small>SCHEDULE STATUS</small><strong>${esc(projectMilestoneContext?.scheduleStatus || 'Awaiting Interim Schedule')}</strong><span>${esc(timelineModel.summary?.roomScheduleStatus || projectMilestoneContext?.roomScheduleStatus || 'Awaiting Contractor Schedule')}</span></div>
         </section>
         <div class="mc-ws-breadcrumb"><button>Building ${esc(activeWorkspace?.building || '61')}</button><span>›</span><button>${esc(activeWorkspace?.level || 'Workspace')}</button><span>›</span><button>Room ${esc(activeWorkspace?.room || 'Workspace')} — ${esc(activeWorkspace?.disciplineFocus || 'Telecom')}</button><em>${esc(activeWorkspace?.type || 'Workspace')}</em></div>
-        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, observationsModel, rfisModel, activeWorkspace, projectMilestoneContext, issueState, observationState, rfiState) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
+        ${activeBedfordWorkspaceSection === 'documents' ? documentsViewMarkup : activeBedfordWorkspaceSection === 'evidence' ? evidenceViewMarkup : activeBedfordWorkspaceSection === 'issues' ? renderWorkspaceIssuesView(issuesModel, observationsModel, rfisModel, activeWorkspace, projectMilestoneContext, issueState, observationState, rfiState) : activeBedfordWorkspaceSection === 'checklist' ? renderWorkspaceChecklistView(checklistModel, activeWorkspace, projectMilestoneContext, checklistState.filter, checklistState.selectedItemId, checklistState) : activeBedfordWorkspaceSection === 'comparisons' ? renderWorkspaceComparisonsView(comparisonsModel || buildWorkspaceComparisonsModel({ mode: workspaceComparisonsSessionState.mode, leftWorkspaceId: activeWorkspace?.id || '', rightWorkspaceId: workspaceComparisonsSessionState.rightWorkspaceId, selectedDimensionId: workspaceComparisonsSessionState.selectedDimensionId, selectedRequirementId: workspaceComparisonsSessionState.selectedRequirementId, pmisRuntime }), activeWorkspace, projectMilestoneContext, workspaceComparisonsSessionState) : activeBedfordWorkspaceSection === 'timeline' ? renderWorkspaceTimelineView(timelineModel, activeWorkspace, projectMilestoneContext, timelineState.filter, timelineState.selectedItemId, timelineState) : activeBedfordWorkspaceSection === 'notes' ? notesViewMarkup : `
         <section class="mc-ws-upper">
           <article class="mc-ws-drawing" id="workspaceOverviewPanel"><header><strong>${esc(activeWorkspace?.building ? `DRAWING: BUILDING ${activeWorkspace.building} — ${previewSheet?.sheetNumber || activeWorkspace.disciplineFocus || 'Workspace'} / ${previewSheet?.sheetTitle || activeWorkspace.level || 'Plan'}` : 'DRAWING: WORKSPACE')}</strong><div><button data-ws-action="drawings">${esc(openDrawingLabel)}</button><button data-ws-action="fit">Fit</button><button data-ws-action="toggle-fullscreen" aria-pressed="${workspaceDrawingFullscreen ? 'true' : 'false'}">${esc(workspaceFullscreenLabel)}</button></div></header><div class="mc-ws-pdf">${previewUrl ? `<object data="${previewUrl}" type="application/pdf" aria-label="${esc(activeWorkspace?.room || 'Workspace')} drawing"><div class="mc-ws-pdf-fallback"><strong>${esc(activeWorkspace?.room || 'Workspace')} Drawing</strong><p>Open the drawing viewer to inspect the authoritative PDF.</p><button data-ws-action="drawings">${esc(openDrawingLabel)}</button></div></object>` : '<div class="mc-ws-pdf-fallback"><strong>Drawing preview unavailable</strong><p>No source sheet could be resolved for this workspace.</p></div>'}</div></article>
           <aside class="mc-ws-evidence"><section id="workspaceDocumentsPanel"><header><strong>APPLICABLE SPECIFICATIONS (${activeWorkspace?.applicableSpecifications?.length || 0})</strong><button data-ws-action="specs">${activeWorkspace?.applicableSpecifications?.length ? 'View All' : 'No specs'}</button></header><ul>${specificationItems}</ul></section><section id="workspaceRelatedDocumentsPanel"><header><strong>RELATED DOCUMENTS / SOURCE SHEETS (${activeWorkspace?.sourceSheets?.length || 0})</strong><button data-ws-action="drawings">${activeWorkspace?.sourceSheets?.length ? 'View All' : 'No drawings'}</button></header><ul>${relatedDocumentItems}</ul></section></aside>
@@ -7144,6 +8250,7 @@ async function renderMissionControlWorkspace() {
         </section>`}
       </main>
     </section>`;
+  await hydrateWorkspaceEvidenceBlobPreviews();
 }
 
 async function renderMissionControlDashboard() {
@@ -7367,6 +8474,13 @@ $('#missionControlContent').onclick = async event => {
     }
     return;
   }
+  if (button.dataset.evidenceOpenDetail || button.dataset.wsEvidenceOpen || (button.dataset.wsEvidenceId && !button.dataset.wsEvidenceAction && !button.dataset.wsEvidenceUnlink)) {
+    const evidenceId = String(button.dataset.evidenceOpenDetail || button.dataset.wsEvidenceOpen || button.dataset.wsEvidenceId || '').trim();
+    if (!evidenceId) return;
+    closeModal(true);
+    await openWorkspaceEvidence(evidenceId);
+    return;
+  }
   if (button.dataset.wsNoteAction || button.dataset.wsNoteId || button.dataset.wsNoteFilter || button.dataset.wsNoteLinkAdd || button.dataset.wsNoteLinkRemove) {
     const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
     const activeWorkspace = workspaceModel.activeWorkspace || null;
@@ -7508,6 +8622,141 @@ $('#missionControlContent').onclick = async event => {
       await commitRefresh();
       return;
     }
+  }
+  if (button.dataset.wsEvidenceAction || button.dataset.wsEvidenceId || button.dataset.wsEvidenceUnlink || button.dataset.wsEvidenceEdit || button.dataset.wsEvidenceDelete || button.dataset.wsEvidenceLinkRecord || button.dataset.wsEvidencePreviewOpen) {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    const selectedSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || selectableSheets[0] || null;
+    const evidenceState = workspaceEvidenceStateFor(activeWorkspace?.id || '');
+    const evidenceRecords = workspaceEvidenceStore.list({ projectId: state().activeProject, workspaceId: activeWorkspace?.id || '' });
+    const currentEvidence = evidenceRecords.find(item => item.id === evidenceState.selectedEvidenceId) || evidenceRecords[0] || null;
+    if (button.dataset.wsEvidenceAction === 'preview') {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      const evidence = workspaceEvidenceStore.get(button.dataset.wsEvidenceId) || currentEvidence;
+      if (!evidence) return;
+      await openWorkspaceEvidencePreviewModal({
+        evidenceId: evidence.id,
+        projectId: evidence.projectId || state().activeProject || BEDFORD_PROJECT_ID,
+        workspaceId: evidence.workspaceId || activeWorkspace?.id || '',
+        storageRef: workspaceEvidenceStorageRefFor(evidence),
+        fileName: evidence.fileName || '',
+        mimeType: evidence.mimeType || '',
+        type: evidence.type || ''
+      });
+      return;
+    }
+    if (button.dataset.wsEvidenceUnlink) {
+      const relationKind = String(button.dataset.wsEvidenceRelationKind || '').trim().toLowerCase();
+      const relationId = String(button.dataset.wsEvidenceRelationId || '').trim();
+      const target = workspaceEvidenceStore.get(button.dataset.wsEvidenceUnlink);
+      if (!target) return;
+      const relationKey = relationKind === 'issue' ? 'issueId'
+        : relationKind === 'checklist' ? 'checklistItemId'
+          : relationKind === 'observation' ? 'observationId'
+            : relationKind === 'rfi' ? 'rfiId'
+              : '';
+      const saved = relationKey ? workspaceEvidenceStore.unlink(target.id, { [relationKey]: relationId }) : null;
+      if (saved) {
+        evidenceState.selectedEvidenceId = saved.id;
+        activeBedfordWorkspaceSection = 'evidence';
+        await showMissionControlView('workspace');
+      }
+      return;
+    }
+    if (button.dataset.wsEvidencePreviewOpen) {
+      const target = workspaceEvidenceStore.get(button.dataset.wsEvidencePreviewOpen) || currentEvidence;
+      if (!target) return;
+      await openWorkspaceEvidencePreviewModal({
+        evidenceId: target.id,
+        projectId: target.projectId || state().activeProject || BEDFORD_PROJECT_ID,
+        workspaceId: target.workspaceId || activeWorkspace?.id || '',
+        storageRef: workspaceEvidenceStorageRefFor(target),
+        fileName: target.fileName || '',
+        mimeType: target.mimeType || '',
+        type: target.type || ''
+      });
+      return;
+    }
+    if (button.dataset.wsEvidenceDelete) {
+      const removed = workspaceEvidenceStore.delete(button.dataset.wsEvidenceDelete);
+      if (!removed) return;
+      const remaining = workspaceEvidenceStore.list({ projectId: state().activeProject, workspaceId: activeWorkspace?.id || '' });
+      evidenceState.selectedEvidenceId = remaining.find(item => item.id !== removed.id)?.id || '';
+      activeBedfordWorkspaceSection = 'evidence';
+      await showMissionControlView('workspace');
+      return;
+    }
+    if (button.dataset.wsEvidenceEdit) {
+      const target = workspaceEvidenceStore.get(button.dataset.wsEvidenceEdit) || currentEvidence;
+      if (!target) return;
+      openWorkspaceEvidenceModal({
+        mode: 'edit',
+        workspace: activeWorkspace,
+        selectedSheet: target.selectedSheet || selectedSheet,
+        relatedSpecifications: target.relatedSpecifications || activeWorkspace?.applicableSpecifications || [],
+        existingEvidence: target,
+        sourceContext: target.sourceContext || {}
+      });
+      return;
+    }
+    if (button.dataset.wsEvidenceLinkRecord) {
+      const target = workspaceEvidenceStore.get(button.dataset.wsEvidenceLinkRecord) || currentEvidence;
+      if (!target) return;
+      openWorkspaceEvidenceModal({
+        mode: 'link',
+        workspace: activeWorkspace,
+        selectedSheet: target.selectedSheet || selectedSheet,
+        relatedSpecifications: target.relatedSpecifications || activeWorkspace?.applicableSpecifications || [],
+        existingEvidence: target,
+        sourceContext: target.sourceContext || {}
+      });
+      return;
+    }
+    const linkedIssueId = button.dataset.wsEvidenceLinkIssueId || '';
+    const linkedChecklistItemId = button.dataset.wsEvidenceLinkChecklistId || '';
+    const linkedObservationId = button.dataset.wsEvidenceLinkObservationId || '';
+    const linkedRfiId = button.dataset.wsEvidenceLinkRfiId || '';
+    openWorkspaceEvidenceModal({
+      mode: button.dataset.wsEvidenceAction === 'link-existing' ? 'link' : 'create',
+      workspace: activeWorkspace,
+      selectedSheet,
+      relatedSpecifications: activeWorkspace?.applicableSpecifications || [],
+      sourceContext: {
+        launchedFrom: activeBedfordWorkspaceSection || 'documents',
+        currentSection: activeBedfordWorkspaceSection || 'documents',
+        projectPhase: projectMilestoneContext?.projectPhase || '',
+        ntpDateLabel: projectMilestoneContext?.ntpDateLabel || '',
+        contractCompletionDateLabel: projectMilestoneContext?.contractCompletionDateLabel || '',
+        roomScheduleStatus: projectMilestoneContext?.roomScheduleStatus || '',
+        scheduleStatus: projectMilestoneContext?.scheduleStatus || '',
+        activeEvidenceId: currentEvidence?.id || ''
+      },
+      linkedIssueId,
+      linkedChecklistItemId,
+      linkedObservationId,
+      linkedRfiId
+    });
+    return;
+  }
+  if (button.dataset.wsEvidenceFilter) {
+    const evidenceState = workspaceEvidenceStateFor(activeBedfordWorkspaceId || '');
+    evidenceState.filter = button.dataset.wsEvidenceFilter;
+    evidenceState.selectedEvidenceId = '';
+    activeBedfordWorkspaceSection = 'evidence';
+    await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsEvidenceFacet) {
+    const evidenceState = workspaceEvidenceStateFor(activeBedfordWorkspaceId || '');
+    evidenceState.facet = evidenceState.facet === button.dataset.wsEvidenceFacet ? '' : button.dataset.wsEvidenceFacet;
+    evidenceState.selectedEvidenceId = '';
+    activeBedfordWorkspaceSection = 'evidence';
+    await showMissionControlView('workspace');
+    return;
   }
   if (button.dataset.wsSheet) {
     activeBedfordWorkspaceSheetNumber = button.dataset.wsSheet;
@@ -7742,6 +8991,29 @@ $('#missionControlContent').onclick = async event => {
     workspaceComparisonsSessionState.selectedRequirementId = '';
     activeBedfordWorkspaceSection = 'comparisons';
     await showMissionControlView('workspace');
+    return;
+  }
+  if (button.dataset.wsAction === 'evidence') {
+    const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId, { selectedSheetNumber: activeBedfordWorkspaceSheetNumber, drawingLinks: bedfordRelationshipLinksForSheet(activeBedfordWorkspaceSheetNumber) });
+    const activeWorkspace = workspaceModel.activeWorkspace || null;
+    const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: activeWorkspace });
+    const selectableSheets = workspaceSelectableSheets(activeWorkspace);
+    const selectedSheet = selectableSheets.find(sheet => sheet.sheetNumber === activeBedfordWorkspaceSheetNumber) || selectableSheets[0] || null;
+    openWorkspaceEvidenceModal({
+      mode: 'create',
+      workspace: activeWorkspace,
+      selectedSheet,
+      relatedSpecifications: activeWorkspace?.applicableSpecifications || [],
+      sourceContext: {
+        launchedFrom: activeBedfordWorkspaceSection || 'overview',
+        currentSection: activeBedfordWorkspaceSection || 'overview',
+        projectPhase: projectMilestoneContext?.projectPhase || '',
+        ntpDateLabel: projectMilestoneContext?.ntpDateLabel || '',
+        contractCompletionDateLabel: projectMilestoneContext?.contractCompletionDateLabel || '',
+        roomScheduleStatus: projectMilestoneContext?.roomScheduleStatus || '',
+        scheduleStatus: projectMilestoneContext?.scheduleStatus || ''
+      }
+    });
     return;
   }
   if (button.dataset.wsAction === 'rfi') {

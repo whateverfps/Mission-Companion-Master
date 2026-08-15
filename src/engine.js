@@ -41,7 +41,7 @@ import { assessAssistedEvidence, buildAssistedEvidenceExpansion, buildAssistedSe
 
 const STATE_KEY = COMPACT_STATE_KEY;
 const DOC_DB = 'mc-master-documents-v2';
-const DOC_DB_VERSION = 6;
+const DOC_DB_VERSION = 8;
 const APP_VERSION = '2.8.1';
 const STARTUP_EXPERIENCES = new Set(['mission-control', 'professional-workspace']);
 const normalizeStartupExperience = value => STARTUP_EXPERIENCES.has(value) ? value : 'mission-control';
@@ -378,6 +378,17 @@ function openDB() {
       if (!drawingAnalyses.indexNames.contains('status')) drawingAnalyses.createIndex('status', 'status');
 
       if (!db.objectStoreNames.contains('stateRecords')) db.createObjectStore('stateRecords', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('workspaceEvidenceBlobs')) {
+        const blobs = db.createObjectStore('workspaceEvidenceBlobs', { keyPath: 'id' });
+        blobs.createIndex('projectId', 'projectId');
+        blobs.createIndex('workspaceId', 'workspaceId');
+        blobs.createIndex('evidenceId', 'evidenceId');
+      } else {
+        const blobs = request.transaction.objectStore('workspaceEvidenceBlobs');
+        if (!blobs.indexNames.contains('projectId')) blobs.createIndex('projectId', 'projectId');
+        if (!blobs.indexNames.contains('workspaceId')) blobs.createIndex('workspaceId', 'workspaceId');
+        if (!blobs.indexNames.contains('evidenceId')) blobs.createIndex('evidenceId', 'evidenceId');
+      }
     };
 
     request.onsuccess = () => { logSlowOperation('indexeddb open', startedAt, { database: DOC_DB, version: DOC_DB_VERSION }); resolve(request.result); };
@@ -1102,6 +1113,63 @@ export const engine = {
       loadNotes: async (projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === 'workspace-note' && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record)),
       putNote: async record => putMany('stateRecords', [{ id: `workspace-note:${record.projectId}:${record.workspaceId}:${record.id}`, kind: 'workspace-note', projectId: record.projectId, workspaceId: record.workspaceId, noteCategory: record.category, record: structuredClone(record), updatedAt: record.updatedAt }]),
       deleteNote: async (noteId, projectId = state.activeProject, workspaceId = '') => tx('stateRecords', 'readwrite', store => store.delete(`workspace-note:${projectId}:${workspaceId}:${noteId}`))
+    };
+  },
+
+  workspaceEvidencePersistence() {
+    return {
+      loadEvidence: async (projectId = state.activeProject) => (await all('stateRecords')).filter(item => item.kind === 'workspace-evidence' && (!projectId || item.projectId === projectId)).map(item => structuredClone(item.record)),
+      putEvidence: async record => putMany('stateRecords', [{ id: `workspace-evidence:${record.projectId}:${record.workspaceId}:${record.id}`, kind: 'workspace-evidence', projectId: record.projectId, workspaceId: record.workspaceId, evidenceType: record.type, record: structuredClone(record), updatedAt: record.updatedAt }]),
+      deleteEvidence: async (evidenceId, projectId = state.activeProject, workspaceId = '') => {
+        await tx('stateRecords', 'readwrite', store => store.delete(`workspace-evidence:${projectId}:${workspaceId}:${evidenceId}`));
+        await tx('workspaceEvidenceBlobs', 'readwrite', store => store.delete(`workspace-evidence-blob:${projectId}:${workspaceId}:${evidenceId}`));
+      }
+    };
+  },
+
+  workspaceEvidenceBlobPersistence() {
+    const blobIdFor = (projectId = state.activeProject, workspaceId = '', evidenceId = '') => `workspace-evidence-blob:${projectId}:${workspaceId}:${evidenceId}`;
+    return {
+      blobIdFor,
+      loadBlob: async (evidenceId = '', projectId = state.activeProject, workspaceId = '') => {
+        if (!evidenceId) return null;
+        const record = await one('workspaceEvidenceBlobs', blobIdFor(projectId, workspaceId, evidenceId));
+        return record ? structuredClone(record) : null;
+      },
+      putBlob: async record => {
+        if (!record?.id || !(record.blob instanceof Blob)) throw new Error('workspace evidence blob records require a Blob payload.');
+        const startedAt = perfNow();
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction('workspaceEvidenceBlobs', 'readwrite');
+          const objectStore = transaction.objectStore('workspaceEvidenceBlobs');
+          const payload = { ...record, blob: record.blob };
+          const request = objectStore.put(payload);
+          request.onerror = () => {
+          };
+          transaction.oncomplete = () => {
+            db.close();
+            resolve(structuredClone(record));
+          };
+          transaction.onabort = () => {
+            db.close();
+            reject(transaction.error || new Error('Database transaction aborted.'));
+          };
+          transaction.onerror = () => {
+            db.close();
+            reject(transaction.error);
+          };
+        });
+      },
+      deleteBlob: async (evidenceId = '', projectId = state.activeProject, workspaceId = '') => tx('workspaceEvidenceBlobs', 'readwrite', store => store.delete(blobIdFor(projectId, workspaceId, evidenceId))),
+      listBlobs: async (projectId = state.activeProject, workspaceId = '') => (await all('workspaceEvidenceBlobs')).filter(item => (!projectId || item.projectId === projectId) && (!workspaceId || item.workspaceId === workspaceId)).map(item => structuredClone(item)),
+      debugBlobStore: async (projectId = state.activeProject, workspaceId = '') => {
+        const db = await openDB();
+        const rows = await all('workspaceEvidenceBlobs');
+        const filtered = rows.filter(item => (!projectId || item.projectId === projectId) && (!workspaceId || item.workspaceId === workspaceId));
+        db.close();
+        return filtered.map(item => structuredClone(item));
+      }
     };
   },
 
