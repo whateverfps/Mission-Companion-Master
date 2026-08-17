@@ -39,24 +39,23 @@ jobs:
       - name: Verify MCR PDF is hydrated
         run: |
           MCR_FILE="project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.MCR.20260316.pdf"
-          if [ -f "$MCR_FILE" ]; then
-            SIZE=$(stat -c%s "$MCR_FILE")
-            HEAD=$(head -c 8 "$MCR_FILE")
-            echo "MCR file size: $SIZE bytes"
-            echo "MCR file header: $HEAD"
-            if [ "$SIZE" -lt 1000 ]; then
-              echo "ERROR: MCR file is too small, likely an LFS pointer"
-              exit 1
-            fi
-            if [ "$HEAD" != "%PDF-1." ]; then
-              echo "ERROR: MCR file does not begin with PDF signature"
-              exit 1
-            fi
-            echo "MCR PDF is properly hydrated"
-          else
+          if [ ! -f "$MCR_FILE" ]; then
             echo "ERROR: MCR file not found"
             exit 1
           fi
+          SIZE=$(wc -c < "$MCR_FILE")
+          HEAD=$(head -c 5 "$MCR_FILE")
+          echo "MCR file size: $SIZE bytes"
+          echo "MCR file header: $HEAD"
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "ERROR: MCR file is too small, likely an LFS pointer"
+            exit 1
+          fi
+          if ! head -c 5 "$MCR_FILE" | grep -aFq '%PDF-'; then
+            echo "ERROR: MCR file does not begin with PDF signature"
+            exit 1
+          fi
+          echo "MCR PDF verified: $SIZE bytes"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
