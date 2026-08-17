@@ -178,6 +178,7 @@ import {
 } from './data-model.js';
 import { openPdfBlob, readPdfPageGraphics, renderPdfPage } from './pdf-source.js';
 import { createSpecificationSourceViewer } from './specification-source-viewer.js';
+import { createWorkspaceFullscreenReviewController, resolveWorkspaceFullscreenSourceUrl } from './workspace-fullscreen-review.js';
 import { openSpecificationDocument, openSpecificationSection } from './authoritative-spec-resolver.js';
 import { extractLegendCandidates, matchLegendOccurrences } from './drawing-legends.js';
 import { applyObservationVerification, drawingAnalysisRequiresUpgrade, drawingWarningPresentation, DRAWING_ANALYSIS_VERSION, groupDrawingObservations, observationKindLabel, reanalyzeDrawingAnalysis, upgradeDrawingAnalysis } from './drawing-intelligence.js';
@@ -4139,6 +4140,7 @@ let activeBedfordWorkspaceId = getBedfordWorkspaceDefaultId();
 let activeBedfordWorkspaceSheetNumber = '';
 let activeBedfordWorkspaceSection = 'overview';
 let workspaceDrawingFullscreen = false;
+let workspaceFullscreenReviewController = null;
 const workspaceDrawingFullscreenScrollState = {
   windowScrollY: 0,
   sidebarScrollTop: 0,
@@ -4233,6 +4235,81 @@ function restoreWorkspaceDrawingFullscreenScrollState() {
     const evidence = $('.mc-drawing-evidence');
     if (evidence) evidence.scrollTop = workspaceDrawingFullscreenScrollState.evidenceScrollTop || 0;
   });
+}
+
+function workspaceFullscreenSourceUrlForSheet(sheet = null) {
+  const drawingSet = sheet ? getBedfordDrawingSetForReference(sheet) : null;
+  return drawingSet?.sourceFileName
+    ? new URL(`project-documents/bedford/drawings/${drawingSet.sourceFileName}`, document.baseURI).toString()
+    : '';
+}
+
+async function refreshWorkspaceFullscreenReviewController({
+  workspaceModel = null,
+  activeWorkspace = null,
+  sheets = [],
+  selectedSheetNumber = '',
+  counts = {},
+  sourceUrl = ''
+} = {}) {
+  const root = $('#workspaceFullscreenReviewRoot');
+  if (!root || !workspaceDrawingFullscreen) return;
+  if (!workspaceFullscreenReviewController) {
+    workspaceFullscreenReviewController = createWorkspaceFullscreenReviewController({
+      root,
+      workspaceModel,
+      activeWorkspace,
+      sheets,
+      selectedSheetNumber,
+      sourceUrl,
+      counts,
+      onExit: async () => {
+        workspaceDrawingFullscreen = false;
+        workspaceFullscreenReviewController?.destroy?.('exit');
+        workspaceFullscreenReviewController = null;
+        await renderMissionControlWorkspace();
+      },
+      onWorkspaceChange: async workspaceId => {
+        activeBedfordWorkspaceId = workspaceId;
+        keepWorkspaceTreeOpen(activeBedfordWorkspaceId);
+        const nextWorkspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
+        const nextActiveWorkspace = nextWorkspaceModel.activeWorkspace || null;
+        const nextSheets = workspaceSelectableSheets(nextActiveWorkspace);
+        activeBedfordWorkspaceSheetNumber = nextSheets[0]?.sheetNumber || '';
+        await refreshWorkspaceFullscreenReviewController({
+          workspaceModel: nextWorkspaceModel,
+          activeWorkspace: nextActiveWorkspace,
+          sheets: nextSheets,
+          selectedSheetNumber: activeBedfordWorkspaceSheetNumber,
+          counts: {
+            issues: 0,
+            rfis: 0,
+            evidence: nextActiveWorkspace?.sourceEvidence?.length || 0
+          },
+          sourceUrl: workspaceFullscreenSourceUrlForSheet(nextSheets[0] || null)
+        });
+      },
+      onActiveSheetChange: sheet => {
+        if (sheet?.sheetNumber) activeBedfordWorkspaceSheetNumber = sheet.sheetNumber;
+      },
+      onToolChange: tool => {
+        workspaceFullscreenReviewController?.root?.dataset && (workspaceFullscreenReviewController.root.dataset.tool = tool);
+      },
+      onSheetSelect: sheet => {
+        if (sheet?.sheetNumber) activeBedfordWorkspaceSheetNumber = sheet.sheetNumber;
+      }
+    });
+    return workspaceFullscreenReviewController;
+  }
+  await workspaceFullscreenReviewController.update({
+    workspaceModel,
+    activeWorkspace,
+    sheets,
+    selectedSheetNumber,
+    counts,
+    sourceUrl
+  });
+  return workspaceFullscreenReviewController;
 }
 
 let previousUserProjectId = null;
@@ -8808,6 +8885,10 @@ function refreshMissionControlSidebar() {
 
 async function renderMissionControlWorkspace() {
   const workspaceModel = buildBedfordWorkspaceModel(activeBedfordWorkspaceId);
+  if (!workspaceDrawingFullscreen && workspaceFullscreenReviewController) {
+    workspaceFullscreenReviewController.destroy('fullscreen-exit');
+    workspaceFullscreenReviewController = null;
+  }
   const workspaceSeed = workspaceModel.activeWorkspace || workspaceModel.workspaces[0] || null;
   const projectMilestoneContext = workspaceModel.projectMilestoneContext || buildBedfordProjectMilestoneContext({ workspace: workspaceSeed });
   const pmisRuntime = missionPmisRuntimeData();
@@ -9038,6 +9119,25 @@ async function renderMissionControlWorkspace() {
   const relatedRoomItems = (activeWorkspace?.relatedRooms || []).map(room => `<li><span>${esc(room)}</span></li>`).join('') || '<li><span>No related rooms recorded.</span></li>';
   const openDrawingLabel = previewSheet ? `Open ${esc(previewSheet.sheetNumber)} in Drawings` : 'Open Drawings';
   const workspaceFullscreenLabel = workspaceDrawingFullscreen ? 'Exit Full Screen' : 'Full Screen';
+  if (workspaceDrawingFullscreen) {
+    const fullscreenSourceSheet = previewSheet || selectableSheets[0] || null;
+    const fullscreenSourceUrl = workspaceFullscreenSourceUrlForSheet(fullscreenSourceSheet);
+    const fullscreenCounts = {
+      issues: issuesModel.counts?.open || issuesModel.issues?.length || 0,
+      rfis: rfisModel.counts?.total || rfisModel.rfis?.length || 0,
+      evidence: evidenceModel.allEvidence?.length || 0
+    };
+    $('#missionControlContent').innerHTML = '<div id="workspaceFullscreenReviewRoot" class="mc-workspace-fullscreen-root"></div>';
+    await refreshWorkspaceFullscreenReviewController({
+      workspaceModel: workspaceContextModel,
+      activeWorkspace,
+      sheets: selectableSheets,
+      selectedSheetNumber: fullscreenSourceSheet?.sheetNumber || activeBedfordWorkspaceSheetNumber || '',
+      counts: fullscreenCounts,
+      sourceUrl: fullscreenSourceUrl
+    });
+    return;
+  }
   const documentsViewMarkup = documentsModel.categories.length ? `
         <section class="mc-ws-documents" aria-label="Workspace Documents">
           <header class="mc-ws-documents-header">
@@ -9273,6 +9373,11 @@ async function renderMissionControl(prefetchedDocuments = null, prefetchedSectio
 
 function showMissionControlView(name = 'home') {
   if (!['plans', 'dashboard', 'workspace', 'home', 'history'].includes(name)) releaseDrawingSource();
+  if (name !== 'workspace' && workspaceFullscreenReviewController) {
+    workspaceDrawingFullscreen = false;
+    workspaceFullscreenReviewController.destroy('view-change');
+    workspaceFullscreenReviewController = null;
+  }
   missionControlView = ['projects', 'chat', 'history', 'library', 'inspections', 'plans', 'dashboard', 'workspace', 'home', 'landing'].includes(name) ? name : 'home';
   updateMissionControlNavigationVisibility();
   const homeButton = $('#missionControlSidebar [data-control-home]');
@@ -11427,7 +11532,7 @@ app.addEventListener('click', async event => {
 });
 
 app.addEventListener('keydown', async event => {
-  if (event.key !== 'Escape' || experience !== 'mission-control' || !workspaceDrawingFullscreen || (missionControlView !== 'plans' && missionControlView !== 'workspace')) return;
+  if (event.key !== 'Escape' || experience !== 'mission-control' || !workspaceDrawingFullscreen || workspaceFullscreenReviewController || (missionControlView !== 'plans' && missionControlView !== 'workspace')) return;
   event.preventDefault();
   captureWorkspaceDrawingFullscreenScrollState();
   workspaceDrawingFullscreen = false;

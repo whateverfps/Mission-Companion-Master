@@ -14,6 +14,7 @@ import {
   resolvePreviousProject,
   missionControlResponseModeLabel
 } from '../src/mission-control.js';
+import { createWorkspaceFullscreenReviewController } from '../src/workspace-fullscreen-review.js';
 import fs from 'node:fs';
 import { createDemonstrationProjectFixture, DEMO_PROJECT_ID } from '../src/demo-project.js';
 
@@ -154,7 +155,7 @@ test('return navigation restores only an available prior user project', () => {
 
 test('Mission Control retains the shared dark visual system without white surfaces', () => {
   const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
-  const refinement = css.slice(css.lastIndexOf('Phase 22.1'));
+  const refinement = css.slice(css.indexOf('/* Phase 22.1'), css.indexOf('/* Phase 22.2'));
   assert.match(refinement, /\.mc-control-shell\{[^}]*#071119/);
   assert.match(refinement, /\.mc-control-card[^}]*#0d1c26/);
   assert.doesNotMatch(refinement, /background(?:-color)?:#fff(?:fff)?(?:[;}]|$)/i);
@@ -819,27 +820,218 @@ test('Phase 24A.2 exposes a full-scale stable viewer and verified construction o
 test('Mission Control drawing workspace exposes a workspace-local fullscreen mode without changing the main viewer', () => {
   const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
-  const renderer = app.slice(app.indexOf("async function renderDrawingWorkspaceWithProviders"), app.indexOf('async function renderMissionControlDashboard'));
+  const moduleSource = fs.readFileSync(new URL('../src/workspace-fullscreen-review.js', import.meta.url), 'utf8');
   const workspaceRenderer = app.slice(app.indexOf('async function renderMissionControlWorkspace()'), app.indexOf('async function renderMissionControlDashboard'));
-  assert.match(app, /let workspaceDrawingFullscreen = false;/);
-  assert.match(app, /captureWorkspaceDrawingFullscreenScrollState/);
-  assert.match(app, /restoreWorkspaceDrawingFullscreenScrollState/);
-  assert.match(app, /host\.classList\.toggle\('workspace-fullscreen', shell === 'mission-control' && workspaceDrawingFullscreen\)/);
-  assert.match(renderer, /shell === 'mission-control' \? `<button data-drawing-fullscreen aria-pressed="\$\{workspaceDrawingFullscreen \? 'true' : 'false'\}">/);
-  assert.match(renderer, /data-drawing-fullscreen/);
-  assert.match(workspaceRenderer, /data-ws-action="toggle-fullscreen"/);
-  assert.match(workspaceRenderer, /workspaceDrawingFullscreen \? 'true' : 'false'/);
-  assert.match(app, /event\.key !== 'Escape' \|\| experience !== 'mission-control' \|\| !workspaceDrawingFullscreen \|\| \(missionControlView !== 'plans' && missionControlView !== 'workspace'\)/);
-  assert.match(css, /\.mc-drawing-workspace\.workspace-fullscreen/);
-  assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-layout/);
-  assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-index,#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-evidence/);
-  assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-viewer/);
-  assert.match(css, /#missionDrawingViewer\.workspace-fullscreen \.mc-drawing-stage/);
-  assert.match(css, /\.mc-ws\.workspace-fullscreen/);
-  assert.match(css, /\.mc-ws\.workspace-fullscreen \.mc-ws-sidebar/);
-  assert.match(css, /\.mc-ws\.workspace-fullscreen \.mc-ws-evidence/);
-  assert.match(css, /\.mc-ws\.workspace-fullscreen \.mc-ws-lower/);
-  assert.match(css, /\.mc-ws\.workspace-fullscreen \.mc-ws-drawing>/);
+  assert.match(app, /createWorkspaceFullscreenReviewController/);
+  assert.match(app, /resolveWorkspaceFullscreenSourceUrl/);
+  assert.match(app, /workspaceFullscreenReviewController/);
+  assert.match(app, /workspaceFullscreenReviewRoot/);
+  assert.match(app, /refreshWorkspaceFullscreenReviewController/);
+  assert.match(app, /workspaceFullscreenSourceUrlForSheet/);
+  assert.match(app, /onWorkspaceChange/);
+  assert.match(app, /onActiveSheetChange/);
+  assert.match(app, /onSheetSelect/);
+  assert.match(app, /onToolChange/);
+  assert.match(app, /!workspaceDrawingFullscreen && workspaceFullscreenReviewController/);
+  assert.match(app, /workspaceFullscreenReviewController\.destroy\('fullscreen-exit'\)/);
+  assert.match(app, /event\.key !== 'Escape' \|\| experience !== 'mission-control' \|\| !workspaceDrawingFullscreen \|\| workspaceFullscreenReviewController \|\| \(missionControlView !== 'plans' && missionControlView !== 'workspace'\)/);
+  assert.match(workspaceRenderer, /<div id="workspaceFullscreenReviewRoot" class="mc-workspace-fullscreen-root"><\/div>/);
+  assert.match(workspaceRenderer, /await refreshWorkspaceFullscreenReviewController\(/);
+  assert.match(workspaceRenderer, /workspaceFullscreenSourceUrlForSheet/);
+  assert.match(moduleSource, /export function createWorkspaceFullscreenReviewController/);
+  assert.match(moduleSource, /export function workspaceFullscreenSheetIdentity/);
+  assert.match(moduleSource, /export function resolveWorkspaceFullscreenSelectedSheet/);
+  assert.match(moduleSource, /export function buildWorkspaceFullscreenNavigatorModel/);
+  assert.match(moduleSource, /data-mdi-shell/);
+  assert.match(moduleSource, /data-mdi-viewer-host/);
+  assert.match(moduleSource, /data-mdi-stack/);
+  assert.match(moduleSource, /data-mdi-fit="width"/);
+  assert.match(moduleSource, /data-mdi-fit="page"/);
+  assert.match(moduleSource, /data-mdi-zoom-out/);
+  assert.match(moduleSource, /data-mdi-zoom-in/);
+  assert.match(moduleSource, /data-mdi-viewer-host/);
+  assert.match(moduleSource, /IntersectionObserver/);
+  assert.match(moduleSource, /const requestToken = Symbol\(`page-render:\$\{pageNumber\}`\);/);
+  assert.match(moduleSource, /state\.promise = run;/);
+  assert.match(moduleSource, /if \(existingPromise && !force\) return existingPromise;/);
+  assert.doesNotMatch(moduleSource, /pageMetaByNumber = new Map\(pageInfos\.map\(info => \[info\.pageNumber, info\]\)\)/);
+  assert.doesNotMatch(moduleSource, /Promise\.all\(numbers\.map\(page => requestPageRender\(page, \{ source: 'adjacent' \}\)\)\)/);
+  assert.match(css, /\.mc-workspace-fullscreen-root/);
+  assert.match(css, /\.mc-mdi-shell/);
+  assert.match(css, /\.mc-mdi-topbar/);
+  assert.match(css, /\.mc-mdi-viewport/);
+  assert.match(css, /\.mc-mdi-stack/);
+  assert.match(css, /\.mc-mdi-page/);
+  assert.match(css, /\.mc-mdi-pulse/);
+  assert.doesNotMatch(moduleSource, /\.mc-mdi-rail/);
+  assert.doesNotMatch(moduleSource, /\.mc-mdi-navigator/);
+});
+
+test('Mission Control fullscreen drawing review initializes without stale helper references', async () => {
+  class MockNode {
+    constructor(role = 'node') {
+      this.role = role;
+      this.dataset = {};
+      this.attributes = new Map();
+      this.style = {};
+      this.hidden = false;
+      this.textContent = '';
+      this.scrollTop = 0;
+      this.scrollLeft = 0;
+      this.clientWidth = 1200;
+      this.clientHeight = 900;
+      this.pageNodes = [];
+      this.classList = { add() {}, remove() {}, toggle() {} };
+    }
+    addEventListener() {}
+    removeEventListener() {}
+    append() {}
+    setAttribute(name, value) { this.attributes.set(String(name), String(value)); }
+    getAttribute(name) { return this.attributes.get(String(name)) || null; }
+    hasAttribute(name) { return this.attributes.has(String(name)); }
+    scrollBy({ top = 0, left = 0 } = {}) { this.scrollTop += Number(top) || 0; this.scrollLeft += Number(left) || 0; }
+    scrollIntoView() {}
+    setPointerCapture() {}
+    releasePointerCapture() {}
+    getBoundingClientRect() { return { width: this.clientWidth, height: this.clientHeight, top: 0, left: 0, right: this.clientWidth, bottom: this.clientHeight }; }
+    querySelector(selector) {
+      if (selector === 'canvas') return this.canvas || null;
+      return null;
+    }
+    querySelectorAll(selector) {
+      if (selector === '.mc-mdi-page') return this.pageNodes;
+      return [];
+    }
+    set innerHTML(markup) {
+      this._innerHTML = markup;
+      if (this.role === 'stack') {
+        this.pageNodes = [...String(markup).matchAll(/data-mdi-page="(\d+)"/g)].map(match => {
+          const pageNode = new MockNode('page');
+          pageNode.dataset.pageNumber = match[1];
+          pageNode.canvas = new MockNode('canvas');
+          pageNode.canvas.getContext = () => ({});
+          pageNode.querySelector = selector => selector === 'canvas' ? pageNode.canvas : null;
+          pageNode.getBoundingClientRect = () => ({ width: 1000, height: 1400, top: 0, left: 0, right: 1000, bottom: 1400 });
+          return pageNode;
+        });
+      }
+    }
+    get innerHTML() { return this._innerHTML || ''; }
+  }
+
+  const root = new MockNode('root');
+  const viewerHost = new MockNode('viewer');
+  const stackNode = new MockNode('stack');
+  const loadingNode = new MockNode('loading');
+  const sheetLabelNode = new MockNode('sheet-label');
+  const sheetSubtitleNode = new MockNode('sheet-subtitle');
+  const positionNode = new MockNode('position');
+  const pulseSheetNode = new MockNode('pulse-sheet');
+  const pulsePositionNode = new MockNode('pulse-position');
+  const pulseZoomNode = new MockNode('pulse-zoom');
+  const pulseFitNode = new MockNode('pulse-fit');
+  const pulseCountsNode = new MockNode('pulse-counts');
+  const exitButton = new MockNode('exit');
+  const fitWidthButton = new MockNode('fit-width');
+  fitWidthButton.dataset.mdiFit = 'width';
+  const fitPageButton = new MockNode('fit-page');
+  fitPageButton.dataset.mdiFit = 'page';
+  const zoomOutButton = new MockNode('zoom-out');
+  const zoomInButton = new MockNode('zoom-in');
+
+  root.querySelector = selector => ({
+    '[data-mdi-viewer-host]': viewerHost,
+    '[data-mdi-stack]': stackNode,
+    '[data-mdi-loading]': loadingNode,
+    '[data-mdi-sheet-label]': sheetLabelNode,
+    '[data-mdi-sheet-subtitle]': sheetSubtitleNode,
+    '[data-mdi-position]': positionNode,
+    '[data-mdi-pulse-sheet]': pulseSheetNode,
+    '[data-mdi-pulse-position]': pulsePositionNode,
+    '[data-mdi-pulse-zoom]': pulseZoomNode,
+    '[data-mdi-pulse-fit]': pulseFitNode,
+    '[data-mdi-pulse-counts]': pulseCountsNode,
+    '[data-mdi-exit]': exitButton,
+    '[data-mdi-zoom-out]': zoomOutButton,
+    '[data-mdi-zoom-in]': zoomInButton
+  })[selector] || null;
+  root.querySelectorAll = selector => selector === '[data-mdi-fit]' ? [fitWidthButton, fitPageButton] : [];
+  root.addEventListener = () => {};
+  root.classList = { add() {}, remove() {}, toggle() {} };
+  Object.defineProperty(root, 'innerHTML', {
+    get() { return this._innerHTML || ''; },
+    set(value) { this._innerHTML = value; }
+  });
+
+  const pdfBlob = new Blob(['%PDF-1.7\n%fake test pdf\n'], { type: 'application/pdf' });
+  const getPageOrder = [];
+  const renderOrder = [];
+  const fakePdf = {
+    numPages: 70,
+    async getPage(pageNumber) {
+      getPageOrder.push(pageNumber);
+      return {
+        rotate: 0,
+        cleanup() {},
+        getViewport() { return { width: pageNumber === 48 ? 1000 : 900, height: pageNumber === 48 ? 1400 : 1300, rotation: 0 }; }
+      };
+    },
+    async destroy() {}
+  };
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, blob: async () => pdfBlob });
+  try {
+    const controller = createWorkspaceFullscreenReviewController({
+      root,
+      workspaceModel: { activeWorkspace: { buildingId: '61', room: 'B13', name: 'Primary Telecommunications Room', drawingCategories: [] } },
+      activeWorkspace: { buildingId: '61', room: 'B13', name: 'Primary Telecommunications Room' },
+      sheets: Array.from({ length: 70 }, (_, index) => {
+        const pageNumber = index + 1;
+        return {
+          sheetNumber: pageNumber === 48 ? '61T-100' : `61T-${String(pageNumber).padStart(3, '0')}`,
+          sheetTitle: pageNumber === 48 ? 'Telecommunication Plan - Basement Level' : `Telecommunication Plan - Page ${pageNumber}`,
+          pdfPageNumber: pageNumber,
+          pageNumber
+        };
+      }),
+      selectedSheetNumber: '61T-100',
+      sourceUrl: 'https://example.test/project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf',
+      openPdf: async blob => {
+        assert.equal(blob.type, 'application/pdf');
+        return fakePdf;
+      },
+      renderPage: async (pdf, pageNumber, canvas) => {
+        assert.equal(pdf, fakePdf);
+        assert.ok(canvas?.getContext);
+        renderOrder.push(pageNumber);
+        return { promise: Promise.resolve(), releasePage() {} };
+      },
+      calculateFit: ({ containerWidth, containerHeight, pageWidth, pageHeight, mode }) => ({
+        ready: true,
+        mode,
+        scale: mode === 'fit-width' ? (containerWidth - 48) / pageWidth : Math.min((containerWidth - 48) / pageWidth, (containerHeight - 48) / pageHeight)
+      })
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.ok(controller.root);
+    assert.equal(controller.getState().selectedSheetNumber, '61T-100');
+    assert.ok(root.innerHTML.includes('data-mdi-shell'));
+    if (stackNode.pageNodes.length) {
+      assert.ok(stackNode.pageNodes.length <= 70);
+    }
+    if (renderOrder.length) {
+      assert.equal(renderOrder[0], 48);
+    }
+    if (getPageOrder.length) {
+      assert.ok(getPageOrder.includes(48));
+      assert.ok(getPageOrder.length < 12);
+    }
+    await controller.destroy('test');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('Phase 24B makes Chief construction-first with one synchronized drawing state', () => {
