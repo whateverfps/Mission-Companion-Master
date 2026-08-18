@@ -160,6 +160,14 @@ import {
   buildBedfordProjectMilestoneContext
 } from './workspace-milestones.js';
 import {
+  createWorkspaceDrawingMarkupStore,
+  normalizeMarkupGeometry,
+  normalizeMarkupPoint,
+  normalizeMarkupStyle,
+  WORKSPACE_DRAWING_MARKUP_TYPES,
+  WORKSPACE_DRAWING_MARKUP_TOOL_SECTIONS
+} from './workspace-drawing-markups.js';
+import {
   buildMissionControlModel,
   normalizeStartupExperience,
   resolvePreviousProject,
@@ -4141,6 +4149,7 @@ let activeBedfordWorkspaceSheetNumber = '';
 let activeBedfordWorkspaceSection = 'overview';
 let workspaceDrawingFullscreen = false;
 let workspaceFullscreenReviewController = null;
+let workspaceFullscreenReviewStartedAt = 0;
 const workspaceDrawingFullscreenScrollState = {
   windowScrollY: 0,
   sidebarScrollTop: 0,
@@ -4162,6 +4171,8 @@ const workspaceNotesStore = createWorkspaceNotesStore({ storage: globalThis.loca
 const workspaceObservationsStore = createWorkspaceObservationsStore({ storage: globalThis.localStorage, persistence: engine.workspaceObservationsPersistence() });
 const workspaceRfisStore = createWorkspaceRfisStore({ storage: globalThis.localStorage, persistence: engine.workspaceRfisPersistence() });
 const workspaceEvidenceStore = createWorkspaceEvidenceStore({ storage: globalThis.localStorage, persistence: engine.workspaceEvidencePersistence() });
+const workspaceDrawingMarkupsStore = createWorkspaceDrawingMarkupStore({ storage: globalThis.localStorage, persistence: engine.workspaceDrawingMarkupsPersistence() });
+const workspaceDrawingToolChestStore = createWorkspaceDrawingMarkupStore({ storage: globalThis.localStorage, persistence: engine.workspaceDrawingToolsPersistence() });
 const workspaceEvidenceBlobStore = engine.workspaceEvidenceBlobPersistence();
 const workspaceChecklistVerificationStore = (() => {
   const persistence = engine.workspaceChecklistPersistence();
@@ -4250,7 +4261,8 @@ async function refreshWorkspaceFullscreenReviewController({
   sheets = [],
   selectedSheetNumber = '',
   counts = {},
-  sourceUrl = ''
+  sourceUrl = '',
+  startedAt = 0
 } = {}) {
   const root = $('#workspaceFullscreenReviewRoot');
   if (!root || !workspaceDrawingFullscreen) return;
@@ -4263,6 +4275,7 @@ async function refreshWorkspaceFullscreenReviewController({
       selectedSheetNumber,
       sourceUrl,
       counts,
+      startedAt,
       onExit: async () => {
         workspaceDrawingFullscreen = false;
         workspaceFullscreenReviewController?.destroy?.('exit');
@@ -4286,7 +4299,8 @@ async function refreshWorkspaceFullscreenReviewController({
             rfis: 0,
             evidence: nextActiveWorkspace?.sourceEvidence?.length || 0
           },
-          sourceUrl: workspaceFullscreenSourceUrlForSheet(nextSheets[0] || null)
+          sourceUrl: workspaceFullscreenSourceUrlForSheet(nextSheets[0] || null),
+          startedAt: workspaceFullscreenReviewStartedAt
         });
       },
       onActiveSheetChange: sheet => {
@@ -4297,7 +4311,10 @@ async function refreshWorkspaceFullscreenReviewController({
       },
       onSheetSelect: sheet => {
         if (sheet?.sheetNumber) activeBedfordWorkspaceSheetNumber = sheet.sheetNumber;
-      }
+      },
+      onDiagnostics: drawingDiagnosticsEnabled ? metric => logger.debug('Fullscreen drawing review diagnostics', metric) : undefined,
+      markupStore: workspaceDrawingMarkupsStore,
+      toolChestStore: workspaceDrawingToolChestStore
     });
     return workspaceFullscreenReviewController;
   }
@@ -4307,7 +4324,8 @@ async function refreshWorkspaceFullscreenReviewController({
     sheets,
     selectedSheetNumber,
     counts,
-    sourceUrl
+    sourceUrl,
+    startedAt: workspaceFullscreenReviewStartedAt
   });
   return workspaceFullscreenReviewController;
 }
@@ -9580,6 +9598,8 @@ async function handleMissionControlSidebarButton(button) {
   }
   if (button.dataset.wsAction === 'toggle-fullscreen') {
     captureWorkspaceDrawingFullscreenScrollState();
+    workspaceFullscreenReviewStartedAt = typeof performance?.now === 'function' ? performance.now() : Date.now();
+    console.info('[fullscreen-timing]', 'FULLSCREEN_CLICK', { elapsedMs: 0, selectedSheetNumber: activeBedfordWorkspaceSheetNumber || '', workspaceId: activeBedfordWorkspaceId || '' });
     workspaceDrawingFullscreen = !workspaceDrawingFullscreen;
     await renderMissionControlWorkspace();
     restoreWorkspaceDrawingFullscreenScrollState();

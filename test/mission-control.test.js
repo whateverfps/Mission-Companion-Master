@@ -868,6 +868,8 @@ test('Mission Control drawing workspace exposes a workspace-local fullscreen mod
 });
 
 test('Mission Control fullscreen drawing review initializes without stale helper references', async () => {
+  const previousReviewDiagnosticsFlag = globalThis.__MC_DRAWING_REVIEW_DIAGNOSTICS_ENABLED;
+  globalThis.__MC_DRAWING_REVIEW_DIAGNOSTICS_ENABLED = true;
   class MockNode {
     constructor(role = 'node') {
       this.role = role;
@@ -881,14 +883,16 @@ test('Mission Control fullscreen drawing review initializes without stale helper
       this.clientWidth = 1200;
       this.clientHeight = 900;
       this.pageNodes = [];
+      this.listeners = Object.create(null);
       this.classList = { add() {}, remove() {}, toggle() {} };
     }
-    addEventListener() {}
+    addEventListener(type, handler) { this.listeners[type] = handler; }
     removeEventListener() {}
     append() {}
     setAttribute(name, value) { this.attributes.set(String(name), String(value)); }
     getAttribute(name) { return this.attributes.get(String(name)) || null; }
     hasAttribute(name) { return this.attributes.has(String(name)); }
+    contains(node) { return Boolean(node); }
     scrollBy({ top = 0, left = 0 } = {}) { this.scrollTop += Number(top) || 0; this.scrollLeft += Number(left) || 0; }
     scrollIntoView() {}
     setPointerCapture() {}
@@ -931,6 +935,7 @@ test('Mission Control fullscreen drawing review initializes without stale helper
   const pulseZoomNode = new MockNode('pulse-zoom');
   const pulseFitNode = new MockNode('pulse-fit');
   const pulseCountsNode = new MockNode('pulse-counts');
+  const markupbarNode = new MockNode('markupbar');
   const exitButton = new MockNode('exit');
   const fitWidthButton = new MockNode('fit-width');
   fitWidthButton.dataset.mdiFit = 'width';
@@ -938,6 +943,55 @@ test('Mission Control fullscreen drawing review initializes without stale helper
   fitPageButton.dataset.mdiFit = 'page';
   const zoomOutButton = new MockNode('zoom-out');
   const zoomInButton = new MockNode('zoom-in');
+  const listeners = Object.create(null);
+  const penButton = {
+    dataset: { mdiTool: 'pen' },
+    hasAttribute: name => name === 'data-mdi-tool',
+    getAttribute: name => (name === 'data-mdi-tool' ? 'pen' : null),
+    closest: selector => selector === 'button' ? penButton : null
+  };
+  const rectangleButton = {
+    dataset: { mdiTool: 'rectangle' },
+    hasAttribute: name => name === 'data-mdi-tool',
+    getAttribute: name => (name === 'data-mdi-tool' ? 'rectangle' : null),
+    closest: selector => selector === 'button' ? rectangleButton : null
+  };
+  const lineButton = {
+    dataset: { mdiTool: 'line' },
+    hasAttribute: name => name === 'data-mdi-tool',
+    getAttribute: name => (name === 'data-mdi-tool' ? 'line' : null),
+    closest: selector => selector === 'button' ? lineButton : null
+  };
+  const panButton = {
+    dataset: { mdiTool: 'pan' },
+    hasAttribute: name => name === 'data-mdi-tool',
+    getAttribute: name => (name === 'data-mdi-tool' ? 'pan' : null),
+    closest: selector => selector === 'button' ? panButton : null
+  };
+  const emptyPageTarget = pageNode => ({
+    closest: selector => {
+      if (selector === '.mc-mdi-page') return pageNode;
+      if (selector === '[data-markup-id]') return null;
+      return null;
+    }
+  });
+  const createPointerEvent = (pageNode, overrides = {}) => ({
+    button: 0,
+    clientX: 250,
+    clientY: 180,
+    pointerId: 1,
+    target: emptyPageTarget(pageNode),
+    preventDefault() {},
+    ...overrides
+  });
+
+  const waitFor = async (predicate, timeoutMs = 250) => {
+    const started = Date.now();
+    while (!predicate()) {
+      if (Date.now() - started > timeoutMs) throw new Error('Timed out waiting for fullscreen render state.');
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+  };
 
   root.querySelector = selector => ({
     '[data-mdi-viewer-host]': viewerHost,
@@ -951,21 +1005,23 @@ test('Mission Control fullscreen drawing review initializes without stale helper
     '[data-mdi-pulse-zoom]': pulseZoomNode,
     '[data-mdi-pulse-fit]': pulseFitNode,
     '[data-mdi-pulse-counts]': pulseCountsNode,
+    '[data-mdi-markupbar]': markupbarNode,
     '[data-mdi-exit]': exitButton,
     '[data-mdi-zoom-out]': zoomOutButton,
     '[data-mdi-zoom-in]': zoomInButton
   })[selector] || null;
   root.querySelectorAll = selector => selector === '[data-mdi-fit]' ? [fitWidthButton, fitPageButton] : [];
-  root.addEventListener = () => {};
+  root.addEventListener = (type, handler) => { listeners[type] = handler; };
   root.classList = { add() {}, remove() {}, toggle() {} };
   Object.defineProperty(root, 'innerHTML', {
     get() { return this._innerHTML || ''; },
     set(value) { this._innerHTML = value; }
   });
 
-  const pdfBlob = new Blob(['%PDF-1.7\n%fake test pdf\n'], { type: 'application/pdf' });
   const getPageOrder = [];
   const renderOrder = [];
+  const loadOrder = [];
+  let resolveSelectedRender = null;
   const fakePdf = {
     numPages: 70,
     async getPage(pageNumber) {
@@ -979,8 +1035,6 @@ test('Mission Control fullscreen drawing review initializes without stale helper
     async destroy() {}
   };
 
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, blob: async () => pdfBlob });
   try {
     const controller = createWorkspaceFullscreenReviewController({
       root,
@@ -997,14 +1051,20 @@ test('Mission Control fullscreen drawing review initializes without stale helper
       }),
       selectedSheetNumber: '61T-100',
       sourceUrl: 'https://example.test/project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf',
-      openPdf: async blob => {
-        assert.equal(blob.type, 'application/pdf');
+      openPdfSource: async ({ sourceUrl }) => {
+        loadOrder.push(sourceUrl);
         return fakePdf;
       },
       renderPage: async (pdf, pageNumber, canvas) => {
         assert.equal(pdf, fakePdf);
         assert.ok(canvas?.getContext);
         renderOrder.push(pageNumber);
+        if (pageNumber === 48) {
+          return {
+            promise: new Promise(resolve => { resolveSelectedRender = resolve; }),
+            releasePage() {}
+          };
+        }
         return { promise: Promise.resolve(), releasePage() {} };
       },
       calculateFit: ({ containerWidth, containerHeight, pageWidth, pageHeight, mode }) => ({
@@ -1014,23 +1074,175 @@ test('Mission Control fullscreen drawing review initializes without stale helper
       })
     });
 
-    await new Promise(resolve => setTimeout(resolve, 25));
+    await waitFor(() => renderOrder.length > 0);
     assert.ok(controller.root);
     assert.equal(controller.getState().selectedSheetNumber, '61T-100');
+    assert.equal(controller.root.dataset.diagnostics, 'enabled');
+    const initialDiagnostics = controller.getDiagnostics();
+    assert.equal(initialDiagnostics.activeMarkupTool, 'SELECT');
+    assert.equal(initialDiagnostics.markupCountOnCurrentPage, 0);
+    assert.equal(initialDiagnostics.history.undoDepth, 0);
+    assert.equal(initialDiagnostics.history.redoDepth, 0);
+    assert.equal(initialDiagnostics.renderRequestsOnCurrentPage, 1);
     assert.ok(root.innerHTML.includes('data-mdi-shell'));
-    if (stackNode.pageNodes.length) {
-      assert.ok(stackNode.pageNodes.length <= 70);
-    }
-    if (renderOrder.length) {
-      assert.equal(renderOrder[0], 48);
-    }
-    if (getPageOrder.length) {
-      assert.ok(getPageOrder.includes(48));
-      assert.ok(getPageOrder.length < 12);
-    }
+    assert.ok(controller.root.querySelector('[data-mdi-markupbar]'));
+    assert.match(root.innerHTML, /data-mdi-markupbar/);
+    assert.match(root.innerHTML, /data-mdi-markups-panel/);
+    assert.match(root.innerHTML, /data-mdi-toolchest-panel/);
+    assert.match(root.innerHTML, /data-mdi-tool="pen"/);
+    assert.match(root.innerHTML, /data-mdi-action="toggle-markups"/);
+    assert.equal(loadOrder.length, 1);
+    assert.equal(loadOrder[0], 'https://example.test/project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf');
+    assert.equal(renderOrder[0], 48);
+    assert.equal(renderOrder.length, 1);
+    assert.deepEqual(getPageOrder, [48]);
+    assert.equal(controller.getDiagnostics().activeMarkupTool, 'SELECT');
+    const activePageNode = stackNode.pageNodes.find(node => node.dataset.pageNumber === '48') || stackNode.pageNodes[0];
+    assert.ok(activePageNode);
+    assert.equal(activePageNode.dataset.pageNumber, '48');
+    assert.ok(viewerHost.listeners.pointerdown);
+    assert.ok(viewerHost.listeners.pointermove);
+    assert.ok(viewerHost.listeners.pointerup);
+    viewerHost.listeners.pointerdown?.(createPointerEvent(activePageNode));
+    assert.equal(controller.getDiagnostics().markupCountOnCurrentPage, 0);
+    assert.equal(renderOrder.length, 1);
+    viewerHost.listeners.pointermove?.(createPointerEvent(activePageNode, { clientX: 275, clientY: 205 }));
+    await viewerHost.listeners.pointerup?.(createPointerEvent(activePageNode));
+    assert.equal(controller.getDiagnostics().markupCountOnCurrentPage, 0);
+    assert.equal(renderOrder.length, 1);
+    listeners.click?.({ target: panButton, preventDefault() {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    viewerHost.listeners.pointerdown?.(createPointerEvent(activePageNode));
+    viewerHost.listeners.pointermove?.(createPointerEvent(activePageNode, { clientX: 300, clientY: 220 }));
+    await viewerHost.listeners.pointerup?.(createPointerEvent(activePageNode));
+    assert.equal(controller.getDiagnostics().markupCountOnCurrentPage, 0);
+    assert.equal(renderOrder.length, 1);
+    listeners.click?.({ target: rectangleButton, preventDefault() {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(controller.getDiagnostics().activeMarkupTool, 'RECTANGLE');
+    viewerHost.listeners.pointerdown?.(createPointerEvent(activePageNode, { clientX: 320, clientY: 240 }));
+    viewerHost.listeners.pointermove?.(createPointerEvent(activePageNode, { clientX: 420, clientY: 340 }));
+    await viewerHost.listeners.pointerup?.(createPointerEvent(activePageNode, { clientX: 420, clientY: 340 }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(controller.getDiagnostics().markupCountOnCurrentPage, 1);
+    assert.equal(controller.getDiagnostics().activeMarkupTool, 'RECTANGLE');
+    const rectangleMarkup = controller.getDiagnostics().selectedMarkupId;
+    assert.ok(rectangleMarkup);
+    viewerHost.listeners.keydown?.({ key: 'Escape', preventDefault() {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(controller.getDiagnostics().activeMarkupTool, 'SELECT');
+    assert.equal(controller.getDiagnostics().selectedMarkupId, '');
+    listeners.click?.({ target: { closest: selector => selector === 'button' ? { hasAttribute: name => name === 'data-mdi-tool', dataset: { mdiTool: 'bogus' } } : null }, preventDefault() {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(controller.getDiagnostics().activeMarkupTool, 'SELECT');
+    viewerHost.listeners.pointerdown?.(createPointerEvent(activePageNode, { clientX: 360, clientY: 280 }));
+    await viewerHost.listeners.pointerup?.(createPointerEvent(activePageNode, { clientX: 480, clientY: 380 }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(controller.getDiagnostics().markupCountOnCurrentPage, 1);
+    listeners.click?.({ target: lineButton, preventDefault() {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(controller.getDiagnostics().activeMarkupTool, 'LINE');
+    viewerHost.listeners.pointerdown?.(createPointerEvent(activePageNode, { clientX: 150, clientY: 130 }));
+    viewerHost.listeners.pointermove?.(createPointerEvent(activePageNode, { clientX: 260, clientY: 210 }));
+    await viewerHost.listeners.pointerup?.(createPointerEvent(activePageNode, { clientX: 260, clientY: 210 }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(controller.getDiagnostics().markupCountOnCurrentPage, 2);
+    listeners.click?.({ target: { closest: selector => selector === 'button' ? { hasAttribute: name => name === 'data-mdi-tool', dataset: { mdiTool: 'select' } } : null }, preventDefault() {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(controller.getDiagnostics().activeMarkupTool, 'SELECT');
+    viewerHost.listeners.pointerdown?.(createPointerEvent(activePageNode));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(renderOrder.length, 1);
+    resolveSelectedRender?.();
+    await waitFor(() => renderOrder.length > 1);
+    assert.ok(renderOrder.length > 1);
+    assert.ok(renderOrder.some(page => page === 47 || page === 49));
     await controller.destroy('test');
+
+    const controllerAgain = createWorkspaceFullscreenReviewController({
+      root,
+      workspaceModel: { activeWorkspace: { buildingId: '61', room: 'B13', name: 'Primary Telecommunications Room', drawingCategories: [] } },
+      activeWorkspace: { buildingId: '61', room: 'B13', name: 'Primary Telecommunications Room' },
+      sheets: Array.from({ length: 70 }, (_, index) => {
+        const pageNumber = index + 1;
+        return {
+          sheetNumber: pageNumber === 48 ? '61T-100' : `61T-${String(pageNumber).padStart(3, '0')}`,
+          sheetTitle: pageNumber === 48 ? 'Telecommunication Plan - Basement Level' : `Telecommunication Plan - Page ${pageNumber}`,
+          pdfPageNumber: pageNumber,
+          pageNumber
+        };
+      }),
+      selectedSheetNumber: '61T-100',
+      sourceUrl: 'https://example.test/project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf',
+      openPdfSource: async ({ sourceUrl }) => {
+        loadOrder.push(`repeat:${sourceUrl}`);
+        return fakePdf;
+      },
+      renderPage: async (pdf, pageNumber, canvas) => {
+        assert.equal(pdf, fakePdf);
+        assert.ok(canvas?.getContext);
+        return { promise: Promise.resolve(), releasePage() {} };
+      },
+      calculateFit: ({ containerWidth, containerHeight, pageWidth, pageHeight, mode }) => ({
+        ready: true,
+        mode,
+        scale: mode === 'fit-width' ? (containerWidth - 48) / pageWidth : Math.min((containerWidth - 48) / pageWidth, (containerHeight - 48) / pageHeight)
+      })
+    });
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.ok(controllerAgain.root);
+    assert.equal(loadOrder.filter(entry => entry === 'https://example.test/project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf').length, 1);
+    await controllerAgain.destroy('test-repeat');
+
+    const otherSource = 'https://example.test/project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B62.20260316.pdf';
+    const controllerOther = createWorkspaceFullscreenReviewController({
+      root,
+      workspaceModel: { activeWorkspace: { buildingId: '62', room: 'B13', name: 'Primary Telecommunications Room', drawingCategories: [] } },
+      activeWorkspace: { buildingId: '62', room: 'B13', name: 'Primary Telecommunications Room' },
+      sheets: Array.from({ length: 70 }, (_, index) => ({
+        sheetNumber: index === 47 ? '62T-100' : `62T-${String(index + 1).padStart(3, '0')}`,
+        sheetTitle: index === 47 ? 'Telecommunication Plan - Basement Level' : `Telecommunication Plan - Page ${index + 1}`,
+        pdfPageNumber: index + 1,
+        pageNumber: index + 1
+      })),
+      selectedSheetNumber: '62T-100',
+      sourceUrl: otherSource,
+      openPdfSource: async ({ sourceUrl }) => {
+        loadOrder.push(sourceUrl);
+        return fakePdf;
+      },
+      renderPage: async () => ({ promise: Promise.resolve(), releasePage() {} }),
+      calculateFit: ({ containerWidth, containerHeight, pageWidth, pageHeight, mode }) => ({
+        ready: true,
+        mode,
+        scale: mode === 'fit-width' ? (containerWidth - 48) / pageWidth : Math.min((containerWidth - 48) / pageWidth, (containerHeight - 48) / pageHeight)
+      })
+    });
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.ok(controllerOther.root.querySelector('[data-mdi-exit]'));
+    assert.equal(loadOrder.includes(otherSource), true);
+    await controllerOther.destroy('test-other');
+
+    const slowLoad = new Promise(() => {});
+    const controllerSlow = createWorkspaceFullscreenReviewController({
+      root,
+      workspaceModel: { activeWorkspace: { buildingId: '61', room: 'B13', name: 'Primary Telecommunications Room', drawingCategories: [] } },
+      activeWorkspace: { buildingId: '61', room: 'B13', name: 'Primary Telecommunications Room' },
+      sheets: [{ sheetNumber: '61T-100', sheetTitle: 'Telecommunication Plan - Basement Level', pdfPageNumber: 48, pageNumber: 48 }],
+      selectedSheetNumber: '61T-100',
+      sourceUrl: 'https://example.test/project-documents/bedford/drawings/518-22-700.Bedford.EHRM.IFC.B61.20260316.pdf',
+      openPdfSource: async () => ({ numPages: 1, async getPage() { return { rotate: 0, cleanup() {}, getViewport() { return { width: 1000, height: 1400, rotation: 0 }; } }; }, async destroy() {} }),
+      renderPage: async () => ({ promise: slowLoad, releasePage() {} }),
+      calculateFit: ({ containerWidth, containerHeight, pageWidth, pageHeight, mode }) => ({
+        ready: true,
+        mode,
+        scale: mode === 'fit-width' ? (containerWidth - 48) / pageWidth : Math.min((containerWidth - 48) / pageWidth, (containerHeight - 48) / pageHeight)
+      })
+    });
+    assert.ok(controllerSlow.root.querySelector('[data-mdi-exit]'));
+    await controllerSlow.destroy('test-slow');
   } finally {
-    globalThis.fetch = originalFetch;
+    globalThis.__MC_DRAWING_REVIEW_DIAGNOSTICS_ENABLED = previousReviewDiagnosticsFlag;
   }
 });
 

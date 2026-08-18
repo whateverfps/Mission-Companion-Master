@@ -1135,6 +1135,52 @@ export const engine = {
     };
   },
 
+  workspaceDrawingMarkupsPersistence() {
+    const keyFor = (projectId = state.activeProject, workspaceId = '', drawingSetId = '', markupId = '') => `workspace-drawing-markup:${projectId}:${workspaceId}:${drawingSetId}:${markupId}`;
+    const scopeMatch = (item = {}, projectId = '', workspaceId = '', drawingSetId = '') =>
+      item.kind === 'workspace-drawing-markup' &&
+      (!projectId || item.projectId === projectId) &&
+      (!workspaceId || item.workspaceId === workspaceId) &&
+      (!drawingSetId || item.drawingSetId === drawingSetId);
+    return {
+      loadMarkups: async (projectId = state.activeProject, workspaceId = '', drawingSetId = '') => (await all('stateRecords')).filter(item => scopeMatch(item, projectId, workspaceId, drawingSetId)).map(item => structuredClone(item.record)),
+      saveMarkups: async (records = [], projectId = state.activeProject, workspaceId = '', drawingSetId = '') => {
+        const existing = await all('stateRecords');
+        const nextIds = new Set(records.map(record => keyFor(record.projectId || projectId, record.workspaceId || workspaceId, record.drawingSetId || drawingSetId, record.id)));
+        const stale = existing.filter(item => scopeMatch(item, projectId, workspaceId, drawingSetId) && !nextIds.has(item.id));
+        const normalized = records.map(record => ({ id: keyFor(record.projectId || projectId, record.workspaceId || workspaceId, record.drawingSetId || drawingSetId, record.id), kind: 'workspace-drawing-markup', projectId: record.projectId || projectId, workspaceId: record.workspaceId || workspaceId, drawingSetId: record.drawingSetId || drawingSetId, sheetNumber: record.sheetNumber || '', pdfPageNumber: Number(record.pdfPageNumber) || 0, markupType: record.type, record: structuredClone(record), updatedAt: record.updatedAt }));
+        return tx('stateRecords', 'readwrite', store => {
+          stale.forEach(item => store.delete(item.id));
+          normalized.forEach(item => store.put(item));
+        });
+      },
+      deleteMarkup: async (markupId, projectId = state.activeProject, workspaceId = '', drawingSetId = '') => tx('stateRecords', 'readwrite', store => store.delete(keyFor(projectId, workspaceId, drawingSetId, markupId)))
+    };
+  },
+
+  workspaceDrawingToolsPersistence() {
+    const keyFor = (projectId = state.activeProject, workspaceId = '', drawingSetId = '', toolId = '') => `workspace-drawing-tool:${projectId}:${workspaceId}:${drawingSetId}:${toolId}`;
+    const scopeMatch = (item = {}, projectId = '', workspaceId = '', drawingSetId = '') =>
+      item.kind === 'workspace-drawing-tool' &&
+      (!projectId || item.projectId === projectId) &&
+      (!workspaceId || item.workspaceId === workspaceId) &&
+      (!drawingSetId || item.drawingSetId === drawingSetId);
+    return {
+      loadMarkupTools: async (projectId = state.activeProject, workspaceId = '', drawingSetId = '') => (await all('stateRecords')).filter(item => scopeMatch(item, projectId, workspaceId, drawingSetId)).map(item => structuredClone(item.record)),
+      saveMarkupTools: async (records = [], projectId = state.activeProject, workspaceId = '', drawingSetId = '') => {
+        const existing = await all('stateRecords');
+        const nextIds = new Set(records.map(record => keyFor(record.projectId || projectId, record.workspaceId || workspaceId, record.drawingSetId || drawingSetId, record.id)));
+        const stale = existing.filter(item => scopeMatch(item, projectId, workspaceId, drawingSetId) && !nextIds.has(item.id));
+        const normalized = records.map(record => ({ id: keyFor(record.projectId || projectId, record.workspaceId || workspaceId, record.drawingSetId || drawingSetId, record.id), kind: 'workspace-drawing-tool', projectId: record.projectId || projectId, workspaceId: record.workspaceId || workspaceId, drawingSetId: record.drawingSetId || drawingSetId, toolSection: record.section || '', toolName: record.name || '', record: structuredClone(record), updatedAt: record.updatedAt }));
+        return tx('stateRecords', 'readwrite', store => {
+          stale.forEach(item => store.delete(item.id));
+          normalized.forEach(item => store.put(item));
+        });
+      },
+      deleteMarkupTool: async (toolId, projectId = state.activeProject, workspaceId = '', drawingSetId = '') => tx('stateRecords', 'readwrite', store => store.delete(keyFor(projectId, workspaceId, drawingSetId, toolId)))
+    };
+  },
+
   workspaceEvidenceBlobPersistence() {
     const blobIdFor = (projectId = state.activeProject, workspaceId = '', evidenceId = '') => `workspace-evidence-blob:${projectId}:${workspaceId}:${evidenceId}`;
     return {

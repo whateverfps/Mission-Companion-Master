@@ -23,6 +23,22 @@ export async function loadPdfJs(importer = specifier => import(specifier)) {
   return pdfJsPromise;
 }
 
+function attachPdfDocumentLifecycle(pdf, { byteLength = null, mimeType = 'application/pdf', sourceLabel = '', ops = null } = {}) {
+  acquireTrackedResource('pdf-document', pdf, { byteLength: byteLength === null || byteLength === undefined ? null : Number(byteLength), mimeType });
+  const originalDestroy = typeof pdf.destroy === 'function' ? pdf.destroy.bind(pdf) : null;
+  if (originalDestroy) {
+    pdf.destroy = async (...args) => {
+      try {
+        return await originalDestroy(...args);
+      } finally {
+        releaseTrackedResource('pdf-document', pdf, { reason: 'destroy', sourceLabel });
+      }
+    };
+  }
+  try { Object.defineProperty(pdf, '__mcPdfjsOps', { value: ops || {}, enumerable: false }); } catch {}
+  return pdf;
+}
+
 export function normalizeRegion(region = {}) {
   const x = clamp(region.x);
   const y = clamp(region.y);
@@ -103,19 +119,31 @@ export async function openPdfBlob(blob, options = {}) {
   tracePdfStage('pdf document load start', { byteLength: blob.size });
   const pdf = await pdfjs.getDocument({ data: await blob.arrayBuffer() }).promise;
   tracePdfStage('pdf document loaded', { numPages: pdf?.numPages || 0 });
-  acquireTrackedResource('pdf-document', pdf, { byteLength: blob.size, mimeType: blob.type });
-  const originalDestroy = typeof pdf.destroy === 'function' ? pdf.destroy.bind(pdf) : null;
-  if (originalDestroy) {
-    pdf.destroy = async (...args) => {
-      try {
-        return await originalDestroy(...args);
-      } finally {
-        releaseTrackedResource('pdf-document', pdf, { reason: 'destroy' });
-      }
-    };
-  }
-  try { Object.defineProperty(pdf, '__mcPdfjsOps', { value: pdfjs.OPS || {}, enumerable: false }); } catch {}
-  return pdf;
+  return attachPdfDocumentLifecycle(pdf, { byteLength: blob.size, mimeType: blob.type, ops: pdfjs.OPS || {} });
+}
+
+export async function openPdfUrl(url, options = {}) {
+  const sourceUrl = text(url);
+  if (!sourceUrl) throw new Error('A valid PDF URL is required.');
+  const pdfjs = options.pdfjs || await loadPdfJs(options.importer);
+  if (pdfTraceEnabled) console.info('[pdf-trace]', 'pdf url resolved', { sourceUrl, workerSrc: pdfjs?.GlobalWorkerOptions?.workerSrc || '', userAgent: globalThis.navigator?.userAgent || '' });
+  tracePdfStage('pdf document load start', { sourceUrl });
+  const loadingTask = pdfjs.getDocument({
+    url: sourceUrl,
+    rangeChunkSize: Math.max(65536, Math.trunc(Number(options.rangeChunkSize) || 524288)),
+    disableAutoFetch: false,
+    disableRange: false,
+    signal: options.signal || null
+  });
+  let firstProgress = false;
+  loadingTask.onProgress = progress => {
+    if (firstProgress) return;
+    firstProgress = true;
+    tracePdfStage('pdf fetch response received', { sourceUrl, loaded: Number(progress?.loaded) || 0, total: Number(progress?.total) || 0 });
+  };
+  const pdf = await loadingTask.promise;
+  tracePdfStage('pdf document loaded', { numPages: pdf?.numPages || 0, sourceUrl });
+  return attachPdfDocumentLifecycle(pdf, { sourceLabel: sourceUrl, ops: pdfjs.OPS || {} });
 }
 
 function primitiveBounds(values = [], metadata = {}) {
